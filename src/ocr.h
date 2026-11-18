@@ -59,6 +59,10 @@ bool ocr_picture(const uint32_t *px, int w, int h, RECT beside, HWND owner);
 bool ocr_picture_shown(void); /* false once that panel was closed from its own side */
 void ocr_picture_hide(void);
 int ocr_helper(int argc, WCHAR **argv); /* body of `sniplite.exe --ocr` and `--ocr-file` */
+/* For the helper of a quick capture: the notice in the lower right corner of the monitor
+ * with that point, and the wait until it has faded. */
+void notice_corner(const WCHAR *line, const WCHAR *path, POINT on_monitor, int stay_ms);
+void notice_wait(void);
 /* The text: rows separated by CR LF; lines of one row by `between` (a space, or a
  * tab for pasting into a spreadsheet). */
 void ocr_text(const OcrOut *o, WCHAR between, Str *s);

@@ -540,14 +540,14 @@ X(G_TRAY,
   "显示托盘图标", "顯示系統匣圖示", "Show the tray icon", "トレイアイコンを表示", "트레이 아이콘 표시",
   "Icône dans la zone de notification", "Tray-Symbol anzeigen", "Mostrar el icono de la bandeja")
 X(G_TRAY_HIDDEN,
-  "托盘图标已隐藏。以后要打开首选项：再次运行 sniplite，或在贴图上右键。",
-  "系統匣圖示已隱藏。之後要開啟偏好設定：再次執行 sniplite，或在貼圖上按右鍵。",
-  "The tray icon is hidden. To open Settings later, start sniplite again or right-click a pin.",
-  "トレイアイコンを非表示にしました。設定を開くには、sniplite をもう一度起動するか、ピン留めを右クリックしてください。",
-  "트레이 아이콘을 숨겼습니다. 나중에 설정을 열려면 sniplite를 다시 실행하거나 고정 이미지를 마우스 오른쪽 버튼으로 클릭하세요.",
-  "L'icône est masquée. Pour rouvrir les préférences, relancez sniplite ou faites un clic droit sur une épingle.",
-  "Das Tray-Symbol ist ausgeblendet. Die Einstellungen öffnen Sie später, indem Sie sniplite erneut starten oder auf einen Pin rechtsklicken.",
-  "El icono está oculto. Para abrir los ajustes después, vuelve a iniciar sniplite o haz clic derecho en una imagen fijada.")
+  "托盘图标已隐藏 打开首选项的方法：\n\t1- 再次运行sniplite.exe\n\t2- 贴图时 右键菜单打开首选项",
+  "系統匣圖示已隱藏 開啟偏好設定的方法：\n\t1- 再次執行sniplite.exe\n\t2- 貼圖時 右鍵選單開啟偏好設定",
+  "The tray icon is hidden. To open Settings:\n\t1- Start sniplite.exe again\n\t2- Right-click a pin and choose Settings",
+  "トレイアイコンを非表示にしました。設定を開く方法：\n\t1- sniplite.exe をもう一度起動する\n\t2- ピン留めを右クリックして設定を開く",
+  "트레이 아이콘을 숨겼습니다. 설정을 여는 방법:\n\t1- sniplite.exe를 다시 실행\n\t2- 고정 이미지를 마우스 오른쪽 버튼으로 클릭하고 설정 선택",
+  "L'icône est masquée. Pour ouvrir les préférences :\n\t1- Relancez sniplite.exe\n\t2- Clic droit sur une épingle, puis Préférences",
+  "Das Tray-Symbol ist ausgeblendet. So öffnen Sie die Einstellungen:\n\t1- sniplite.exe erneut starten\n\t2- Rechtsklick auf einen Pin, dann Einstellungen",
+  "El icono está oculto. Para abrir los ajustes:\n\t1- Vuelve a iniciar sniplite.exe\n\t2- Clic derecho en una imagen fijada y elige Ajustes")
 X(G_PIN_TOP,
   "贴图置顶", "貼圖置頂", "Keep pins on top", "ピンを常に手前に表示", "고정 이미지를 항상 위에",
   "Épingles toujours au premier plan", "Pins immer im Vordergrund", "Imágenes fijadas siempre visibles")
@@ -910,6 +910,8 @@ X(OCR_WORKING, "正在识别...", "正在辨識...", "Reading the text...", "読
   "Lecture du texte...", "Text wird erkannt...", "Leyendo el texto...")
 X(OCR_COPIED, "文字已复制", "文字已複製", "Text copied", "テキストをコピーしました", "텍스트 복사됨", "Texte copié",
   "Text kopiert", "Texto copiado")
+X(QUICK_SAVED, "截图已保存", "截圖已儲存", "Screenshot saved", "スクリーンショットを保存しました", "스크린샷 저장됨",
+  "Capture enregistrée", "Screenshot gespeichert", "Captura guardada")
 X(OCR_NONE, "没有识别到文字", "沒有辨識到文字", "No text found", "文字が見つかりません", "텍스트를 찾지 못했습니다",
   "Aucun texte trouvé", "Kein Text gefunden", "No se encontró texto")
 X(OCR_MISSING,

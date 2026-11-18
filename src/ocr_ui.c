@@ -501,8 +501,9 @@ static struct {
 static struct {
     HWND hwnd;
     POINT at;       /* its centre */
-    WCHAR line[96]; /* what happened */
-    WCHAR more[96]; /* the start of the text, or why it failed */
+    WCHAR line[96];  /* what happened */
+    WCHAR more[400]; /* the start of the text, why it failed, or a path */
+    bool corner;     /* in the lower right corner of its monitor, and more is a path */
     int alpha;
 } N;
 
@@ -519,9 +520,14 @@ static HFONT ui_font(float s, float size)
 static void notice_paint(HWND h)
 {
     PAINTSTRUCT ps;
-    HDC dc = BeginPaint(h, &ps);
+    HDC win = BeginPaint(h, &ps);
     RECT rc;
     GetClientRect(h, &rc);
+    /* drawn off screen, shown at once: the second line's font can take a moment the first time */
+    HDC mem = CreateCompatibleDC(win);
+    HBITMAP bmp = mem ? CreateCompatibleBitmap(win, rc.right, rc.bottom) : NULL;
+    HGDIOBJ oldbmp = bmp ? SelectObject(mem, bmp) : NULL;
+    HDC dc = bmp ? mem : win;
     float s = dpi_scale_at(N.at);
     HBRUSH br = CreateSolidBrush(RGB(32, 32, 32));
     FillRect(dc, &rc, br);
@@ -539,11 +545,18 @@ static void notice_paint(HWND h)
         r.top += sz.cy + (int)lroundf(3.f * s);
         SelectObject(dc, f2);
         SetTextColor(dc, RGB(176, 176, 176));
-        DrawTextW(dc, N.more, -1, &r, DT_CENTER | DT_SINGLELINE | DT_NOPREFIX | DT_END_ELLIPSIS);
+        DrawTextW(dc, N.more, -1, &r, DT_CENTER | DT_SINGLELINE | DT_NOPREFIX | (N.corner ? DT_PATH_ELLIPSIS : DT_END_ELLIPSIS));
     }
     SelectObject(dc, old);
     DeleteObject(f);
     DeleteObject(f2);
+    if (bmp) {
+        BitBlt(win, 0, 0, rc.right, rc.bottom, mem, 0, 0, SRCCOPY);
+        SelectObject(mem, oldbmp);
+        DeleteObject(bmp);
+    }
+    if (mem)
+        DeleteDC(mem);
     EndPaint(h, &ps);
 }
 
@@ -553,6 +566,7 @@ static LRESULT CALLBACK notice_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
     case WM_PAINT: notice_paint(h); return 0;
     case WM_ERASEBKGND: return 1;
     case WM_NCHITTEST: return HTTRANSPARENT; /* never in the way of a click */
+    case WM_DESTROY: N.hwnd = NULL; return 0; /* closed by a newer one in the corner */
     case WM_TIMER:
         if (wp == TIMER_STAY) {
             KillTimer(h, TIMER_STAY);
@@ -589,6 +603,7 @@ static void notice_show(const WCHAR *line, const WCHAR *more, int stay_ms)
             return;
         int round = 2; /* DWMWCP_ROUND, Windows 11; ignored before */
         DwmSetWindowAttribute(N.hwnd, 33, &round, sizeof round);
+        SetWindowDisplayAffinity(N.hwnd, 0x11); /* WDA_EXCLUDEFROMCAPTURE: never in the next screenshot */
     }
     float s = dpi_scale_at(N.at);
     HDC dc = GetDC(N.hwnd);
@@ -611,6 +626,10 @@ static void notice_show(const WCHAR *line, const WCHAR *more, int stay_ms)
     GetMonitorInfoW(MonitorFromPoint(N.at, MONITOR_DEFAULTTONEAREST), &mi);
     int x = CLAMPI(N.at.x - w / 2, mi.rcWork.left, MAXI(mi.rcWork.left, mi.rcWork.right - w));
     int y = CLAMPI(N.at.y - h / 2, mi.rcWork.top, MAXI(mi.rcWork.top, mi.rcWork.bottom - h));
+    if (N.corner) {
+        x = mi.rcWork.right - w - (int)lroundf(16.f * s);
+        y = mi.rcWork.bottom - h - (int)lroundf(16.f * s);
+    }
     N.alpha = 235;
     KillTimer(N.hwnd, TIMER_FADE);
     SetLayeredWindowAttributes(N.hwnd, 0, (BYTE)N.alpha, LWA_ALPHA);
@@ -618,6 +637,25 @@ static void notice_show(const WCHAR *line, const WCHAR *more, int stay_ms)
     InvalidateRect(N.hwnd, NULL, TRUE);
     UpdateWindow(N.hwnd);
     SetTimer(N.hwnd, TIMER_STAY, (UINT)stay_ms, NULL);
+}
+
+/* For the helper of a quick capture (main.c): saved, and where. */
+void notice_corner(const WCHAR *line, const WCHAR *path, POINT on_monitor, int stay_ms)
+{
+    for (HWND w = NULL; (w = FindWindowExW(NULL, w, NOTICE_CLASS, NULL));)
+        if (w != N.hwnd)
+            PostMessageW(w, WM_CLOSE, 0, 0); /* one at a time: the one before, of another helper, goes */
+    N.at = on_monitor;
+    N.corner = true;
+    notice_show(line, path, stay_ms);
+}
+
+/* until it has faded */
+void notice_wait(void)
+{
+    MSG m;
+    while (N.hwnd && IsWindowVisible(N.hwnd) && GetMessageW(&m, NULL, 0, 0) > 0)
+        DispatchMessageW(&m);
 }
 
 /* ---- the panel: the text beside the selection ---- */

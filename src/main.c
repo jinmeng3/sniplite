@@ -1,6 +1,6 @@
 /* sniplite.exe: the background process (hotkeys, tray icon, capture overlay, pins, IPC),
  * plus the internal helper modes (--save-dialog, --settings, --shortcuts,
- * --update-check, --ocr, --uninstall), each its own short-lived process. */
+ * --update-check, --ocr, --quick-save, --uninstall), each its own short-lived process. */
 #include "common.h"
 #include "config.h"
 #include "image.h"
@@ -786,40 +786,135 @@ static void pin_clipboard(void)
 
 /* ---- the quick capture: the screen the mouse is on, into a file, at once and without a window ---- */
 
+/* What the helper is given: this at the start of a file mapping, the pixels a page further. */
+typedef struct {
+    int32_t w, h;
+    POINT at;            /* the mouse: the notice goes to its monitor */
+    SYSTEMTIME when;     /* for the file's name */
+    WCHAR dir[MAX_PATH]; /* the folder from the settings, or empty: the desktop */
+} Quick;
+#define QUICK_PX 4096
+
+/* sniplite.exe --quick-save <mapping>,<event>, with those two handles inherited and no
+ * other. A thread: it takes some milliseconds, and the pixels are copied meanwhile. */
+static DWORD WINAPI quick_helper(void *give)
+{
+    WCHAR exe[MAX_PATH], cmd[MAX_PATH + 60];
+    SIZE_T list[16], n = sizeof list; /* room for a list of one attribute */
+    HANDLE *h = give;
+    STARTUPINFOEXW si = {{sizeof si}};
+    PROCESS_INFORMATION pi;
+    if (!GetModuleFileNameW(NULL, exe, MAX_PATH) || !InitializeProcThreadAttributeList((void *)list, 1, 0, &n))
+        return 0;
+    wsprintfW(cmd, L"\"%s\" --quick-save %d,%d", exe, (int)(INT_PTR)h[0], (int)(INT_PTR)h[1]);
+    si.StartupInfo.dwFlags = STARTF_FORCEOFFFEEDBACK;
+    si.lpAttributeList = (void *)list;
+    BOOL ok = UpdateProcThreadAttribute(si.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, h, 2 * sizeof *h, NULL, NULL) &&
+              CreateProcessW(exe, cmd, NULL, NULL, TRUE, EXTENDED_STARTUPINFO_PRESENT, NULL, NULL, &si.StartupInfo, &pi);
+    DeleteProcThreadAttributeList(si.lpAttributeList);
+    if (ok) {
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+    }
+    return (DWORD)ok;
+}
+
+/* Only the screen is read here. Naming the file, encoding and writing it take far
+ * longer, and a folder can be slow: all that, and the notice, is the helper's. */
 static void quick_capture(void)
 {
-    typedef HRESULT(WINAPI *PFN_SHGetFolderPathW)(HWND, int, HANDLE, DWORD, LPWSTR);
-    static PFN_SHGetFolderPathW folder;
-    WCHAR dir[MAX_PATH], path[MAX_PATH + 80];
-    if (ov_active() || D.asking)
-        return;
-    lstrcpynW(dir, D.cfg.quick_dir, MAX_PATH);
-    if (!dir[0]) { /* none chosen: the desktop. shell32 is there already when the tray icon is shown */
-        if (!folder) {
-            HMODULE sh = LoadLibraryW(L"shell32.dll");
-            folder = sh ? (PFN_SHGetFolderPathW)(void *)GetProcAddress(sh, "SHGetFolderPathW") : NULL;
-        }
-        if (!folder || FAILED(folder(NULL, CSIDL_DESKTOPDIRECTORY, NULL, 0, dir))) {
-            MessageBeep(MB_ICONWARNING);
-            return;
-        }
-    }
-    CreateDirectoryW(dir, NULL); /* a chosen folder that is gone comes back */
-    SYSTEMTIME t; /* named like a capture saved by hand; a second one in the same second gets a number */
-    GetLocalTime(&t);
-    int n = wsprintfW(path, L"%s\\sniplite_%04d-%02d-%02d_%02d-%02d-%02d", dir, t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute,
-                      t.wSecond);
-    lstrcpyW(path + n, L".png");
-    for (int k = 2; k < 100 && GetFileAttributesW(path) != INVALID_FILE_ATTRIBUTES; k++)
-        wsprintfW(path + n, L"_%d.png", k);
     POINT at;
     MONITORINFO mi = {sizeof mi};
+    Shot sh;
+    if (ov_active() || D.asking)
+        return;
     GetCursorPos(&at);
-    Str out = {0};
-    if (!GetMonitorInfoW(MonitorFromPoint(at, MONITOR_DEFAULTTONEAREST), &mi) ||
-        capture_now(mi.rcMonitor, path, false, false, false, &out) != EXIT_OK)
-        MessageBeep(MB_ICONWARNING); /* silent when it worked: the file is the answer */
-    str_free(&out);
+    if (!GetMonitorInfoW(MonitorFromPoint(at, MONITOR_DEFAULTTONEAREST), &mi) || !shot_take(&sh, NULL, NULL)) {
+        MessageBeep(MB_ICONWARNING);
+        return;
+    }
+    RECT vs = {sh.vx, sh.vy, sh.vx + sh.vw, sh.vy + sh.vh};
+    RECT r = rect_isect(mi.rcMonitor, vs);
+    int w = r.right - r.left, h = r.bottom - r.top;
+    HANDLE give[2] = {NULL, NULL}, th = NULL; /* the mapping, and an event: the pixels are in it */
+    Quick *q = NULL;
+    DWORD started = 0;
+    if (w > 0 && h > 0) {
+        uint64_t bytes = QUICK_PX + (uint64_t)w * h * 4;
+        SECURITY_ATTRIBUTES sa = {sizeof sa, NULL, TRUE};
+        give[0] = CreateFileMappingW(INVALID_HANDLE_VALUE, &sa, PAGE_READWRITE, (DWORD)(bytes >> 32), (DWORD)bytes, NULL);
+        give[1] = CreateEventW(&sa, TRUE, FALSE, NULL);
+        q = give[0] && give[1] ? MapViewOfFile(give[0], FILE_MAP_WRITE, 0, 0, 0) : NULL;
+    }
+    if (q && (th = CreateThread(NULL, 0, quick_helper, give, 0, NULL)) != NULL) {
+        q->w = w, q->h = h, q->at = at;
+        GetLocalTime(&q->when);
+        lstrcpynW(q->dir, D.cfg.quick_dir, MAX_PATH);
+        OffsetRect(&r, -sh.vx, -sh.vy);
+        shot_copy(&sh, r, (uint32_t *)((uint8_t *)q + QUICK_PX), w);
+        SetEvent(give[1]);
+    }
+    shot_free(&sh);
+    if (q)
+        UnmapViewOfFile(q);
+    if (th) {
+        WaitForSingleObject(th, INFINITE); /* done long ago as a rule; the handles are its until then */
+        GetExitCodeThread(th, &started);
+        CloseHandle(th);
+    }
+    if (give[0])
+        CloseHandle(give[0]);
+    if (give[1])
+        CloseHandle(give[1]);
+    if (!started)
+        MessageBeep(MB_ICONWARNING);
+}
+
+/* The helper: name the file, write it, and say so in the corner. */
+static int quick_save(const WCHAR *arg)
+{
+    typedef HRESULT(WINAPI *PFN_SHGetFolderPathW)(HWND, int, HANDLE, DWORD, LPWSTR);
+    int v[2];
+    if (!parse_ints(arg, v, 2))
+        return EXIT_USAGE;
+    HANDLE map = (HANDLE)(INT_PTR)v[0], ready = (HANDLE)(INT_PTR)v[1];
+    const Quick *q = WaitForSingleObject(ready, 10000) == WAIT_OBJECT_0 ? MapViewOfFile(map, FILE_MAP_READ, 0, 0, 0) : NULL;
+    if (!q)
+        return EXIT_FAIL;
+    WCHAR dir[MAX_PATH], path[MAX_PATH + 80] = L"";
+    lstrcpynW(dir, q->dir, MAX_PATH);
+    bool ok = dir[0] != 0;
+    if (!ok) {
+        HMODULE sh = LoadLibraryW(L"shell32.dll");
+        PFN_SHGetFolderPathW folder = sh ? (PFN_SHGetFolderPathW)(void *)GetProcAddress(sh, "SHGetFolderPathW") : NULL;
+        ok = folder && SUCCEEDED(folder(NULL, CSIDL_DESKTOPDIRECTORY, NULL, 0, dir));
+    }
+    if (ok) {
+        CreateDirectoryW(dir, NULL); /* a chosen folder that is gone comes back */
+        const SYSTEMTIME *t = &q->when;
+        int n = wsprintfW(path, L"%s\\sniplite_%04d-%02d-%02d_%02d-%02d-%02d", dir, t->wYear, t->wMonth, t->wDay, t->wHour,
+                          t->wMinute, t->wSecond);
+        lstrcpyW(path + n, L".png"); /* named like one saved by hand; a second one in the same second gets a number */
+        HANDLE f = INVALID_HANDLE_VALUE;
+        for (int k = 2; k < 100; k++) { /* CREATE_NEW: two helpers at once never take the same name */
+            f = CreateFileW(path, GENERIC_WRITE, 0, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
+            if (f != INVALID_HANDLE_VALUE || GetLastError() != ERROR_FILE_EXISTS)
+                break;
+            wsprintfW(path + n, L"_%d.png", k);
+        }
+        ok = f != INVALID_HANDLE_VALUE;
+        if (ok) {
+            CloseHandle(f);
+            ok = image_save(path, (const uint32_t *)((const uint8_t *)q + QUICK_PX), q->w, q->w, q->h);
+            if (!ok)
+                DeleteFileW(path);
+        }
+    }
+    notice_corner(ok ? T(QUICK_SAVED) : T(OV_SAVE_FAILED), path, q->at, ok ? 2000 : 4000);
+    UnmapViewOfFile(q);
+    CloseHandle(map);
+    notice_wait();
+    return ok ? EXIT_OK : EXIT_FAIL;
 }
 
 /* ---- leaving a capture ---------------------------------------------------------------------- */
@@ -1151,6 +1246,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmdline, int show)
         return update_check_main();
     if (argc > 1 && (arg_eq(argv[1], L"--ocr") || arg_eq(argv[1], L"--ocr-file")))
         return ocr_helper(argc, argv);
+    if (argc > 2 && arg_eq(argv[1], L"--quick-save"))
+        return quick_save(argv[2]);
     if (argc > 1 && arg_eq(argv[1], L"--uninstall"))
         return uninstall_main(argc > 2 && (arg_eq(argv[2], L"/S") || arg_eq(argv[2], L"-S")));
 
