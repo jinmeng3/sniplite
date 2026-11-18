@@ -16,8 +16,10 @@
 #include "lang.h"
 #include "ocr.h"
 #include "update.h"
+#include "image.h"
 #include <commctrl.h>
 #include <shlobj.h>
+#include <shobjidl.h>
 #include <windowsx.h>
 
 typedef BOOL(WINAPI *PFN_InitCommonControlsEx)(const INITCOMMONCONTROLSEX *);
@@ -387,6 +389,44 @@ static void draw_round_icon(const DRAWITEMSTRUCT *di, int kind)
 
 /* ---- pages ---------------------------------------------------------------------------- */
 
+/* where a quick capture goes: the chosen folder, else the desktop */
+static void show_quick_dir(void)
+{
+    WCHAR dir[MAX_PATH];
+    lstrcpynW(dir, S.cfg.quick_dir, MAX_PATH);
+    if (!dir[0] && (!S.folder || FAILED(S.folder(NULL, CSIDL_DESKTOPDIRECTORY, NULL, 0, dir))))
+        dir[0] = 0;
+    SetDlgItemTextW(S.page[PG_GENERAL], IDC_QUICK_DIR, dir);
+}
+
+/* the folder picker of Windows; false when nothing was picked */
+static bool pick_folder(WCHAR *dir, int cap)
+{
+    IFileOpenDialog *d = NULL;
+    IShellItem *item = NULL;
+    WCHAR *path = NULL;
+    bool ok = false;
+    if (FAILED(com_create(&CLSID_FileOpenDialog, &IID_IFileOpenDialog, (void **)&d)))
+        return false;
+    DWORD opt = 0;
+    IFileOpenDialog_GetOptions(d, &opt);
+    IFileOpenDialog_SetOptions(d, opt | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM);
+    if (SUCCEEDED(IFileOpenDialog_Show(d, S.dlg)) && SUCCEEDED(IFileOpenDialog_GetResult(d, &item))) {
+        if (SUCCEEDED(IShellItem_GetDisplayName(item, SIGDN_FILESYSPATH, &path))) {
+            ok = lstrlenW(path) < cap;
+            if (ok)
+                lstrcpyW(dir, path);
+            /* ole32 is here: com_create loaded it */
+            void(WINAPI * release)(void *) = (void(WINAPI *)(void *))(void *)GetProcAddress(GetModuleHandleW(L"ole32.dll"), "CoTaskMemFree");
+            if (release)
+                release(path);
+        }
+        IShellItem_Release(item);
+    }
+    IFileOpenDialog_Release(d);
+    return ok;
+}
+
 static void show_hotkeys(void)
 {
     for (int id = 1; id < HK_COUNT; id++)
@@ -409,6 +449,7 @@ typedef struct {
 
 static const Shortcut kShortcuts[] = {
     {0, S_SC_START, NULL, 0, HK_CAPTURE},
+    {0, S_SC_QUICK, NULL, 0, HK_QUICK},
     {0, S_SC_WINDOW, NULL, S_K_CLICK, 0},
     {0, S_SC_COPY, NULL, S_K_ENTER_DBL, 0},
     {0, S_SC_SAVE, L"Ctrl+S", 0, 0},
@@ -800,7 +841,15 @@ static void page_command(HWND page, int id, int code, HWND ctl)
             set_language(lang);
         return;
     }
-    if (id >= IDC_HK_FIELD1 && id <= IDC_HK_FIELD5) {
+    if (id == IDC_THEME && code == CBN_SELCHANGE) {
+        int theme = (int)SendMessageW(ctl, CB_GETCURSEL, 0, 0);
+        if (theme >= THEME_AUTO && theme <= THEME_DARK) {
+            S.cfg.theme = theme;
+            apply();
+        }
+        return;
+    }
+    if (id >= IDC_HK_FIELD1 && id <= IDC_HK_FIELD6) {
         int hk = id - IDC_HK_FIELD1 + 1;
         if (code == HKN_BEGIN) {
             daemon_cmd(L"_hotkeys", L"off"); /* let our own hotkeys reach the field */
@@ -812,7 +861,7 @@ static void page_command(HWND page, int id, int code, HWND ctl)
         }
         return;
     }
-    if (id >= IDC_HK_CLEAR1 && id <= IDC_HK_CLEAR5) {
+    if (id >= IDC_HK_CLEAR1 && id <= IDC_HK_CLEAR6) {
         int hk = id - IDC_HK_CLEAR1 + 1;
         S.cfg.mod[hk] = S.cfg.vk[hk] = 0;
         show_hotkeys();
@@ -838,6 +887,8 @@ static void page_command(HWND page, int id, int code, HWND ctl)
     case IDC_TRAY:
         S.cfg.tray = IsDlgButtonChecked(page, IDC_TRAY) == BST_CHECKED;
         apply();
+        if (!S.cfg.tray) /* the icon was the way to this window: say which ways are left */
+            MessageBoxW(S.dlg, T(G_TRAY_HIDDEN), T(SETTINGS_TITLE), MB_OK | MB_ICONINFORMATION);
         break;
     case IDC_DXGI:
     case IDC_GDI:
@@ -877,6 +928,16 @@ static void page_command(HWND page, int id, int code, HWND ctl)
         S.cfg.auto_update = IsDlgButtonChecked(page, IDC_U_AUTO) == BST_CHECKED;
         apply();
         break;
+    case IDC_EXIT_ASK:
+        S.cfg.exit_ask = IsDlgButtonChecked(page, IDC_EXIT_ASK) == BST_CHECKED;
+        apply();
+        break;
+    case IDC_QUICK_PICK:
+        if (pick_folder(S.cfg.quick_dir, COUNTOF(S.cfg.quick_dir))) {
+            show_quick_dir();
+            apply();
+        }
+        break;
     case IDC_HELPBTN:
     case IDC_BUILTIN:
         show_help(S.dlg);
@@ -889,6 +950,8 @@ static void page_command(HWND page, int id, int code, HWND ctl)
             CheckDlgButton(page, IDC_TRAY, d.tray ? BST_CHECKED : BST_UNCHECKED);
             S.cfg.pin_top = d.pin_top;
             CheckDlgButton(page, IDC_PIN_TOP, d.pin_top ? BST_CHECKED : BST_UNCHECKED);
+            S.cfg.quick_dir[0] = 0;
+            show_quick_dir();
             if (!S.portable && (autostart_on() || autostart_set(true))) /* on by default */
                 CheckDlgButton(page, IDC_AUTOSTART, BST_CHECKED);
             if (lang_choice() != LG_AUTO && !S.busy) {
@@ -898,6 +961,10 @@ static void page_command(HWND page, int id, int code, HWND ctl)
         } else if (page == S.page[PG_CAPTURE]) {
             S.cfg.gdi = d.gdi;
             CheckRadioButton(page, IDC_DXGI, IDC_GDI, d.gdi ? IDC_GDI : IDC_DXGI);
+            S.cfg.theme = d.theme;
+            SendDlgItemMessageW(page, IDC_THEME, CB_SETCURSEL, (WPARAM)d.theme, 0);
+            S.cfg.exit_ask = d.exit_ask;
+            CheckDlgButton(page, IDC_EXIT_ASK, d.exit_ask ? BST_CHECKED : BST_UNCHECKED);
         } else if (page == S.page[PG_HOTKEYS]) {
             memcpy(S.cfg.mod, d.mod, sizeof d.mod);
             memcpy(S.cfg.vk, d.vk, sizeof d.vk);
@@ -925,9 +992,9 @@ static INT_PTR CALLBACK page_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
     case WM_DRAWITEM: {
         const DRAWITEMSTRUCT *di = (const DRAWITEMSTRUCT *)lp;
         int id = (int)di->CtlID, kind = RI_NONE;
-        if (id >= IDC_HK_CLEAR1 && id <= IDC_HK_CLEAR5)
+        if (id >= IDC_HK_CLEAR1 && id <= IDC_HK_CLEAR6)
             kind = RI_CLEAR;
-        else if (id >= IDC_HK_STATE1 && id <= IDC_HK_STATE5) {
+        else if (id >= IDC_HK_STATE1 && id <= IDC_HK_STATE6) {
             int hk = id - IDC_HK_STATE1 + 1;
             kind = !S.cfg.vk[hk] || S.state[hk] == 2 ? RI_NONE : S.state[hk] ? RI_OK : RI_FAIL;
         } else if (id == IDC_HELPBTN)
@@ -964,7 +1031,7 @@ static const struct {
 static const struct {
     unsigned char page;
     unsigned char id; /* IDC_... */
-    unsigned char s;  /* S_... */
+    unsigned short s; /* S_... */
 } kTexts[] = {
     {PG_GENERAL, IDC_AUTOSTART, S_G_AUTOSTART},
     {PG_GENERAL, IDC_TRAY, S_G_TRAY},
@@ -974,15 +1041,20 @@ static const struct {
     {PG_GENERAL, IDC_PATH_LABEL, S_G_PATH},
     {PG_GENERAL, IDC_OPEN_DIR, S_G_OPEN_DIR},
     {PG_GENERAL, IDC_OPEN_INI, S_G_OPEN_INI},
+    {PG_GENERAL, IDC_QUICK_LABEL, S_G_QUICK_DIR},
+    {PG_GENERAL, IDC_QUICK_PICK, S_G_CHANGE},
     {PG_CAPTURE, IDC_MODE_LABEL, S_C_MODE},
     {PG_CAPTURE, IDC_DXGI, S_C_DXGI},
     {PG_CAPTURE, IDC_GDI, S_C_GDI},
     {PG_CAPTURE, IDC_HINT, S_C_HINT},
-    {PG_HOTKEYS, IDC_HK_LABEL1, S_H_CAPTURE},
-    {PG_HOTKEYS, IDC_HK_LABEL2, S_H_PIN},
-    {PG_HOTKEYS, IDC_HK_LABEL3, S_H_TOGGLE},
-    {PG_HOTKEYS, IDC_HK_LABEL4, S_H_OCR},
-    {PG_HOTKEYS, IDC_HK_LABEL5, S_H_OCRCOPY},
+    {PG_CAPTURE, IDC_THEME_LABEL, S_C_THEME},
+    {PG_CAPTURE, IDC_EXIT_ASK, S_C_EXIT_ASK},
+    {PG_HOTKEYS, IDC_HK_LABEL1, S_H_CAPTURE}, /* the rows in the order of HK_* */
+    {PG_HOTKEYS, IDC_HK_LABEL2, S_H_QUICK},
+    {PG_HOTKEYS, IDC_HK_LABEL3, S_H_PIN},
+    {PG_HOTKEYS, IDC_HK_LABEL4, S_H_TOGGLE},
+    {PG_HOTKEYS, IDC_HK_LABEL5, S_H_OCR},
+    {PG_HOTKEYS, IDC_HK_LABEL6, S_H_OCRCOPY},
     {PG_HOTKEYS, IDC_HINT, S_H_HINT},
     {PG_HOTKEYS, IDC_BUILTIN, S_H_BUILTIN},
     {PG_UPDATE, IDC_U_CHECK, S_U_CHECK_BTN},
@@ -1052,6 +1124,11 @@ static INT_PTR CALLBACK main_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
         config_path(ini, MAX_PATH);
         SetDlgItemTextW(g, IDC_INI_PATH, ini);
         CheckRadioButton(c, IDC_DXGI, IDC_GDI, S.cfg.gdi ? IDC_GDI : IDC_DXGI);
+        for (int i = 0; i <= THEME_DARK; i++) /* in the order of THEME_* */
+            SendDlgItemMessageW(c, IDC_THEME, CB_ADDSTRING, 0, (LPARAM)g_tr[S_C_THEME_AUTO + i]);
+        SendDlgItemMessageW(c, IDC_THEME, CB_SETCURSEL, (WPARAM)S.cfg.theme, 0);
+        CheckDlgButton(c, IDC_EXIT_ASK, S.cfg.exit_ask ? BST_CHECKED : BST_UNCHECKED);
+        show_quick_dir();
         SetDlgItemTextW(S.page[PG_ABOUT], IDC_VERSION,
                         S.portable ? L"sniplite " SNIPLITE_VERSION L" portable" : L"sniplite " SNIPLITE_VERSION);
         SetDlgItemTextW(S.page[PG_ABOUT], IDC_PROJECT, UPDATE_HOST UPDATE_REPO); /* the link is its own text */
@@ -1107,6 +1184,16 @@ static INT_PTR CALLBACK main_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
     case WM_APP_UPD_DONE:
         upd_done((DWORD)wp);
         return TRUE;
+    case WM_ACTIVATE: /* back in front: a pin's menu and the exit question each change a switch of their own */
+        if (LOWORD(wp) != WA_INACTIVE && IsWindow(S.page[PG_CAPTURE])) {
+            Config f;
+            config_load(&f);
+            S.cfg.pin_top = f.pin_top;
+            S.cfg.exit_ask = f.exit_ask;
+            CheckDlgButton(S.page[PG_GENERAL], IDC_PIN_TOP, f.pin_top ? BST_CHECKED : BST_UNCHECKED);
+            CheckDlgButton(S.page[PG_CAPTURE], IDC_EXIT_ASK, f.exit_ask ? BST_CHECKED : BST_UNCHECKED);
+        }
+        break;
     case WM_APP_SHOW_PAGE:
         if ((int)wp >= 0 && (int)wp < PG_COUNT) {
             SendMessageW(S.tabs, TCM_SETCURSEL, wp, 0);
@@ -1174,7 +1261,11 @@ static void helper_init(HINSTANCE inst)
 int settings_main(HINSTANCE inst, const WCHAR *page)
 {
     S.ocr_auto = page && arg_eq(page, L"ocr-install"); /* from the installer: download the module at once */
-    S.start_page = !page ? PG_GENERAL : arg_eq(page, L"update") ? PG_UPDATE : arg_eq(page, L"ocr") || S.ocr_auto ? PG_OCR : PG_GENERAL;
+    S.start_page = !page                                  ? PG_GENERAL
+                   : arg_eq(page, L"update")              ? PG_UPDATE
+                   : arg_eq(page, L"ocr") || S.ocr_auto   ? PG_OCR
+                   : arg_eq(page, L"about")               ? PG_ABOUT
+                                                          : PG_GENERAL;
     HWND open = ipc_find_dialog(SETTINGS_MARK);
     if (open) {
         if (S.start_page != PG_GENERAL)

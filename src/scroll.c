@@ -58,6 +58,7 @@ enum { BT_OCR, BT_OCRCOPY, BT_PIN, BT_SAVE, BT_CLOSE, BT_OK, BT_COUNT }; /* the 
 static const int kIcon[BT_COUNT] = {IC_OCR, IC_OCRCOPY, IC_PIN, IC_SAVE, IC_CLOSE, IC_OK};
 
 extern uint8_t O[]; /* the capture's state (ov_layout.inc) */
+extern const uint32_t *ui_pal; /* the bars' colors, by P_* (ov_base.S, main.c) */
 
 static struct {
     bool on, first, lost, full;
@@ -236,10 +237,10 @@ static void grab(void)
 
 static void bar_text(WCHAR *t, int cap, uint32_t *color)
 {
-    *color = 0x505050;
+    *color = ui_pal[P_NOTE];
     if (L.lost) {
         lstrcpynW(t, T(LONG_LOST), cap);
-        *color = 0xC06000;
+        *color = ui_pal[P_WARN];
     } else if (L.full) {
         lstrcpynW(t, T(LONG_FULL), cap);
     } else if (L.rows <= L.h) {
@@ -264,13 +265,13 @@ static void bar_draw(void)
 {
     RECT rc = {0, 0, L.barimg.w, L.barimg.h};
     Surf s = surf_img(&L.barimg, 0, 0);
-    d_fill(&s, rc, 0xF7F7F7);
-    d_frame(&s, rc, 1, 0xBDBDBD);
+    d_fill(&s, rc, ui_pal[P_BG]);
+    d_frame(&s, rc, 1, ui_pal[P_EDGE]);
     for (int i = bar_first(); i < BT_COUNT; i++) {
         RECT b = bar_button(i);
         if (i == L.hover || (i == BT_OCR && L.reading))
-            d_fill(&s, rect_inflate(b, -px(2)), i == L.down || i != L.hover ? 0xD0D0D0 : 0xE4E4E4);
-        d_icon(&s, kIcon[i], (float)(b.left + px(5)), (float)(b.top + px(5)), (float)px(20), i == BT_OK ? ACCENT : 0x404040);
+            d_fill(&s, rect_inflate(b, -px(2)), ui_pal[i == L.down || i != L.hover ? P_DOWN : P_HOVER]);
+        d_icon(&s, kIcon[i], (float)(b.left + px(5)), (float)(b.top + px(5)), (float)px(20), ui_pal[i == BT_OK ? P_ACCENT : P_ICON]);
     }
     WCHAR t[96];
     uint32_t color;
@@ -591,6 +592,19 @@ void long_cancel(void) { long_end(); }
 /* a button of the bar, Enter (like its check mark) or Esc (like its cross) */
 static void long_done(int button)
 {
+    if (button == BT_CLOSE && !L.first && L.rows) { /* a picture would be lost: the user may be asked first */
+        bool keys = !L.reading;
+        if (keys)
+            hotkeys(false); /* Esc and Enter are the question's while it shows */
+        bool go = leave_ok(L.bar);
+        if (!L.on)
+            return; /* ended meanwhile: a capture began */
+        if (!go) {
+            if (keys && !L.reading)
+                hotkeys(true);
+            return;
+        }
+    }
     if (button == BT_CLOSE || L.first || !L.rows) {
         long_end();
         return;

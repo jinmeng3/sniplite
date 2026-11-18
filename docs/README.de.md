@@ -47,6 +47,7 @@ Dazu gibt es zwei portable Versionen ohne Installation: `sniplite_<Version>_port
 | Taste | Funktion |
 | --- | --- |
 | **F1** | Aufnehmen |
+| **Shift+F1** | Schnellaufnahme: der Bildschirm unter der Maus direkt in eine Datei (Ordner in den Einstellungen) |
 | **F3** | Kopiertes Bild oder kopierten Text anheften |
 | **Shift+F3** | Alle Pins aus- / einblenden |
 | **F4** | Aufnehmen und Text erkennen (mit dem Texterkennungsmodul) |

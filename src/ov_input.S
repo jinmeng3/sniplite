@@ -1064,13 +1064,13 @@ FUNC on_key
         pop rsi
         pop rbx
         jmp copy_color
-.Lky_cancel:
+.Lky_cancel:                            /* Esc: the user leaves, which may ask first (main.c) */
         add rsp, 56
         pop r12
         pop rdi
         pop rsi
         pop rbx
-        jmp ov_cancel
+        jmp ov_leave
 .Lky_save:
         mov ecx, ACT_SAVE
         jmp .Lky_finish

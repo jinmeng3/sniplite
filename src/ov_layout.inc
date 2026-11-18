@@ -232,3 +232,27 @@
 /* element sizes */
 #define OV_FONTS_BYTES               16
 #define OV_CHAIN_BYTES               16
+
+/* The colors of the capture's bars: kPalLight and kPalDark (ov_base.S) hold one of each,
+ * ui_pal points at the one in use (main.c: theme_apply). */
+#define P_BG                          0    /* a bar */
+#define P_EDGE                        1    /* its outline */
+#define P_SEP                         2    /* a separator */
+#define P_ON                          3    /* behind the tool in use */
+#define P_HOVER                       4    /* behind the button under the mouse */
+#define P_DOWN                        5    /* the same, pressed */
+#define P_ICON                        6
+#define P_ICON_ON                     7    /* the tool in use */
+#define P_ICON_OFF                    8    /* nothing to undo or redo */
+#define P_OK                          9    /* the check mark */
+#define P_HIDE                        10   /* a color that would not show on the bar ... */
+#define P_SHOWN                       11   /* ... is drawn as this in the size discs */
+#define P_RING                        12   /* around the color in use */
+#define P_SWATCH                      13   /* around every color */
+#define P_TIP_BG                      14   /* the tooltip */
+#define P_TIP_EDGE                    15
+#define P_TIP_TEXT                    16
+#define P_NOTE                        17   /* the long screenshot's bar: its text, */
+#define P_WARN                        18   /* its text when the page was lost, */
+#define P_ACCENT                      19   /* its check mark */
+#define P_COUNT                       20

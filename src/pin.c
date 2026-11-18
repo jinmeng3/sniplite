@@ -5,6 +5,7 @@
 #include "lang.h"
 #include "ocr.h"
 #include "config.h"
+#include "settings.h"
 #include <dwmapi.h>
 #include <math.h>
 #include <windowsx.h>
@@ -14,7 +15,7 @@
 #endif
 
 #define TIMER_LABEL 1
-enum { CM_COPY = 1, CM_SAVE, CM_OCR, CM_RESET, CM_TOP_ALL, CM_TOP, CM_CLOSE, CM_CLOSE_ALL };
+enum { CM_COPY = 1, CM_SAVE, CM_OCR, CM_RESET, CM_TOP_ALL, CM_TOP, CM_CLOSE, CM_CLOSE_ALL, CM_SETTINGS };
 
 typedef struct Pin {
     HWND hwnd;
@@ -36,6 +37,19 @@ static struct {
     int count;
     bool top_all; /* the setting: every pin above other windows */
 } P;
+
+/* Onto the screen with the picture already drawn. The window has a frame (for the shadow;
+ * WM_NCCALCSIZE leaves none of it in sight), and Windows first shows such a window as that
+ * frame, white with its title on top, until the program has painted. Cloaked, it is shown to
+ * nobody while it paints. */
+static void pin_reveal(HWND hw)
+{
+    BOOL on = TRUE, off = FALSE;
+    DwmSetWindowAttribute(hw, DWMWA_CLOAK, &on, sizeof on);
+    ShowWindow(hw, SW_SHOWNOACTIVATE);
+    UpdateWindow(hw);
+    DwmSetWindowAttribute(hw, DWMWA_CLOAK, &off, sizeof off);
+}
 
 /* A pin is above other windows when all pins are, or when it was told to be itself. */
 static void pin_layer(Pin *p)
@@ -132,6 +146,8 @@ static void pin_menu(Pin *p, POINT at)
     AppendMenuW(m, MF_SEPARATOR, 0, NULL);
     AppendMenuW(m, MF_STRING, CM_CLOSE, T(PM_CLOSE));
     AppendMenuW(m, MF_STRING, CM_CLOSE_ALL, T(M_CLOSE_PINS));
+    AppendMenuW(m, MF_SEPARATOR, 0, NULL);
+    AppendMenuW(m, MF_STRING, CM_SETTINGS, T(M_SETTINGS)); /* a way in that does not need the tray icon */
     HWND h = p->hwnd;
     SetForegroundWindow(h);
     int cmd = TrackPopupMenu(m, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY, at.x, at.y, 0, h, NULL);
@@ -166,6 +182,7 @@ static void pin_menu(Pin *p, POINT at)
         break;
     case CM_CLOSE: DestroyWindow(h); break;
     case CM_CLOSE_ALL: pin_close_all(); break;
+    case CM_SETTINGS: settings_open(NULL); break;
     }
 }
 
@@ -413,7 +430,10 @@ bool pin_add(Img *img, int x, int y, bool at_cursor)
     DwmExtendFrameIntoClientArea(hw, &mg);
     DWORD corner = 1; /* DWMWCP_DONOTROUND */
     DwmSetWindowAttribute(hw, DWMWA_WINDOW_CORNER_PREFERENCE, &corner, sizeof corner);
-    SetWindowPos(hw, P.top_all ? HWND_TOPMOST : HWND_TOP, x, y, w, h, SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+    BOOL still = TRUE; /* it is there at once: no opening or closing animation */
+    DwmSetWindowAttribute(hw, DWMWA_TRANSITIONS_FORCEDISABLED, &still, sizeof still);
+    SetWindowPos(hw, P.top_all ? HWND_TOPMOST : HWND_TOP, x, y, w, h, SWP_FRAMECHANGED | SWP_NOACTIVATE);
+    pin_reveal(hw);
     SetForegroundWindow(hw);
     return true;
 }
@@ -432,8 +452,12 @@ void pin_toggle_all(void)
     for (Pin *p = P.list; p; p = p->next)
         if (IsWindowVisible(p->hwnd))
             any_visible = true;
-    for (Pin *p = P.list; p; p = p->next)
-        ShowWindow(p->hwnd, any_visible ? SW_HIDE : SW_SHOWNOACTIVATE);
+    for (Pin *p = P.list; p; p = p->next) {
+        if (any_visible)
+            ShowWindow(p->hwnd, SW_HIDE);
+        else
+            pin_reveal(p->hwnd);
+    }
 }
 
 void pin_close_all(void)

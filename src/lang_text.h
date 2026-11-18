@@ -331,6 +331,9 @@ X(ERR_GDI_DXGI,
 X(ST_HK_CAPTURE,
   "截图热键", "截圖快速鍵", "Capture key", "キャプチャキー", "캡처 단축키", "Touche capture", "Aufnahmetaste",
   "Atajo capturar")
+X(ST_HK_QUICK,
+  "快速截屏热键", "快速截圖快速鍵", "Quick capture", "クイック撮影", "빠른 캡처", "Capture rapide", "Schnellaufnahme",
+  "Captura rápida")
 X(ST_HK_PIN,
   "贴图热键", "貼圖快速鍵", "Pin key", "ピン留めキー", "고정 단축키", "Touche épingle", "Pin-Taste",
   "Atajo fijar")
@@ -536,6 +539,15 @@ X(G_AUTOSTART,
 X(G_TRAY,
   "显示托盘图标", "顯示系統匣圖示", "Show the tray icon", "トレイアイコンを表示", "트레이 아이콘 표시",
   "Icône dans la zone de notification", "Tray-Symbol anzeigen", "Mostrar el icono de la bandeja")
+X(G_TRAY_HIDDEN,
+  "托盘图标已隐藏。以后要打开首选项：再次运行 sniplite，或在贴图上右键。",
+  "系統匣圖示已隱藏。之後要開啟偏好設定：再次執行 sniplite，或在貼圖上按右鍵。",
+  "The tray icon is hidden. To open Settings later, start sniplite again or right-click a pin.",
+  "トレイアイコンを非表示にしました。設定を開くには、sniplite をもう一度起動するか、ピン留めを右クリックしてください。",
+  "트레이 아이콘을 숨겼습니다. 나중에 설정을 열려면 sniplite를 다시 실행하거나 고정 이미지를 마우스 오른쪽 버튼으로 클릭하세요.",
+  "L'icône est masquée. Pour rouvrir les préférences, relancez sniplite ou faites un clic droit sur une épingle.",
+  "Das Tray-Symbol ist ausgeblendet. Die Einstellungen öffnen Sie später, indem Sie sniplite erneut starten oder auf einen Pin rechtsklicken.",
+  "El icono está oculto. Para abrir los ajustes después, vuelve a iniciar sniplite o haz clic derecho en una imagen fijada.")
 X(G_PIN_TOP,
   "贴图置顶", "貼圖置頂", "Keep pins on top", "ピンを常に手前に表示", "고정 이미지를 항상 위에",
   "Épingles toujours au premier plan", "Pins immer im Vordergrund", "Imágenes fijadas siempre visibles")
@@ -546,6 +558,10 @@ X(G_INI_GROUP,
   "配置文件存储位置", "設定檔位置", "Settings file", "設定ファイルの場所", "설정 파일 위치",
   "Fichier de réglages", "Einstellungsdatei", "Archivo de ajustes")
 X(G_PATH, "路径:", "路徑:", "Path:", "パス:", "경로:", "Chemin :", "Pfad:", "Ruta:")
+X(G_QUICK_DIR,
+  "快速截屏保存位置", "快速截圖儲存位置", "Quick captures are saved in", "クイック撮影の保存先", "빠른 캡처 저장 위치",
+  "Dossier des captures rapides", "Ordner für Schnellaufnahmen", "Carpeta de las capturas rápidas")
+X(G_CHANGE, "更改…", "變更…", "Change…", "変更…", "변경…", "Changer…", "Ändern…", "Cambiar…")
 X(G_OPEN_DIR,
   "打开所在文件夹", "開啟資料夾", "Open folder", "フォルダーを開く", "폴더 열기", "Ouvrir le dossier",
   "Ordner öffnen", "Abrir carpeta")
@@ -572,7 +588,26 @@ X(C_HINT,
   "Sparsam: kein zusätzlicher Speicher, aber auf großen Bildschirmen mehrfach langsamer.",
   "Rápido: lee la pantalla desde la GPU y ocupa unos 50 MB de memoria del controlador.\n"
   "Ligero: sin memoria extra, pero varias veces más lento en pantallas grandes.")
+X(C_THEME, "工具栏主题:", "工具列主題:", "Toolbar theme:", "ツールバーのテーマ:", "도구 모음 테마:", "Thème de la barre :",
+  "Design der Leiste:", "Tema de la barra:")
+X(C_THEME_AUTO, "跟随系统", "跟隨系統", "Same as Windows", "Windows に合わせる", "Windows 설정 따름", "Comme Windows",
+  "Wie Windows", "Como Windows")
+X(C_THEME_LIGHT, "浅色", "淺色", "Light", "ライト", "밝게", "Clair", "Hell", "Claro")
+X(C_THEME_DARK, "深色", "深色", "Dark", "ダーク", "어둡게", "Sombre", "Dunkel", "Oscuro")
+X(C_EXIT_ASK,
+  "退出截屏时提示", "結束截圖時提示", "Ask before leaving a capture", "キャプチャ終了時に確認する", "캡처를 종료할 때 확인",
+  "Demander avant de quitter une capture", "Vor dem Verlassen einer Aufnahme fragen",
+  "Preguntar antes de salir de una captura")
+/* the question itself (main.c): its text, its box, its button */
+X(LEAVE_ASK,
+  "确认退出本次截屏？", "確定要結束這次截圖嗎？", "Leave this capture?", "このキャプチャを終了しますか？", "이 캡처를 종료할까요?",
+  "Quitter cette capture ?", "Diese Aufnahme verlassen?", "¿Salir de esta captura?")
+X(LEAVE_KEEP, "退出时提示", "結束時提示", "Ask when leaving", "終了時に確認する", "종료할 때 확인", "Demander en quittant",
+  "Beim Verlassen fragen", "Preguntar al salir")
+X(LEAVE_YES, "退出", "結束", "Leave", "終了", "종료", "Quitter", "Verlassen", "Salir")
 X(H_CAPTURE, "截屏:", "截圖:", "Capture:", "キャプチャ:", "캡처:", "Capturer :", "Aufnehmen:", "Capturar:")
+X(H_QUICK, "快速截屏:", "快速截圖:", "Quick capture:", "クイック撮影:", "빠른 캡처:", "Capture rapide :", "Schnellaufnahme:",
+  "Captura rápida:")
 X(H_PIN, "贴图:", "貼圖:", "Pin:", "ピン留め:", "고정:", "Épingler :", "Anheften:", "Fijar:")
 X(H_TOGGLE,
   "隐藏/显示所有贴图:", "隱藏/顯示所有貼圖:", "Hide/show pins:", "ピン表示切替:", "고정 표시/숨김:",
@@ -620,6 +655,9 @@ X(SC_G_PIN, "贴图", "貼圖", "Pins", "ピン留め", "고정", "Épingles", "
 X(SC_G_TIPS, "小技巧", "小技巧", "Tips", "ヒント", "팁", "Astuces", "Tipps", "Trucos")
 X(SC_START, "开始截图", "開始截圖", "Start a capture", "キャプチャ開始", "캡처 시작", "Lancer une capture",
   "Aufnahme starten", "Capturar")
+X(SC_QUICK,
+  "全屏截图并保存", "全螢幕截圖並儲存", "Save the whole screen", "全画面を保存", "전체 화면 저장",
+  "Enregistrer tout l'écran", "Ganzen Bildschirm speichern", "Guardar toda la pantalla")
 X(SC_WINDOW,
   "选中整个窗口", "選取整個視窗", "Select a whole window", "ウィンドウ全体を選択", "창 전체 선택",
   "Sélectionner une fenêtre", "Ganzes Fenster wählen", "Seleccionar una ventana")

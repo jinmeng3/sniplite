@@ -17,6 +17,9 @@ bool ov_active(void);
 void ov_pin_hotkey(void); /* pin hotkey pressed while capturing */
 void ov_cancel(void);
 bool ov_last_timing(OvTiming *t); /* false before the first capture */
+/* main.c: the user leaves (Esc, a close button). A capture that holds something may ask first. */
+void ov_leave(void);        /* the capture itself: asks when a selection is made */
+bool leave_ok(HWND owner);  /* the question alone, above owner; true: leave */
 
 /* scroll.c: the long screenshot. long_begin is called by the capture, which closes
  * right after: its selection becomes the region that grows as the user scrolls. */

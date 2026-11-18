@@ -4318,26 +4318,30 @@ FUNC draw_toolbar
         RCOPY([rsp+DT_TMP], [rsi+VIS_TB])
         mov rcx, rbx
         lea rdx, [rsp + DT_TMP]
-        mov r8d, 0xF7F7F7
+        mov rax, qword ptr [rip + ui_pal]
+        mov r8d, dword ptr [rax + P_BG*4]
         call d_fill
         RCOPY([rsp+DT_TMP], [rsi+VIS_TB])
         mov rcx, rbx
         lea rdx, [rsp + DT_TMP]
         mov r8d, 1
-        mov r9d, 0xBDBDBD
+        mov rax, qword ptr [rip + ui_pal]
+        mov r9d, dword ptr [rax + P_EDGE*4]
         call d_frame
 3:      test r13d, r13d
         jz 4f
         RCOPY([rsp+DT_TMP], [rsi+VIS_PB])
         mov rcx, rbx
         lea rdx, [rsp + DT_TMP]
-        mov r8d, 0xF7F7F7
+        mov rax, qword ptr [rip + ui_pal]
+        mov r8d, dword ptr [rax + P_BG*4]
         call d_fill
         RCOPY([rsp+DT_TMP], [rsi+VIS_PB])
         mov rcx, rbx
         lea rdx, [rsp + DT_TMP]
         mov r8d, 1
-        mov r9d, 0xBDBDBD
+        mov rax, qword ptr [rip + ui_pal]
+        mov r9d, dword ptr [rax + P_EDGE*4]
         call d_frame
 4:      mov r14d, dword ptr [rip + .Ls30]       /* bs */
         mov edi, dword ptr [rsi + VIS_TB + RC_L]        /* separators */
@@ -4367,7 +4371,8 @@ FUNC draw_toolbar
         jz 6f
         mov rcx, rbx
         lea rdx, [rsp + DT_TMP]
-        mov r8d, 0xD0D0D0
+        mov rax, qword ptr [rip + ui_pal]
+        mov r8d, dword ptr [rax + P_SEP*4]
         call d_fill
 6:      add edi, dword ptr [rip + .Ls9]
         jmp 8f
@@ -4409,7 +4414,8 @@ FUNC draw_toolbar
         jz 9f
         mov rcx, rbx
         lea rdx, [rsp + DT_TMP]
-        mov r8d, 0xD0D0D0
+        mov rax, qword ptr [rip + ui_pal]
+        mov r8d, dword ptr [rax + P_SEP*4]
         call d_fill
 9:      mov rcx, rsi
         lea rdx, [rsp + DT_ITEMS]
@@ -4454,19 +4460,20 @@ FUNC draw_toolbar
         mov r8d, dword ptr [rip + .Ls2]
         neg r8d
         call ovp_inflate
-        mov r8d, 0xCCE4F7
+        mov rax, qword ptr [rip + ui_pal]
+        mov r8d, dword ptr [rax + P_ON*4]
         test r12d, r12d
         jnz 5f
         test r13d, r13d
         jnz 6f
         cmp ebp, dword ptr Ov(OV_HOVER)
         jne 6f
-        mov r8d, 0xE5E5E5
+        mov r8d, dword ptr [rax + P_HOVER*4]
         cmp dword ptr Ov(OV_DRAG), DR_BUTTON
         jne 5f
         cmp ebp, dword ptr Ov(OV_BTN_DOWN)
         jne 5f
-        mov r8d, 0xD4D4D4
+        mov r8d, dword ptr [rax + P_DOWN*4]
 5:      mov rcx, rbx
         lea rdx, [rsp + DT_TMP]
         call d_fill
@@ -4481,13 +4488,12 @@ FUNC draw_toolbar
         xorps xmm3, xmm3
         cvtsi2ss xmm3, dword ptr [rdi + ITEM_RC + RC_T]
         addss xmm3, xmm0
-        mov eax, 0x333333                       /* ic = disabled ? B4 : active ? 005FB8 : 333 */
-        mov ecx, 0x005FB8
+        mov rdx, qword ptr [rip + ui_pal]                 /* ic = disabled ? off : active ? on : the plain one */
+        mov eax, dword ptr [rdx + P_ICON*4]
         test r12d, r12d
-        cmovnz eax, ecx
-        mov ecx, 0xB4B4B4
+        cmovnz eax, dword ptr [rdx + P_ICON_ON*4]
         test r13d, r13d
-        cmovnz eax, ecx
+        cmovnz eax, dword ptr [rdx + P_ICON_OFF*4]
         lea ecx, [rbp - T_RECT]
         cmp ecx, T_NUMBER - T_RECT
         ja 7f
@@ -4500,7 +4506,7 @@ FUNC draw_toolbar
         jne 10f
         test r13d, r13d
         jnz 10f
-        mov eax, 0x107C10
+        mov eax, dword ptr [rdx + P_OK*4]             /* rdx: still the palette */
 10:     lea edx, [rcx + DIC_UNDO]
 8:      mov dword ptr [rsp + 40], eax
         xorps xmm0, xmm0
@@ -4512,7 +4518,8 @@ FUNC draw_toolbar
 9:      lea ecx, [rbp - B_SIZE]
         cmp ecx, 2
         ja 11f
-        mov eax, 0x333333                       /* a size: a disc in the color */
+        mov r10, qword ptr [rip + ui_pal]                 /* a size: a disc in the color */
+        mov eax, dword ptr [r10 + P_ICON*4]
         cmp dword ptr [rsp + DT_PT], T_MOSAIC
         je 12f
         mov edx, dword ptr [rsp + DT_PC]
@@ -4528,9 +4535,9 @@ FUNC draw_toolbar
         imul rdx, rdx, AN_BYTES
         add rdx, qword ptr Ov(OV_ANN)
         mov eax, dword ptr [rdx + AN_COLOR]
-12:     cmp eax, 0xFFFFFF
+12:     cmp eax, dword ptr [r10 + P_HIDE*4]            /* the bar's own color would not show */
         jne 14f
-        mov eax, 0x9E9E9E
+        mov eax, dword ptr [r10 + P_SHOWN*4]
 14:     mov dword ptr [rsp + 32], eax
         mov dword ptr [rsp + 40], 255
         mov edx, dword ptr [rdi + ITEM_RC + RC_L]
@@ -4562,7 +4569,8 @@ FUNC draw_toolbar
         mov rcx, rbx
         lea rdx, [rsp + DT_TMP]
         mov r8d, dword ptr [rip + .Ls2]
-        mov r9d, 0x005FB8
+        mov rax, qword ptr [rip + ui_pal]
+        mov r9d, dword ptr [rax + P_RING*4]
         call d_frame
 15:     lea rcx, [rsp + DT_TMP]
         lea rdx, [rdi + ITEM_RC]
@@ -4582,7 +4590,8 @@ FUNC draw_toolbar
         mov rcx, rbx
         lea rdx, [rsp + DT_TMP]
         mov r8d, 1
-        mov r9d, 0x8A8A8A
+        mov rax, qword ptr [rip + ui_pal]
+        mov r9d, dword ptr [rax + P_SWATCH*4]
         call d_frame
 .Ldt_next:
         add rdi, ITEM_BYTES
@@ -4594,20 +4603,23 @@ FUNC draw_toolbar
         RCOPY([rsp+DT_TMP], [rsi+VIS_TIP])
         mov rcx, rbx
         lea rdx, [rsp + DT_TMP]
-        mov r8d, 0xFFFFFF
+        mov rax, qword ptr [rip + ui_pal]
+        mov r8d, dword ptr [rax + P_TIP_BG*4]
         call d_fill
         RCOPY([rsp+DT_TMP], [rsi+VIS_TIP])
         mov rcx, rbx
         lea rdx, [rsp + DT_TMP]
         mov r8d, 1
-        mov r9d, 0x8C8C8C
+        mov rax, qword ptr [rip + ui_pal]
+        mov r9d, dword ptr [rax + P_TIP_EDGE*4]
         call d_frame
         mov ecx, dword ptr Ov(OV_TIP)
         call tip_text
         mov r8, rax
         lea rcx, [rsp + DT_B]
         lea rdx, [rsi + VIS_TIP]
-        mov r9d, 0x1F1F1F
+        mov rax, qword ptr [rip + ui_pal]
+        mov r9d, dword ptr [rax + P_TIP_TEXT*4]
         call draw_text_in
         API GdiFlush
 .Ldt_ret:

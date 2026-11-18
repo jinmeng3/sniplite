@@ -47,6 +47,7 @@ También hay dos versiones portables, sin instalación: `sniplite_<versión>_por
 | Tecla | Qué hace |
 | --- | --- |
 | **F1** | Capturar |
+| **Shift+F1** | Captura rápida: la pantalla donde está el ratón, directamente a un archivo (la carpeta se elige en los ajustes) |
 | **F3** | Fijar en pantalla la imagen o el texto copiado |
 | **Shift+F3** | Ocultar / mostrar todas las imágenes fijadas |
 | **F4** | Capturar y leer el texto (con el módulo de reconocimiento de texto) |

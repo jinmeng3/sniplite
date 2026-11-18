@@ -12,13 +12,17 @@
 #include "settings.h"
 #include "shot.h"
 #include "update.h"
+#include "resource.h"
+#include "ov_layout.inc"
 #include <shellapi.h>
+#include <shlobj.h>
 #include <windowsx.h>
 
 #define WM_APP_TRAY (WM_APP + 2)
 #define WM_APP_SETTINGS_DONE (WM_APP + 3)
 #define TIMER_MENU_CAPTURE 1
 #define TIMER_UPDATE 2
+#define TIMER_THEME 3 /* a theme that changed during a capture waits for its end */
 #define UPDATE_FIRST_MS (60 * 1000)           /* first check a minute after start */
 #define UPDATE_EVERY_MS (24 * 60 * 60 * 1000) /* then once a day */
 
@@ -49,7 +53,12 @@ static struct {
     HANDLE settings;     /* the preferences helper process while it is open */
     bool update_timer;   /* the daily update check is scheduled */
     WCHAR update_tag[32]; /* newer release already announced in a balloon */
+    bool asking;         /* the question before a capture is left is on the screen */
 } D;
+
+extern uint8_t O[];                          /* the capture's state, laid out as ov_layout.inc says */
+extern const uint32_t kPalLight[], kPalDark[]; /* the colors of the capture's bars (ov_base.S), by P_* */
+extern const uint32_t *ui_pal;
 
 /* ---- hotkeys --------------------------------------------------------------------- */
 
@@ -160,7 +169,8 @@ static void resolve_path(const WCHAR *cwd, const WCHAR *p, WCHAR *out, int cap)
 
 static bool start_opts_parse(int argc, WCHAR **argv, StartOpts *so, Str *err)
 {
-    static const WCHAR *names[HK_COUNT] = {NULL, L"--hotkey", L"--pin-hotkey", L"--toggle-hotkey", L"--ocr-hotkey", L"--ocr-copy-hotkey"};
+    static const WCHAR *names[HK_COUNT] = {NULL,                L"--hotkey",     L"--quick-hotkey",   L"--pin-hotkey",
+                                           L"--toggle-hotkey", L"--ocr-hotkey", L"--ocr-copy-hotkey"};
     memset(so, 0, sizeof *so);
     for (int id = 1; id < HK_COUNT; id++) {
         const WCHAR *v = opt_val(argc, argv, names[id]);
@@ -227,7 +237,7 @@ static void status_text(Str *out)
 
 static void status_json(Str *out)
 {
-    static const WCHAR *keys[HK_COUNT] = {NULL, L"capture", L"pin", L"toggle_pins", L"ocr", L"ocr_copy"};
+    static const WCHAR *keys[HK_COUNT] = {NULL, L"capture", L"quick", L"pin", L"toggle_pins", L"ocr", L"ocr_copy"};
     str_addf(out, L"{\"running\":true,\"version\":\"%s\",\"pid\":%lu,\"backend\":\"%s\",\"capturing\":%s,\"pins\":%d,",
              SNIPLITE_VERSION, GetCurrentProcessId(), shot_backend(), ov_active() ? L"true" : L"false", pin_count());
     str_add(out, L"\"hotkeys\":{");
@@ -310,6 +320,32 @@ static void tray_refresh_tip(void)
     D.notify(NIM_MODIFY, &D.nid);
 }
 
+/* The capture's bars, light or dark: as the settings say, or as Windows is set for apps
+ * (where it keeps that; no other way is documented). Looked up when it can have changed,
+ * never on the way to a capture. A capture that is open keeps its look to its end. */
+static void theme_apply(void)
+{
+    typedef LSTATUS(WINAPI *PFN_RegGetValueW)(HKEY, LPCWSTR, LPCWSTR, DWORD, LPDWORD, PVOID, LPDWORD);
+    static PFN_RegGetValueW get;
+    if (ov_active()) {
+        SetTimer(D.hwnd, TIMER_THEME, 500, NULL);
+        return;
+    }
+    KillTimer(D.hwnd, TIMER_THEME);
+    bool dark = D.cfg.theme == THEME_DARK;
+    if (D.cfg.theme == THEME_AUTO) {
+        if (!get) { /* advapi32 is in every process that has a window; named, it is not one more import */
+            HMODULE a = LoadLibraryW(L"advapi32.dll");
+            get = a ? (PFN_RegGetValueW)(void *)GetProcAddress(a, "RegGetValueW") : NULL;
+        }
+        DWORD light = 1, n = sizeof light;
+        if (get && get(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize", L"AppsUseLightTheme",
+                       RRF_RT_REG_DWORD, NULL, &light, &n) == ERROR_SUCCESS)
+            dark = !light;
+    }
+    ui_pal = dark ? kPalDark : kPalLight;
+}
+
 /* Apply settings. force_keys re-registers every hotkey (after the preferences window). */
 static void apply_config(const Config *c, bool force_keys)
 {
@@ -335,6 +371,7 @@ static void apply_config(const Config *c, bool force_keys)
     }
     D.cfg = *c;
     tray_refresh_tip();
+    theme_apply();
 }
 
 /* A newer release was found by `--update-check`: say so once, in a balloon. */
@@ -675,8 +712,23 @@ static int cmd_run(int argc, WCHAR **argv, const WCHAR *cwd, Str *out)
         long_cancel();
         return EXIT_OK;
     }
-    if (arg_eq(c, L"settings")) { /* `settings update`, `settings ocr`: on that tab */
-        const WCHAR *page = argc > 1 && arg_eq(argv[1], L"update") ? L"update" : argc > 1 && arg_eq(argv[1], L"ocr") ? L"ocr" : NULL;
+    if (arg_eq(c, L"_again")) { /* sniplite was started while it runs: a capture. With the tray icon hidden,
+                                   the preferences: they have no other door then */
+        static WCHAR *capture[1] = {L"capture"};
+        if (D.cfg.tray)
+            return cmd_capture(1, capture, cwd, json, out);
+        if (!settings_open(NULL)) {
+            str_add(out, T(ERR_SETTINGS));
+            return EXIT_FAIL;
+        }
+        return EXIT_OK;
+    }
+    if (arg_eq(c, L"settings")) { /* `settings update`, `settings ocr`, `settings about`: on that tab */
+        static const WCHAR *pages[] = {L"update", L"ocr", L"about"};
+        const WCHAR *page = NULL;
+        for (int i = 0; argc > 1 && i < COUNTOF(pages); i++)
+            if (arg_eq(argv[1], pages[i]))
+                page = pages[i];
         if (!settings_open(page)) {
             str_add(out, T(ERR_SETTINGS));
             return EXIT_FAIL;
@@ -731,6 +783,97 @@ static void pin_clipboard(void)
     else
         MessageBeep(MB_ICONWARNING);
 }
+
+/* ---- the quick capture: the screen the mouse is on, into a file, at once and without a window ---- */
+
+static void quick_capture(void)
+{
+    typedef HRESULT(WINAPI *PFN_SHGetFolderPathW)(HWND, int, HANDLE, DWORD, LPWSTR);
+    static PFN_SHGetFolderPathW folder;
+    WCHAR dir[MAX_PATH], path[MAX_PATH + 80];
+    if (ov_active() || D.asking)
+        return;
+    lstrcpynW(dir, D.cfg.quick_dir, MAX_PATH);
+    if (!dir[0]) { /* none chosen: the desktop. shell32 is there already when the tray icon is shown */
+        if (!folder) {
+            HMODULE sh = LoadLibraryW(L"shell32.dll");
+            folder = sh ? (PFN_SHGetFolderPathW)(void *)GetProcAddress(sh, "SHGetFolderPathW") : NULL;
+        }
+        if (!folder || FAILED(folder(NULL, CSIDL_DESKTOPDIRECTORY, NULL, 0, dir))) {
+            MessageBeep(MB_ICONWARNING);
+            return;
+        }
+    }
+    CreateDirectoryW(dir, NULL); /* a chosen folder that is gone comes back */
+    SYSTEMTIME t; /* named like a capture saved by hand; a second one in the same second gets a number */
+    GetLocalTime(&t);
+    int n = wsprintfW(path, L"%s\\sniplite_%04d-%02d-%02d_%02d-%02d-%02d", dir, t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute,
+                      t.wSecond);
+    lstrcpyW(path + n, L".png");
+    for (int k = 2; k < 100 && GetFileAttributesW(path) != INVALID_FILE_ATTRIBUTES; k++)
+        wsprintfW(path + n, L"_%d.png", k);
+    POINT at;
+    MONITORINFO mi = {sizeof mi};
+    GetCursorPos(&at);
+    Str out = {0};
+    if (!GetMonitorInfoW(MonitorFromPoint(at, MONITOR_DEFAULTTONEAREST), &mi) ||
+        capture_now(mi.rcMonitor, path, false, false, false, &out) != EXIT_OK)
+        MessageBeep(MB_ICONWARNING); /* silent when it worked: the file is the answer */
+    str_free(&out);
+}
+
+/* ---- leaving a capture ---------------------------------------------------------------------- */
+
+static INT_PTR CALLBACK leave_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
+{
+    (void)lp;
+    switch (m) {
+    case WM_INITDIALOG:
+        if (GetWindow(h, GW_OWNER) != *(HWND *)(O + OV_HWND)) /* a long screenshot goes on beneath it: not in its picture */
+            SetWindowDisplayAffinity(h, 0x11);                /* WDA_EXCLUDEFROMCAPTURE */
+        SetDlgItemTextW(h, IDC_L_TEXT, T(LEAVE_ASK));
+        SetDlgItemTextW(h, IDC_L_ASK, T(LEAVE_KEEP));
+        SetDlgItemTextW(h, IDOK, T(LEAVE_YES));
+        SetDlgItemTextW(h, IDCANCEL, T(O_CANCEL_BTN));
+        CheckDlgButton(h, IDC_L_ASK, BST_CHECKED);
+        return TRUE;
+    case WM_COMMAND:
+        if (LOWORD(wp) == IDOK || LOWORD(wp) == IDCANCEL) {
+            if (IsDlgButtonChecked(h, IDC_L_ASK) != BST_CHECKED) { /* not again: for this run, and into the file */
+                D.cfg.exit_ask = false;
+                config_set_exit_ask(false);
+            }
+            EndDialog(h, LOWORD(wp));
+            return TRUE;
+        }
+        break;
+    }
+    return FALSE;
+}
+
+/* May a capture that holds something be left? Asked above owner while the settings want it
+ * (exit_ask); the question has a box that switches it off. */
+bool leave_ok(HWND owner)
+{
+    if (!D.cfg.exit_ask)
+        return true;
+    if (D.asking)
+        return false; /* it is being asked: that answer decides */
+    D.asking = true;
+    bool go = lang_dialog_box(D.inst, IDD_LEAVE, owner, leave_proc) == IDOK;
+    D.asking = false;
+    return go;
+}
+
+/* The user leaves the capture: Esc, the close button. With a selection made there is work to lose. */
+void ov_leave(void)
+{
+    if (*(int32_t *)(O + OV_PHASE) == PH_EDIT && !leave_ok(*(HWND *)(O + OV_HWND)))
+        return;
+    ov_cancel();
+}
+
+/* ---- the tray menu ------------------------------------------------------------------------- */
 
 enum { TM_CAPTURE = 1, TM_PIN, TM_TOGGLE, TM_CLOSE_PINS, TM_SETTINGS, TM_HELP, TM_UPDATE, TM_ABOUT, TM_EXIT };
 
@@ -789,12 +932,9 @@ static void tray_menu(POINT at)
     case TM_HELP:
         run_helper(L" --shortcuts", false);
         break;
-    case TM_ABOUT: {
-        WCHAR t[200];
-        wsprintfW(t, L"sniplite " SNIPLITE_VERSION L"\n%s\n\nMIT License", T(TAGLINE));
-        MessageBoxW(NULL, t, T(M_ABOUT), MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND);
+    case TM_ABOUT:
+        settings_open(L"about");
         break;
-    }
     case TM_EXIT:
         PostMessageW(D.hwnd, WM_CLOSE, 0, 0);
         break;
@@ -836,7 +976,13 @@ static LRESULT CALLBACK daemon_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
             SetTimer(h, TIMER_UPDATE, UPDATE_EVERY_MS, NULL);
             if (D.cfg.auto_update && D.cfg.tray)
                 run_helper(L" --update-check", true);
+        } else if (wp == TIMER_THEME) {
+            theme_apply();
         }
+        return 0;
+    case WM_SETTINGCHANGE: /* Windows went dark or light */
+        if (lp && !lstrcmpW((const WCHAR *)lp, L"ImmersiveColorSet"))
+            theme_apply();
         return 0;
     case WM_APP_SETTINGS_DONE:
         settings_done();
@@ -845,6 +991,9 @@ static LRESULT CALLBACK daemon_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
         if (wp == HK_CAPTURE) {
             if (!ov_active())
                 ov_begin();
+        } else if (D.asking) { /* a capture is waiting for its answer: nothing else happens to it */
+        } else if (wp == HK_QUICK) {
+            quick_capture();
         } else if (wp == HK_PIN) {
             if (ov_active())
                 ov_pin_hotkey();
@@ -1017,7 +1166,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmdline, int show)
 
     HANDLE mutex = CreateMutexW(NULL, FALSE, DAEMON_MUTEX);
     if (mutex && GetLastError() == ERROR_ALREADY_EXISTS) {
-        /* Already running: act as a client. No arguments = start a capture. */
+        /* Already running: act as a client. No arguments: what a second start does (cmd_run, "_again"). */
         if (from_cli)
             return EXIT_OK;
         HWND d = NULL;
@@ -1025,9 +1174,9 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmdline, int show)
             Sleep(10);
         if (!d)
             return EXIT_FAIL;
-        WCHAR *cap[1] = {L"capture"};
+        WCHAR *again[1] = {L"_again"};
         Str reply = {0};
-        int code = ac ? ipc_call(d, ac, av, &reply) : ipc_call(d, 1, cap, &reply);
+        int code = ac ? ipc_call(d, ac, av, &reply) : ipc_call(d, 1, again, &reply);
         if (code != 0 && reply.n)
             MessageBoxW(NULL, reply.p, L"sniplite", MB_OK | MB_ICONWARNING);
         str_free(&reply);

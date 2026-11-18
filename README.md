@@ -47,6 +47,7 @@ There are two portable versions too, with nothing to install: `sniplite_<version
 | Key | What it does |
 | --- | --- |
 | **F1** | Capture |
+| **Shift+F1** | Quick capture: the screen under the mouse straight into a file (the folder is set in Settings) |
 | **F3** | Pin the copied image or text to the screen |
 | **Shift+F3** | Hide / show all pins |
 | **F4** | Capture and read the text (with the text recognition module) |

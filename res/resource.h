@@ -35,12 +35,10 @@
 #define IDC_HK_LABEL1 137
 #define IDC_HK_LABEL2 138
 #define IDC_HK_LABEL3 139
-#define IDC_PIN_TOP 145
 #define IDC_TAGLINE 146
 #define IDC_LICENSE 147
 #define IDC_HK_LABEL4 148
 #define IDC_HK_LABEL5 149
-#define IDC_PROJECT 165 /* the About page: opens the project's page */
 
 /* explicit per-row ids (resource scripts cannot do arithmetic reliably) */
 #define IDC_HK_FIELD1 140
@@ -48,16 +46,19 @@
 #define IDC_HK_FIELD3 142
 #define IDC_HK_FIELD4 143
 #define IDC_HK_FIELD5 144
+#define IDC_HK_FIELD6 145
 #define IDC_HK_CLEAR1 150
 #define IDC_HK_CLEAR2 151
 #define IDC_HK_CLEAR3 152
 #define IDC_HK_CLEAR4 153
 #define IDC_HK_CLEAR5 154
+#define IDC_HK_CLEAR6 155
 #define IDC_HK_STATE1 160
 #define IDC_HK_STATE2 161
 #define IDC_HK_STATE3 162
 #define IDC_HK_STATE4 163
 #define IDC_HK_STATE5 164
+#define IDC_HK_STATE6 165
 
 #define IDD_SHORTCUTS 170
 #define IDC_LIST 171
@@ -77,6 +78,22 @@
 #define IDC_O_REMOVE 189
 #define IDC_O_BAR 190
 #define IDC_O_STATUS 191
+
+/* preferences, more: ids that are free between the pages above and the installer */
+#define IDC_PIN_TOP 192
+#define IDC_PROJECT 193 /* the About page: opens the project's page */
+#define IDC_HK_LABEL6 194
+#define IDC_EXIT_ASK 195
+#define IDC_THEME 196
+#define IDC_THEME_LABEL 197
+#define IDC_QUICK_LABEL 198
+#define IDC_QUICK_DIR 199
+#define IDC_QUICK_PICK 220
+
+/* the question before a capture is left (main.c) */
+#define IDD_LEAVE 114
+#define IDC_L_TEXT 221
+#define IDC_L_ASK 222
 
 /* installer */
 #define IDD_SETUP 200

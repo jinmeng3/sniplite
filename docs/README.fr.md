@@ -47,6 +47,7 @@ Il existe aussi deux versions portables, sans installation : `sniplite_<version>
 | Touche | Action |
 | --- | --- |
 | **F1** | Capturer |
+| **Shift+F1** | Capture rapide : l'écran où se trouve la souris, directement dans un fichier (dossier à choisir dans les préférences) |
 | **F3** | Épingler à l'écran l'image ou le texte copié |
 | **Shift+F3** | Masquer / afficher toutes les épingles |
 | **F4** | Capturer et lire le texte (avec le module de reconnaissance de texte) |

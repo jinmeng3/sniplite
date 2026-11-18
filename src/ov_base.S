@@ -59,6 +59,9 @@
 tb_order:       .quad kTbOrder
         .globl tb_count
 tb_count:       .long TB_ITEMS
+        .balign 8
+        .globl ui_pal
+ui_pal:         .quad kPalLight         /* the bars' colors: light until main.c says dark */
 
         .section .bss$ov_base,"bw"
         .balign 32
@@ -104,6 +107,13 @@ kTbOrder:       .long T_RECT, T_ELLIPSE, T_LINE, T_ARROW, T_PEN, T_MARKER, T_MOS
         .globl kTbPlain
 kTbPlain:       .long T_RECT, T_ELLIPSE, T_LINE, T_ARROW, T_PEN, T_MARKER, T_MOSAIC, T_TEXT, T_NUMBER
                 .long -1, B_UNDO, B_REDO, -1, B_LONG, B_QR, B_PIN, B_SAVE, B_CLOSE, B_OK
+/* the bars' colors, by P_* (ov_layout.inc) */
+        .globl kPalLight
+kPalLight:      .long 0xF7F7F7, 0xBDBDBD, 0xD0D0D0, 0xCCE4F7, 0xE5E5E5, 0xD4D4D4, 0x333333, 0x005FB8, 0xB4B4B4, 0x107C10
+                .long 0xFFFFFF, 0x9E9E9E, 0x005FB8, 0x8A8A8A, 0xFFFFFF, 0x8C8C8C, 0x1F1F1F, 0x505050, 0xC06000, 0x1A8CFF
+        .globl kPalDark
+kPalDark:       .long 0x2B2B2B, 0x4F4F4F, 0x4A4A4A, 0x1F4E79, 0x3D3D3D, 0x4A4A4A, 0xE4E4E4, 0x8CC8FF, 0x6A6A6A, 0x6CCB5F
+                .long 0x000000, 0x7A7A7A, 0x8CC8FF, 0x767676, 0x2B2B2B, 0x5A5A5A, 0xF0F0F0, 0xCFCFCF, 0xFFB060, 0x60B0FF
         .globl kColors
 kColors:        .long 0xE53935, 0xFB8C00, 0xFDD835, 0x43A047, 0x1E88E5, 0x8E24AA, 0x000000, 0xFFFFFF
 /* tool_px indexes these five as one table: keep them together, in this order */

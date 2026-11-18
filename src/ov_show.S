@@ -2265,7 +2265,7 @@ FUNC on_button
         jne .Lob_refresh
         add rsp, 32
         pop rbx
-        jmp ov_cancel
+        jmp ov_leave                    /* the user leaves, which may ask first (main.c) */
 .Lob_finish:
         add rsp, 32
         pop rbx
