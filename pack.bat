@@ -1,5 +1,5 @@
 @echo off
-rem Release files, into build\dist. Run build.bat first.
+rem The three files of a release, into build\dist. Run build.bat first.
 rem
 rem   sniplite_win_setup_amd64.exe                    the installer. Its name never changes: installed
 rem                                                   copies ask for it by name when they update
@@ -44,7 +44,7 @@ for %%f in (%ZIP%) do if not "%%~zf"=="%BYTES%" (
 copy /y build\sniplite_win_setup_amd64.exe %D% >nul || exit /b 1
 copy /y build\sniplite.exe %D%\sniplite_%V%_portable_x64.exe >nul || exit /b 1
 copy /y build\sniplite_qr.exe %D%\sniplite_qr.exe >nul || exit /b 1
-copy /y third_party\quirc\LICENSE %D%\LICENSE-quirc.txt >nul || exit /b 1
+copy /y third_party\zxing-cpp\LICENSE %D%\LICENSE-ZXing.txt >nul || exit /b 1
 copy /b /y build\sniplite.exe + %ZIP% %D%\sniplite_%V%_portable_with_OCR_x64.exe >nul || exit /b 1
 
 for %%f in (%D%\*) do echo %%~nxf  %%~zf bytes

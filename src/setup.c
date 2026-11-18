@@ -171,12 +171,12 @@ static void stop_running(void)
     }
 }
 
-/* Program files and the QR decoder license, embedded as resources. */
+/* Program files and the ZXing license, embedded as resources. */
 static const struct {
     int id;
     const WCHAR *name;
 } kFiles[] = {{IDR_APP_EXE, L"sniplite.exe"}, {IDR_APP_COM, L"sniplite.com"},
-              {IDR_APP_QR, L"sniplite_qr.exe"}, {IDR_QR_LICENSE, L"LICENSE-quirc.txt"}};
+              {IDR_APP_QR, L"sniplite_qr.exe"}, {IDR_QR_LICENSE, L"LICENSE-ZXing.txt"}};
 static bool g_had[4]; /* the file existed and was moved to *.old by swap() */
 
 static bool paths(int i, WCHAR *path, WCHAR *tmp, WCHAR *old)

@@ -13,7 +13,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "../third_party/quirc/lib/quirc.h"
+#include "../third_party/zxing-cpp/core/src/ZXingC.h"
 
 #define MAX_PIXELS (16u * 1024u * 1024u)
 
@@ -93,79 +93,6 @@ static HRESULT image_read_raw(UINT width, UINT height, Image *im)
     return S_OK;
 }
 
-static int decode_gray(const uint8_t *pixels, int width, int height)
-{
-    struct quirc *q = quirc_new();
-    if (!q) {
-        fwprintf(stderr, L"QR decoder could not allocate image buffers.\n");
-        return 1;
-    }
-    if (quirc_resize(q, width, height) < 0) {
-        quirc_destroy(q);
-        fwprintf(stderr, L"QR decoder could not allocate image buffers.\n");
-        return 1;
-    }
-    int w, h;
-    uint8_t *gray = quirc_begin(q, &w, &h);
-    for (int y = 0; y < height; y++)
-        memcpy(gray + (size_t)y * w, pixels + (size_t)y * width, width);
-    quirc_end(q);
-
-    int found = 0;
-    HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
-    for (int i = 0; i < quirc_count(q); i++) {
-        struct quirc_code code;
-        struct quirc_data data;
-        quirc_extract(q, i, &code);
-        if (quirc_decode(&code, &data) != QUIRC_SUCCESS)
-            continue;
-        if (found++) {
-            static const char sep[] = "\r\n";
-            DWORD wrote;
-            WriteFile(out, sep, sizeof(sep) - 1, &wrote, NULL);
-        }
-        DWORD wrote;
-        if (data.payload_len)
-            WriteFile(out, data.payload, (DWORD)data.payload_len, &wrote, NULL);
-    }
-    if (found) {
-        static const char end[] = "\r\n";
-        DWORD wrote;
-        WriteFile(out, end, sizeof(end) - 1, &wrote, NULL);
-    }
-    quirc_destroy(q);
-    return found ? 0 : 4;
-}
-
-static int decode_scaled(const uint8_t *gray, UINT width, UINT height)
-{
-    size_t count = (size_t)width * height;
-    int rc = decode_gray(gray, (int)width, (int)height);
-    for (int scale = 2; rc == 4 && scale <= 4; scale++) {
-        uint64_t scaled_count = count * (uint64_t)scale * scale;
-        if (scaled_count > MAX_PIXELS || width > (UINT)(INT_MAX / scale) ||
-                height > (UINT)(INT_MAX / scale))
-            continue;
-        int sw = (int)width * scale, sh = (int)height * scale;
-        uint8_t *scaled = malloc((size_t)scaled_count);
-        if (!scaled) {
-            fwprintf(stderr, L"QR decoder could not allocate image buffers.\n");
-            return 1;
-        }
-        for (UINT y = 0; y < height; y++) {
-            for (int dy = 0; dy < scale; dy++) {
-                uint8_t *row = scaled + ((size_t)y * scale + dy) * sw;
-                const uint8_t *src = gray + (size_t)y * width;
-                for (UINT x = 0; x < width; x++)
-                    memset(row + (size_t)x * scale, src[x], scale);
-            }
-        }
-        rc = decode_gray(scaled, sw, sh);
-        free(scaled);
-    }
-    return rc;
-}
-
 static int decode_image(const Image *im)
 {
     size_t count = (size_t)im->width * im->height;
@@ -181,11 +108,69 @@ static int decode_image(const Image *im)
             gray[(size_t)y * im->width + x] = (uint8_t)((77 * r + 150 * g + 29 * b) >> 8);
         }
     }
-    int rc = decode_scaled(gray, im->width, im->height);
+
+    ZXing_ImageView *view = ZXing_ImageView_new_checked(gray, (int)count,
+            (int)im->width, (int)im->height, ZXing_ImageFormat_Lum, (int)im->width, 1);
+    ZXing_ReaderOptions *options = ZXing_ReaderOptions_new();
+    if (!view || !options) {
+        if (view) ZXing_ImageView_delete(view);
+        if (options) ZXing_ReaderOptions_delete(options);
+        free(gray);
+        fwprintf(stderr, L"QR decoder could not allocate image buffers.\n");
+        return 1;
+    }
+
+    const ZXing_BarcodeFormat format = ZXing_BarcodeFormat_QRCode;
+    ZXing_ReaderOptions_setFormats(options, &format, 1);
+    ZXing_ReaderOptions_setTryHarder(options, true);
+    ZXing_ReaderOptions_setTryRotate(options, true);
+    ZXing_ReaderOptions_setTryInvert(options, true);
+    ZXing_ReaderOptions_setTryDownscale(options, true);
+    ZXing_ReaderOptions_setMaxNumberOfSymbols(options, 32);
+    ZXing_Barcodes *barcodes = ZXing_ReadBarcodes(view, options);
+    ZXing_ReaderOptions_delete(options);
+    ZXing_ImageView_delete(view);
     free(gray);
-    if (rc == 4)
+    if (!barcodes) {
+        char *message = ZXing_LastErrorMsg();
+        if (message) {
+            fprintf(stderr, "ZXing error: %s\n", message);
+            ZXing_free(message);
+        } else {
+            fwprintf(stderr, L"QR decoder failed.\n");
+        }
+        return 1;
+    }
+
+    int found = 0;
+    HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
+    for (int i = 0; i < ZXing_Barcodes_size(barcodes); i++) {
+        const ZXing_Barcode *barcode = ZXing_Barcodes_at(barcodes, i);
+        if (!ZXing_Barcode_isValid(barcode))
+            continue;
+        int length = 0;
+        uint8_t *payload = ZXing_Barcode_bytes(barcode, &length);
+        if (!payload)
+            continue;
+        if (found++) {
+            static const char sep[] = "\r\n";
+            DWORD wrote;
+            WriteFile(out, sep, sizeof(sep) - 1, &wrote, NULL);
+        }
+        DWORD wrote;
+        if (length > 0)
+            WriteFile(out, payload, (DWORD)length, &wrote, NULL);
+        ZXing_free(payload);
+    }
+    if (found) {
+        static const char end[] = "\r\n";
+        DWORD wrote;
+        WriteFile(out, end, sizeof(end) - 1, &wrote, NULL);
+    }
+    ZXing_Barcodes_delete(barcodes);
+    if (!found)
         fwprintf(stderr, L"No readable QR code found.\n");
-    return rc;
+    return found ? 0 : 4;
 }
 
 int wmain(int argc, WCHAR **argv)
