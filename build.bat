@@ -3,10 +3,11 @@ rem Build sniplite: x86-64 assembly where speed matters (capture, composition, d
 rem the capture overlay, images: src\*.S, GNU as through gcc) and C for the rest
 rem (src\*.c). No C runtime: src\crt.c has the few library functions the C uses.
 rem Each program carries its texts in every language (src\lang.c, src\lang_text.h).
-rem Needs MinGW-w64 binutils and gcc on PATH (e.g. w64devkit). Output goes to build\.
+rem Uses the project-local w64devkit when present, otherwise MinGW-w64 on PATH. Output goes to build\.
 setlocal
 cd /d "%~dp0"
-where gcc >nul 2>nul || (echo gcc not found: put MinGW-w64 ^(e.g. w64devkit^) on PATH & exit /b 1)
+if exist "%~dp0w64devkit\bin\gcc.exe" set "PATH=%~dp0w64devkit\bin;%PATH%"
+where gcc >nul 2>nul || (echo gcc not found: put w64devkit in the project root or install MinGW-w64 on PATH & exit /b 1)
 if not exist build mkdir build
 
 rem src\start.S is the entry point (start); every program links only what it uses.
@@ -26,10 +27,17 @@ gcc %CF% -Wl,--subsystem,windows -o build\sniplite.exe src\start.S src\main.c sr
 gcc %CF% -DCONSOLE -Wl,--subsystem,console -o build\sniplite.com src\start.S src\cli.c src\update.c src\util.c ^
  src\ipc.c src\lang.c src\crt.c build\cli.res %LDFLAGS% -lkernel32 -luser32 -lgdi32 -lgcc || exit /b 1
 
-rem The installer carries both files above as resources, so it is built last.
+rem A separate console helper keeps the optional QR decoder and its C runtime out of the
+rem small, no-CRT screenshot program.
+gcc %CF% -municode -Wl,--subsystem,console -o build\sniplite_qr.exe src\qr_main.c ^
+ third_party\quirc\lib\quirc.c third_party\quirc\lib\identify.c ^
+ third_party\quirc\lib\decode.c third_party\quirc\lib\version_db.c ^
+ -lole32 -luuid -lwindowscodecs -lm || exit /b 1
+
+rem The installer carries the screenshot program, CLI, and QR helper as resources, so it is built last.
 windres --input-format=rc -O coff -I res -I build res\setup.rc build\setup.res || exit /b 1
 gcc %CF% -DSETUP -Wl,--subsystem,windows -o build\sniplite_win_setup_amd64.exe src\start.S src\setup.c ^
  src\util.c src\lang.c src\crt.c build\setup.res %LDFLAGS% -lkernel32 -luser32 -lgdi32 -lole32 -lshell32 -ladvapi32 -luuid -lgcc ^
  || exit /b 1
 
-for %%f in (build\sniplite.exe build\sniplite.com build\sniplite_win_setup_amd64.exe) do echo %%~nxf  %%~zf bytes
+for %%f in (build\sniplite.exe build\sniplite.com build\sniplite_qr.exe build\sniplite_win_setup_amd64.exe) do echo %%~nxf  %%~zf bytes

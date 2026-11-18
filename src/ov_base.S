@@ -99,11 +99,11 @@ O:      .space OV_BYTES
 
         .globl kTbOrder
 kTbOrder:       .long T_RECT, T_ELLIPSE, T_LINE, T_ARROW, T_PEN, T_MARKER, T_MOSAIC, T_TEXT, T_NUMBER
-                .long -1, B_UNDO, B_REDO, -1, B_LONG, B_OCR, B_OCRCOPY, B_PIN, B_SAVE, B_CLOSE, B_OK
+                .long -1, B_UNDO, B_REDO, -1, B_LONG, B_QR, B_OCR, B_OCRCOPY, B_PIN, B_SAVE, B_CLOSE, B_OK
 /* the same without the two text buttons: while the text recognition module is not installed */
         .globl kTbPlain
 kTbPlain:       .long T_RECT, T_ELLIPSE, T_LINE, T_ARROW, T_PEN, T_MARKER, T_MOSAIC, T_TEXT, T_NUMBER
-                .long -1, B_UNDO, B_REDO, -1, B_LONG, B_PIN, B_SAVE, B_CLOSE, B_OK
+                .long -1, B_UNDO, B_REDO, -1, B_LONG, B_QR, B_PIN, B_SAVE, B_CLOSE, B_OK
         .globl kColors
 kColors:        .long 0xE53935, 0xFB8C00, 0xFDD835, 0x43A047, 0x1E88E5, 0x8E24AA, 0x000000, 0xFFFFFF
 /* tool_px indexes these five as one table: keep them together, in this order */

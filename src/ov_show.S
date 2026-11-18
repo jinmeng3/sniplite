@@ -2236,6 +2236,11 @@ FUNC on_button
         call redo
         jmp .Lob_refresh
 5:
+        cmp ebx, B_QR
+        jne 51f
+        call qr_scan
+        jmp .Lob_refresh
+51:
         cmp ebx, B_OCR
         jne 6f
         call ocr_panel                  /* the text panel beside the selection (ocr_ui.c) */

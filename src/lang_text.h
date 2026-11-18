@@ -809,6 +809,16 @@ X(TIP_OCRCOPY, "复制文字  Ctrl+Shift+C", "複製文字  Ctrl+Shift+C", "Copy
   "Copiar texto  Ctrl+Shift+C")
 X(TIP_LONG, "长截图  Ctrl+L", "長截圖  Ctrl+L", "Scrolling capture  Ctrl+L", "スクロールキャプチャ  Ctrl+L", "스크롤 캡처  Ctrl+L",
   "Capture défilante  Ctrl+L", "Scrollaufnahme  Ctrl+L", "Captura con desplazamiento  Ctrl+L")
+X(TIP_QR, "识别二维码  Ctrl+Q", "辨識 QR Code  Ctrl+Q", "Read QR code  Ctrl+Q", "QRコードを読み取る  Ctrl+Q", "QR 코드 인식  Ctrl+Q",
+  "Lire le QR code  Ctrl+Q", "QR-Code lesen  Ctrl+Q", "Leer código QR  Ctrl+Q")
+X(QR_NO_CODE, "选区里没有可识别的二维码。", "選取範圍內沒有可辨識的 QR Code。", "No readable QR code in the selection.",
+  "選択範囲に読み取れるQRコードがありません。", "선택 영역에서 읽을 수 있는 QR 코드가 없습니다.",
+  "Aucun QR code lisible dans la sélection.", "Kein lesbarer QR-Code in der Auswahl.", "No hay un código QR legible en la selección.")
+X(QR_ERROR, "二维码识别失败，或结果太长。", "QR Code 辨識失敗，或結果太長。", "QR reading failed or the result is too long.",
+  "QRコードを読み取れないか、結果が長すぎます。", "QR 코드를 읽지 못했거나 결과가 너무 깁니다.",
+  "Échec de lecture ou résultat trop long.", "QR-Code-Lesen fehlgeschlagen oder Ergebnis zu lang.", "Falló la lectura o el resultado es demasiado largo.")
+X(QR_TITLE, "二维码内容", "QR Code 內容", "QR code contents", "QRコードの内容", "QR 코드 내용",
+  "Contenu du QR code", "QR-Code-Inhalt", "Contenido del código QR")
 /* the three sizes */
 X(TIP_SIZE0, "细  (滚轮调节)", "細  (滾輪調整)", "Thin  (wheel to change)", "細い  (ホイールで調整)",
   "가늘게  (휠로 조절)", "Fin  (molette pour changer)", "Dünn  (Mausrad zum Ändern)", "Fino  (rueda para cambiar)")

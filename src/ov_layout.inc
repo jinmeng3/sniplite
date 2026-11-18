@@ -51,8 +51,9 @@
 #define B_OCR                        26
 #define B_OCRCOPY                    27
 #define B_LONG                       28
-#define B_LAST                       B_LONG /* the commands are B_UNDO .. B_LAST */
-#define TB_ITEMS                     20    /* entries of kTbOrder, separators included; kTbPlain has two less */
+#define B_QR                         29
+#define B_LAST                       B_QR /* the commands are B_UNDO .. B_LAST */
+#define TB_ITEMS                     21    /* entries of kTbOrder, separators included; kTbPlain has two less */
 #define B_SIZE                       40
 #define B_COLOR                      50
 #define ACT_COPY                     0

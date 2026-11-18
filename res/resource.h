@@ -88,3 +88,5 @@
 #define IDC_S_BROWSE 206
 #define IDR_APP_EXE 210
 #define IDR_APP_COM 211
+#define IDR_APP_QR 212
+#define IDR_QR_LICENSE 213

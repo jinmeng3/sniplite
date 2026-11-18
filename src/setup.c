@@ -171,12 +171,13 @@ static void stop_running(void)
     }
 }
 
-/* The two program files, embedded as resources. */
+/* Program files and the QR decoder license, embedded as resources. */
 static const struct {
     int id;
     const WCHAR *name;
-} kFiles[] = {{IDR_APP_EXE, L"sniplite.exe"}, {IDR_APP_COM, L"sniplite.com"}};
-static bool g_had[2]; /* the file existed and was moved to *.old by swap() */
+} kFiles[] = {{IDR_APP_EXE, L"sniplite.exe"}, {IDR_APP_COM, L"sniplite.com"},
+              {IDR_APP_QR, L"sniplite_qr.exe"}, {IDR_QR_LICENSE, L"LICENSE-quirc.txt"}};
+static bool g_had[4]; /* the file existed and was moved to *.old by swap() */
 
 static bool paths(int i, WCHAR *path, WCHAR *tmp, WCHAR *old)
 {
@@ -280,9 +281,18 @@ static bool install(int autostart, bool ocr)
             return false;
         }
     stop_running();
-    bool ok = swap(0); /* both files are replaced, or neither */
+    bool ok = swap(0);
     if (ok && !(ok = swap(1)))
         unswap(0);
+    if (ok && !(ok = swap(2))) {
+        unswap(1);
+        unswap(0);
+    }
+    if (ok && !(ok = swap(3))) {
+        unswap(2);
+        unswap(1);
+        unswap(0);
+    }
     delete_new();
     if (ok) {
         WCHAR menu[MAX_PATH], lnk[MAX_PATH];

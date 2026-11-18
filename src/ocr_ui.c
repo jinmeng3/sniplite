@@ -230,6 +230,116 @@ static Pic selection(RECT *at)
     return pic;
 }
 
+void qr_scan(void)
+{
+    if (OV_I32(OV_PHASE) == PH_SELECT) {
+        if (*(uint8_t *)(O + OV_LDOWN))
+            return;
+        RECT r = *OV_RC(OV_SEL);
+        if (r.right <= r.left || r.bottom <= r.top)
+            return;
+        enter_edit(&r);
+    }
+    if (OV_I32(OV_PHASE) != PH_EDIT || OV_I32(OV_DRAG) != DR_NONE)
+        return;
+
+    RECT screen_at;
+    Pic pic = selection(&screen_at);
+    int w = pic.r.right - pic.r.left, h = pic.r.bottom - pic.r.top;
+    if (w <= 0 || h <= 0 || (uint64_t)w * h > 16u * 1024u * 1024u) {
+        MessageBoxW(*(HWND *)(O + OV_HWND), T(QR_ERROR), T(QR_TITLE), MB_OK | MB_ICONERROR);
+        return;
+    }
+    size_t bytes = (size_t)w * h * 4;
+    uint32_t *pixels = VirtualAlloc(NULL, bytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    if (!pixels) {
+        MessageBoxW(*(HWND *)(O + OV_HWND), T(QR_ERROR), T(QR_TITLE), MB_OK | MB_ICONERROR);
+        return;
+    }
+    shot_copy(pic.sh, pic.r, pixels, w);
+
+    WCHAR path[MAX_PATH], command[MAX_PATH + 64];
+    DWORD n = GetModuleFileNameW(NULL, path, COUNTOF(path));
+    if (!n || n >= COUNTOF(path))
+        goto failed;
+    int slash = -1;
+    for (DWORD i = 0; i < n; i++)
+        if (path[i] == L'\\' || path[i] == L'/')
+            slash = (int)i;
+    if (slash < 0 || slash + 1 + lstrlenW(L"sniplite_qr.exe") >= COUNTOF(path))
+        goto failed;
+    lstrcpyW(path + slash + 1, L"sniplite_qr.exe");
+    wsprintfW(command, L"\"%s\" --raw %d %d", path, w, h);
+
+    SECURITY_ATTRIBUTES sa = {sizeof(sa), NULL, TRUE};
+    HANDLE child_in = NULL, parent_in = NULL, parent_out = NULL, child_out = NULL;
+    if (!CreatePipe(&child_in, &parent_in, &sa, 0) ||
+            !CreatePipe(&parent_out, &child_out, &sa, 0))
+        goto pipe_failed;
+    SetHandleInformation(parent_in, HANDLE_FLAG_INHERIT, 0);
+    SetHandleInformation(parent_out, HANDLE_FLAG_INHERIT, 0);
+    STARTUPINFOW si = {0};
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdInput = child_in;
+    si.hStdOutput = child_out;
+    si.hStdError = GetStdHandle(STD_ERROR_HANDLE);
+    PROCESS_INFORMATION pi = {0};
+    if (!CreateProcessW(path, command, NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi))
+        goto pipe_failed;
+    CloseHandle(child_in); child_in = NULL;
+    CloseHandle(child_out); child_out = NULL;
+    DWORD sent = 0;
+    bool wrote = WriteFile(parent_in, pixels, (DWORD)bytes, &sent, NULL) && sent == bytes;
+    CloseHandle(parent_in); parent_in = NULL;
+    VirtualFree(pixels, 0, MEM_RELEASE); pixels = NULL;
+    if (!wrote)
+        TerminateProcess(pi.hProcess, 1);
+
+    char output[65536];
+    DWORD used = 0, got = 0;
+    bool too_long = false;
+    while (ReadFile(parent_out, output + used, sizeof(output) - 1 - used, &got, NULL) && got) {
+        used += got;
+        if (used == sizeof(output) - 1) {
+            too_long = true;
+            char discard[4096];
+            while (ReadFile(parent_out, discard, sizeof(discard), &got, NULL) && got) {}
+            break;
+        }
+    }
+    CloseHandle(parent_out); parent_out = NULL;
+    WaitForSingleObject(pi.hProcess, INFINITE);
+    DWORD code = 1;
+    GetExitCodeProcess(pi.hProcess, &code);
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    if (!wrote || code != 0 || too_long) {
+        MessageBoxW(*(HWND *)(O + OV_HWND), code == 4 ? T(QR_NO_CODE) : T(QR_ERROR),
+                    T(QR_TITLE), MB_OK | (code == 4 ? MB_ICONINFORMATION : MB_ICONERROR));
+        return;
+    }
+    output[used] = 0;
+    WCHAR text[65536];
+    int chars = MultiByteToWideChar(CP_UTF8, 0, output, (int)used, text, COUNTOF(text) - 1);
+    if (chars <= 0) {
+        MessageBoxW(*(HWND *)(O + OV_HWND), T(QR_ERROR), T(QR_TITLE), MB_OK | MB_ICONERROR);
+        return;
+    }
+    text[chars] = 0;
+    MessageBoxW(*(HWND *)(O + OV_HWND), text, T(QR_TITLE), MB_OK | MB_ICONINFORMATION);
+    return;
+
+pipe_failed:
+    if (child_in) CloseHandle(child_in);
+    if (parent_in) CloseHandle(parent_in);
+    if (parent_out) CloseHandle(parent_out);
+    if (child_out) CloseHandle(child_out);
+failed:
+    if (pixels) VirtualFree(pixels, 0, MEM_RELEASE);
+    MessageBoxW(*(HWND *)(O + OV_HWND), T(QR_ERROR), T(QR_TITLE), MB_OK | MB_ICONERROR);
+}
+
 void ocr_follow(void)
 {
     if (H.then) { /* a text capture: once the selection is made, from the message loop (this is inside a repaint) */

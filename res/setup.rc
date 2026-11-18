@@ -8,6 +8,8 @@ IDI_APP ICON "sniplite.ico"
 /* the program itself, built first by build.bat */
 IDR_APP_EXE RCDATA "sniplite.exe"
 IDR_APP_COM RCDATA "sniplite.com"
+IDR_APP_QR RCDATA "sniplite_qr.exe"
+IDR_QR_LICENSE RCDATA "third_party/quirc/LICENSE"
 
 /* Places and sizes only: the texts come from src/lang_text.h and the font is replaced
  * by the one of the language in use (src/lang.c). */

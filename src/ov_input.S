@@ -68,6 +68,7 @@
 #define K_D 0x44                        /* = 'D' */
 #define K_L 0x4C                        /* = 'L' */
 #define K_O 0x4F                        /* = 'O' */
+#define K_Q 0x51                        /* = 'Q' */
 #define K_S 0x53                        /* = 'S' */
 #define K_T 0x54                        /* = 'T' */
 #define K_V 0x56                        /* = 'V' */
@@ -1002,6 +1003,8 @@ FUNC on_key
         je .Lky_pin
         cmp ebx, K_O
         je .Lky_ocr
+        cmp ebx, K_Q
+        je .Lky_qr
         cmp ebx, K_L
         je .Lky_long
         cmp ebx, K_Z
@@ -1079,6 +1082,9 @@ FUNC on_key
         jmp .Lky_finish
 .Lky_ocr:
         call ocr_panel                  /* the text panel, shown or hidden */
+        jmp .Lky_refresh
+.Lky_qr:
+        call qr_scan
         jmp .Lky_refresh
 .Lky_copy:
         mov ecx, ACT_COPY

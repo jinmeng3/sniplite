@@ -1,10 +1,11 @@
 @echo off
-rem The three files of a release, into build\dist. Run build.bat first.
+rem Release files, into build\dist. Run build.bat first.
 rem
 rem   sniplite_win_setup_amd64.exe                    the installer. Its name never changes: installed
 rem                                                   copies ask for it by name when they update
 rem   sniplite_<version>_portable_x64.exe             sniplite.exe by itself: nothing to install, it runs
-rem                                                   from wherever it is put
+rem                                                   from wherever it is put; keep sniplite_qr.exe beside it
+rem   sniplite_qr.exe                                 shared QR reader used by the portable executables
 rem   sniplite_<version>_portable_with_OCR_x64.exe    the same program carrying the text recognition
 rem                                                   module: a zip of the ocr folder is put after it,
 rem                                                   and it unpacks that beside itself when text is
@@ -38,6 +39,8 @@ mkdir %Z%\ocr || exit /b 1
 
 copy /y build\sniplite_win_setup_amd64.exe %D% >nul || exit /b 1
 copy /y build\sniplite.exe %D%\sniplite_%V%_portable_x64.exe >nul || exit /b 1
+copy /y build\sniplite_qr.exe %D%\sniplite_qr.exe >nul || exit /b 1
+copy /y third_party\quirc\LICENSE %D%\LICENSE-quirc.txt >nul || exit /b 1
 
 for %%f in (onnxruntime.dll PP-OCRv6_det_tiny.onnx PP-OCRv6_rec_tiny.onnx) do copy /y build\ocr\%%f %Z%\ocr >nul || exit /b 1
 copy /y res\ocr-notice.txt %Z%\ocr\NOTICE.txt >nul || exit /b 1
