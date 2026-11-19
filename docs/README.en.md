@@ -37,7 +37,7 @@ Get the current version from [GitHub Releases](https://github.com/jinmeng3/snipl
 - [QR portable package](https://github.com/jinmeng3/sniplite/releases/download/v1.4.1/sniplite_1.4.1_portable_QR_x64.zip): the app, QR helper, and its license.
 - [QR + OCR portable package](https://github.com/jinmeng3/sniplite/releases/download/v1.4.1/sniplite_1.4.1_portable_QR_OCR_x64.zip): includes the OCR module as well as QR recognition.
 
-Extract the ZIP and run `sniplite.exe`. QR recognition requires `sniplite_qr.exe` to remain in the same directory as the main program. The portable packages disable the “Start with Windows” option; use the installed version if you need startup at sign-in.
+Extract the ZIP and run `sniplite.exe`. QR recognition requires `sniplite_qr.exe` to remain in the same directory as the main program. Portable builds can enable “Start with Windows” in Preferences. The shortcut points to the current program location, so do not move or rename its directory afterward. If you move it, turn the option off and on again to update the shortcut.
 
 ## System requirements
 

@@ -37,7 +37,7 @@
 - [二维码便携版](https://github.com/jinmeng3/sniplite/releases/download/v1.4.1/sniplite_1.4.1_portable_QR_x64.zip)：主程序、二维码识别程序及其许可证。
 - [二维码 + OCR 便携版](https://github.com/jinmeng3/sniplite/releases/download/v1.4.1/sniplite_1.4.1_portable_QR_OCR_x64.zip)：在二维码便携版基础上附带 OCR 模块。
 
-解压后运行 `sniplite.exe`。二维码识别需要将 `sniplite_qr.exe` 与主程序放在同一目录。便携版的“开机启动”选项不可用；需要开机启动时请使用安装版。
+解压后运行 `sniplite.exe`。二维码识别需要将 `sniplite_qr.exe` 与主程序放在同一目录。便携版可在首选项中开启“开机启动”；快捷方式会指向当前程序位置，因此开启后不要移动或重命名程序目录。若已移动目录，请重新关闭并开启此选项以更新快捷方式。
 
 ## 系统要求
 

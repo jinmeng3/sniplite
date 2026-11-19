@@ -1015,13 +1015,12 @@ static INT_PTR CALLBACK page_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
 
 /* ---- main window ------------------------------------------------------------------------- */
 
-/* The portable version is the program by itself, not an installed copy (update.h). What only
- * an installed copy offers is listed here and shown gray in the portable one. */
+/* The portable version is the program by itself, not an installed copy (update.h). Features
+ * that require an installed copy are listed here and shown gray in the portable one. */
 static const struct {
     unsigned char page;
     unsigned char id; /* IDC_... */
 } kInstalledOnly[] = {
-    {PG_GENERAL, IDC_AUTOSTART}, /* a shortcut to a file that may be somewhere else tomorrow */
     {PG_UPDATE, IDC_U_CHECK},    /* an update is the installer: it would make an installation of this copy */
     {PG_OCR, IDC_O_INSTALL},     /* the module comes with the portable program or not at all */
     {PG_OCR, IDC_O_REMOVE},

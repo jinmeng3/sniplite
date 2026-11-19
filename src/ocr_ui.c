@@ -33,6 +33,72 @@
 #include <dwmapi.h>
 #include <math.h>
 
+static bool qr_is_web_url(const WCHAR *text)
+{
+    static const WCHAR *prefixes[] = {L"http://", L"https://"};
+    const WCHAR *authority = NULL;
+    for (int p = 0; p < COUNTOF(prefixes); p++) {
+        int i = 0;
+        while (prefixes[p][i] && text[i]) {
+            WCHAR a = prefixes[p][i], b = text[i];
+            if (a >= L'A' && a <= L'Z') a += L'a' - L'A';
+            if (b >= L'A' && b <= L'Z') b += L'a' - L'A';
+            if (a != b) break;
+            i++;
+        }
+        if (!prefixes[p][i]) {
+            authority = text + i;
+            break;
+        }
+    }
+    if (!authority)
+        return false;
+
+    const WCHAR *end = authority;
+    const WCHAR *host = authority;
+    for (const WCHAR *p = authority; *p; p++) {
+        if (*p <= 0x20 || *p == 0x7f || *p == L'\\')
+            return false;
+        if (*p == L'/' || *p == L'?' || *p == L'#') {
+            end = p;
+            break;
+        }
+        if (*p == L'@')
+            host = p + 1;
+        end = p + 1;
+    }
+    if (host >= end)
+        return false;
+
+    const WCHAR *host_end = host;
+    if (*host == L'[') {
+        while (host_end < end && *host_end != L']') host_end++;
+        if (host_end == end || host_end == host + 1)
+            return false;
+        host_end++;
+        return host_end == end || *host_end == L':';
+    }
+    while (host_end < end && *host_end != L':') host_end++;
+    return host_end > host;
+}
+
+static bool qr_open_web_url(HWND owner, const WCHAR *url)
+{
+    typedef HINSTANCE(WINAPI *PFN_ShellExecuteW)(HWND, LPCWSTR, LPCWSTR, LPCWSTR, LPCWSTR, INT);
+    HMODULE shell = LoadLibraryW(L"shell32.dll");
+    if (!shell)
+        return false;
+    PFN_ShellExecuteW execute = (PFN_ShellExecuteW)(void *)GetProcAddress(shell, "ShellExecuteW");
+    if (!execute) {
+        FreeLibrary(shell);
+        return false;
+    }
+
+    bool opened = (INT_PTR)execute(owner, L"open", url, NULL, NULL, SW_SHOWNORMAL) > 32;
+    FreeLibrary(shell);
+    return opened;
+}
+
 #define PANEL_CLASS L"sniplite.text"
 #define NOTICE_CLASS L"sniplite.notice"
 #define HUB_CLASS L"sniplite.ocr"
@@ -327,7 +393,23 @@ void qr_scan(void)
         return;
     }
     text[chars] = 0;
-    MessageBoxW(*(HWND *)(O + OV_HWND), text, T(QR_TITLE), MB_OK | MB_ICONINFORMATION);
+    HWND owner = *(HWND *)(O + OV_HWND);
+    if (qr_is_web_url(text)) {
+        WCHAR prompt[65536];
+        if (chars >= COUNTOF(prompt) - 128) {
+            MessageBoxW(owner, text, T(QR_TITLE), MB_OK | MB_ICONINFORMATION);
+            return;
+        }
+        wsprintfW(prompt, T(QR_OPEN_URL), text);
+        if (MessageBoxW(owner, prompt, T(QR_TITLE), MB_YESNO | MB_ICONQUESTION) == IDYES) {
+            if (qr_open_web_url(owner, text))
+                ov_cancel();
+            else
+                MessageBoxW(owner, T(QR_OPEN_FAILED), T(QR_TITLE), MB_OK | MB_ICONWARNING);
+        }
+    } else {
+        MessageBoxW(owner, text, T(QR_TITLE), MB_OK | MB_ICONINFORMATION);
+    }
     return;
 
 pipe_failed:

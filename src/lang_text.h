@@ -857,6 +857,14 @@ X(QR_ERROR, "二维码识别失败，或结果太长。", "QR Code 辨識失敗�
   "Échec de lecture ou résultat trop long.", "QR-Code-Lesen fehlgeschlagen oder Ergebnis zu lang.", "Falló la lectura o el resultado es demasiado largo.")
 X(QR_TITLE, "二维码内容", "QR Code 內容", "QR code contents", "QRコードの内容", "QR 코드 내용",
   "Contenu du QR code", "QR-Code-Inhalt", "Contenido del código QR")
+X(QR_OPEN_URL, "识别到网址，是否在浏览器中打开？\n\n%s", "辨識到網址，是否在瀏覽器中開啟？\n\n%s",
+  "A web address was found. Open it in your browser?\n\n%s", "ウェブアドレスを検出しました。ブラウザーで開きますか？\n\n%s",
+  "웹 주소를 찾았습니다. 브라우저에서 열까요?\n\n%s", "Adresse web détectée. L’ouvrir dans le navigateur ?\n\n%s",
+  "Webadresse erkannt. Im Browser öffnen?\n\n%s", "Se encontró una dirección web. ¿Abrirla en el navegador?\n\n%s")
+X(QR_OPEN_FAILED, "无法启动默认浏览器。", "無法啟動預設瀏覽器。", "Could not launch the default browser.",
+  "既定のブラウザーを起動できませんでした。", "기본 브라우저를 실행할 수 없습니다.",
+  "Impossible de démarrer le navigateur par défaut.", "Der Standardbrowser konnte nicht gestartet werden.",
+  "No se pudo iniciar el navegador predeterminado.")
 /* the three sizes */
 X(TIP_SIZE0, "细  (滚轮调节)", "細  (滾輪調整)", "Thin  (wheel to change)", "細い  (ホイールで調整)",
   "가늘게  (휠로 조절)", "Fin  (molette pour changer)", "Dünn  (Mausrad zum Ändern)", "Fino  (rueda para cambiar)")
