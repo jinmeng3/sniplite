@@ -23,7 +23,7 @@ typedef struct {
     WCHAR tag[32]; /* e.g. "v1.0.1" */
 } UpdateResult;
 
-int version_cmp(const WCHAR *a, const WCHAR *b); /* "1.0.0" vs "v1.0.1": <0, 0, >0 */
+int version_cmp(const WCHAR *a, const WCHAR *b); /* compares every dot-separated numeric part */
 
 /* Blocking (a few seconds at most); call from a worker thread. */
 void update_check(UpdateResult *r);

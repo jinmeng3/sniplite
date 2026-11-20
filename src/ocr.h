@@ -44,6 +44,12 @@ bool ocr_run(const uint32_t *px, int stride, int w, int h, float screen, OcrOut 
  * by a helper process (sniplite.exe --ocr) that also owns the windows. */
 extern uint8_t ocr_panel_on; /* the text panel shows, or a text capture waits for its selection: refresh calls ocr_follow */
 extern uint8_t ocr_there;    /* the module is installed: the text buttons and menu entries show */
+extern uint8_t qr_there; /* the helper is installed: the QR toolbar button and Ctrl+Q work */
+enum { QR_GET_OK, QR_GET_NET, QR_GET_CHECK, QR_GET_WRITE, QR_GET_CANCEL };
+bool qr_installed(void);
+bool qr_remove(void);
+int qr_get(volatile LONG *cancel, void (*progress)(int percent, void *ctx), void *ctx);
+int qr_size_mb(void);
 void ocr_refresh(void);      /* look again whether it is (at start, after the preferences) */
 void ocr_capture(bool copy); /* a capture for its text, from a hotkey or the command line */
 void ocr_then(int mode);     /* WM_APP_OCR_THEN: its selection is made */

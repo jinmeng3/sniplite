@@ -102,29 +102,33 @@ static bool http_get(Http *h, const WCHAR *host, const WCHAR *path, const WCHAR 
 
 /* ---- versions ------------------------------------------------------------------- */
 
-static void version_parse(const WCHAR *s, int v[3])
+static unsigned version_part(const WCHAR **s)
 {
-    v[0] = v[1] = v[2] = 0;
-    if (*s == L'v' || *s == L'V')
-        s++;
-    for (int i = 0; i < 3; i++) {
-        while (*s >= L'0' && *s <= L'9' && v[i] < 100000)
-            v[i] = v[i] * 10 + (*s++ - L'0');
-        if (*s != L'.')
-            break;
-        s++;
+    unsigned n = 0;
+    while (**s >= L'0' && **s <= L'9') {
+        if (n < 100000)
+            n = n * 10 + (*(*s) - L'0');
+        (*s)++;
     }
+    return n;
 }
 
 int version_cmp(const WCHAR *a, const WCHAR *b)
 {
-    int x[3], y[3];
-    version_parse(a, x);
-    version_parse(b, y);
-    for (int i = 0; i < 3; i++)
-        if (x[i] != y[i])
-            return x[i] < y[i] ? -1 : 1;
-    return 0;
+    if (*a == L'v' || *a == L'V')
+        a++;
+    if (*b == L'v' || *b == L'V')
+        b++;
+    for (;;) {
+        unsigned x = version_part(&a), y = version_part(&b);
+        if (x != y)
+            return x < y ? -1 : 1;
+        bool more_a = *a == L'.', more_b = *b == L'.';
+        if (!more_a && !more_b)
+            return 0;
+        a = more_a ? a + 1 : L"";
+        b = more_b ? b + 1 : L"";
+    }
 }
 
 static bool tag_char_ok(WCHAR c)

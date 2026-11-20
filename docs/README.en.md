@@ -37,7 +37,7 @@ Get the current version from [GitHub Releases](https://github.com/jinmeng3/snipl
 - [QR portable package](https://github.com/jinmeng3/sniplite/releases/download/v1.4.1/sniplite_1.4.1_portable_QR_x64.zip): the app, QR helper, and its license.
 - [QR + OCR portable package](https://github.com/jinmeng3/sniplite/releases/download/v1.4.1/sniplite_1.4.1_portable_QR_OCR_x64.zip): includes the OCR module as well as QR recognition.
 
-Extract the ZIP and run `sniplite.exe`. QR recognition requires `sniplite_qr.exe` to remain in the same directory as the main program. Portable builds can enable “Start with Windows” in Preferences. The shortcut points to the current program location, so do not move or rename its directory afterward. If you move it, turn the option off and on again to update the shortcut.
+Extract the ZIP and run `sniplite.exe`. The `sniplite-cli.com` companion provides command-line features; it is included in the QR ZIPs and is a separate download for single-file portable builds. Keep it beside the app. Portable builds can download or remove OCR from the OCR tab in Preferences. The Update tab opens the matching GitHub release page so you can download a new portable package. The QR helper can also be installed or removed from the QR tab. Portable builds can enable “Start with Windows” in Preferences. The shortcut points to the current program location, so do not move or rename its directory afterward. If you move it, turn the option off and on again to update the shortcut.
 
 ## System requirements
 
@@ -72,6 +72,7 @@ Extract the ZIP and run `sniplite.exe`. QR recognition requires `sniplite_qr.exe
 ### How do I scan a QR code?
 
 Capture and select the area containing the code, then click the QR toolbar button or press `Ctrl+Q`. The app uses `sniplite_qr.exe` from the same directory to decode it locally. Results appear in a message box and can be copied with `Ctrl+C`. The app does not open recognized URLs automatically. Only screenshot selections are supported; pins and clipboard images are not connected yet. See the [QR recognition guide](qr-code-recognition.en.md) or its [Simplified Chinese version](qr-code-recognition.md).
+The QR tab in Preferences can install or remove the helper. After installation, use the QR button or `Ctrl+Q` in the capture editor; after removal, both are unavailable.
 
 ### How do I extract text from a screenshot?
 

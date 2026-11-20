@@ -126,13 +126,14 @@ void finish(int act);
 void refresh(void);
 bool ov_begin(void);
 bool ov_active(void);
-extern const int32_t kTbOrder[], kTbPlain[]; /* the toolbar with and without the text buttons (ov_base.S) */
+extern const int32_t kTbOrder[], kTbPlain[], kTbOrderNoQR[], kTbPlainNoQR[];
 extern const int32_t *tb_order;
 extern int32_t tb_count;
 extern uint32_t ovp_scale_key; /* what the overlay's table of sizes was made for (ov_paint.S) */
 
 uint8_t ocr_panel_on; /* read by refresh(): call ocr_follow() */
 uint8_t ocr_there;
+uint8_t qr_there;
 
 static struct {
     SRWLOCK lock;
@@ -142,13 +143,14 @@ static struct {
     int then;          /* a text capture waits for its selection: 1 show the text, 2 copy it */
 } H;
 
-/* Whether the module is installed decides what the toolbar offers. Looked up when it
- * can have changed, never on the way to a capture. */
+/* Optional modules determine what the toolbar offers. Looked up when they can have changed,
+ * never on the way to a capture. */
 void ocr_refresh(void)
 {
     ocr_there = ocr_installed() || ocr_packed();
-    tb_order = ocr_there ? kTbOrder : kTbPlain;
-    tb_count = TB_ITEMS - (ocr_there ? 0 : 2);
+    qr_there = qr_installed();
+    tb_order = ocr_there ? (qr_there ? kTbOrder : kTbOrderNoQR) : (qr_there ? kTbPlain : kTbPlainNoQR);
+    tb_count = TB_ITEMS - (ocr_there ? 0 : 2) - (qr_there ? 0 : 1);
     ovp_scale_key = ~0u; /* that table has the bar's width, counted from the old order */
 }
 
@@ -298,6 +300,8 @@ static Pic selection(RECT *at)
 
 void qr_scan(void)
 {
+    if (!qr_there)
+        return;
     if (OV_I32(OV_PHASE) == PH_SELECT) {
         if (*(uint8_t *)(O + OV_LDOWN))
             return;

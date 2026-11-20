@@ -438,7 +438,7 @@ static bool run_helper(const WCHAR *args, bool quiet)
     return ok;
 }
 
-/* page: NULL, or the tab to open the window on: "update", "ocr" (an open window switches) */
+/* page: NULL opens General; update, ocr, qr and about select another tab. */
 bool settings_open(const WCHAR *page)
 {
     WCHAR args[40] = L" --settings ";

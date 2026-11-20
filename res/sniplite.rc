@@ -142,6 +142,17 @@ BEGIN
     LTEXT           "", IDC_O_STATUS, 8, 58, 204, 10
     LTEXT           "", IDC_HINT, 8, 74, 204, 62
 END
+IDD_PAGE_QR DIALOGEX 0, 0, 220, 166
+STYLE DS_SHELLFONT | DS_CONTROL | WS_CHILD
+FONT 9, "Microsoft YaHei UI", 400, 0, 0x86
+BEGIN
+    LTEXT           "", IDC_Q_STATE, 8, 10, 204, 10
+    PUSHBUTTON      "", IDC_Q_INSTALL, 8, 26, 110, 15
+    PUSHBUTTON      "", IDC_Q_REMOVE, 124, 26, 60, 15
+    CONTROL         "", IDC_Q_BAR, "msctls_progress32", PBS_MARQUEE, 8, 47, 204, 7
+    LTEXT           "", IDC_Q_STATUS, 8, 58, 204, 10
+    LTEXT           "", IDC_Q_HINT, 8, 74, 204, 62
+END
 
 IDD_PAGE_ABOUT DIALOGEX 0, 0, 220, 166
 STYLE DS_SHELLFONT | DS_CONTROL | WS_CHILD
@@ -156,8 +167,8 @@ END
 #endif
 
 VS_VERSION_INFO VERSIONINFO
-FILEVERSION 1,4,1,0
-PRODUCTVERSION 1,4,1,0
+FILEVERSION 1,4,1,2
+PRODUCTVERSION 1,4,1,2
 FILEOS VOS_NT_WINDOWS32
 FILETYPE VFT_APP
 BEGIN
@@ -166,9 +177,9 @@ BEGIN
     BLOCK "040904B0"
     BEGIN
       VALUE "FileDescription", FILE_DESC
-      VALUE "FileVersion", "1.4.1"
+      VALUE "FileVersion", "1.4.1.2"
       VALUE "ProductName", "sniplite"
-      VALUE "ProductVersion", "1.4.1"
+      VALUE "ProductVersion", "1.4.1.2"
       VALUE "OriginalFilename", FILE_NAME
       VALUE "LegalCopyright", "MIT License"
     END

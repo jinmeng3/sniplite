@@ -17,7 +17,7 @@ X(HELP,
   "  sniplite pin [图片]          贴到屏幕，不给图片就贴剪贴板\n"
   "  sniplite ocr                 框选一块区域识别文字，加 --copy 直接复制\n"
   "  sniplite settings            打开首选项\n"
-  "  sniplite update              检查更新，加 --install 直接装上新版本\n"
+  "  sniplite update              检查更新，--install 安装新版（便携版打开下载页）\n"
   "  sniplite status              看状态\n"
   "  sniplite quit                退出\n"
   "\n"
@@ -38,7 +38,7 @@ X(HELP,
   "  sniplite pin [圖片]          貼到螢幕，不給圖片就貼剪貼簿\n"
   "  sniplite ocr                 框選一塊區域辨識文字，加 --copy 直接複製\n"
   "  sniplite settings            開啟偏好設定\n"
-  "  sniplite update              檢查更新，加 --install 直接裝上新版本\n"
+  "  sniplite update              檢查更新，--install 安裝新版（便攜版開啟下載頁）\n"
   "  sniplite status              看狀態\n"
   "  sniplite quit                結束\n"
   "\n"
@@ -59,7 +59,7 @@ X(HELP,
   "  sniplite pin [image]         pin an image, or the clipboard without one\n"
   "  sniplite ocr                 select an area and read its text; --copy copies it at once\n"
   "  sniplite settings            open Settings\n"
-  "  sniplite update              check for updates; --install installs the new version\n"
+  "  sniplite update              check for updates; --install installs it (portable builds open the release page)\n"
   "  sniplite status              show the status\n"
   "  sniplite quit                quit\n"
   "\n"
@@ -80,7 +80,7 @@ X(HELP,
   "  sniplite pin [画像]          画像をピン留め（省略時はクリップボード）\n"
   "  sniplite ocr                 範囲を選んで文字を読み取る。--copy でそのままコピー\n"
   "  sniplite settings            設定を開く\n"
-  "  sniplite update              更新を確認（--install で新バージョンをインストール）\n"
+  "  sniplite update              更新を確認（--install でインストール、ポータブル版はリリースページを開く）\n"
   "  sniplite status              状態を表示\n"
   "  sniplite quit                終了\n"
   "\n"
@@ -101,7 +101,7 @@ X(HELP,
   "  sniplite pin [이미지]        화면에 고정 (이미지가 없으면 클립보드)\n"
   "  sniplite ocr                 영역을 선택해 텍스트 인식, --copy 는 바로 복사\n"
   "  sniplite settings            설정 열기\n"
-  "  sniplite update              업데이트 확인 (--install로 새 버전 설치)\n"
+  "  sniplite update              업데이트 확인 (--install로 설치, 포터블 버전은 릴리스 페이지 열기)\n"
   "  sniplite status              상태 표시\n"
   "  sniplite quit                종료\n"
   "\n"
@@ -122,7 +122,7 @@ X(HELP,
   "  sniplite pin [image]         épingler une image, sinon le presse-papiers\n"
   "  sniplite ocr                 sélectionner une zone et lire son texte ; --copy le copie aussitôt\n"
   "  sniplite settings            ouvrir les préférences\n"
-  "  sniplite update              chercher une mise à jour ; --install l'installe\n"
+  "  sniplite update              chercher une mise à jour ; --install l'installe (portable : page de publication)\n"
   "  sniplite status              afficher l'état\n"
   "  sniplite quit                quitter\n"
   "\n"
@@ -143,7 +143,7 @@ X(HELP,
   "  sniplite pin [Bild]          Bild anheften, ohne Bild die Zwischenablage\n"
   "  sniplite ocr                 Bereich wählen und Text erkennen; --copy kopiert ihn sofort\n"
   "  sniplite settings            Einstellungen öffnen\n"
-  "  sniplite update              nach Updates suchen; --install installiert die neue Version\n"
+  "  sniplite update              nach Updates suchen; --install installiert sie (portable Versionen öffnen die Release-Seite)\n"
   "  sniplite status              Status anzeigen\n"
   "  sniplite quit                beenden\n"
   "\n"
@@ -164,7 +164,7 @@ X(HELP,
   "  sniplite pin [imagen]        fijar una imagen o, sin ella, el portapapeles\n"
   "  sniplite ocr                 seleccionar una zona y leer su texto; --copy lo copia al momento\n"
   "  sniplite settings            abrir los ajustes\n"
-  "  sniplite update              buscar actualizaciones; --install instala la nueva versión\n"
+  "  sniplite update              buscar actualizaciones; --install la instala (portable abre la página de publicación)\n"
   "  sniplite status              ver el estado\n"
   "  sniplite quit                salir\n"
   "\n"
@@ -177,14 +177,14 @@ X(HELP,
   "Códigos de salida: 0 correcto, 1 error, 2 argumentos incorrectos, 3 no iniciado, 4 nada que fijar, 5 atajo en uso\n")
 
 X(NO_EXE,
-  "找不到 sniplite.exe，它必须和 sniplite.com 放在同一个文件夹里\n",
-  "找不到 sniplite.exe，它必須和 sniplite.com 放在同一個資料夾裡\n",
-  "sniplite.exe not found. It must be in the same folder as sniplite.com\n",
-  "sniplite.exe が見つかりません。sniplite.com と同じフォルダーに置いてください\n",
-  "sniplite.exe를 찾을 수 없습니다. sniplite.com과 같은 폴더에 있어야 합니다\n",
-  "sniplite.exe introuvable. Il doit être dans le même dossier que sniplite.com\n",
-  "sniplite.exe nicht gefunden. Es muss im selben Ordner wie sniplite.com liegen\n",
-  "No se encuentra sniplite.exe. Debe estar en la misma carpeta que sniplite.com\n")
+  "找不到 sniplite.exe。请将主程序和命令行启动器放在同一文件夹中\n",
+  "找不到 sniplite.exe。請將主程式和命令列啟動器放在同一資料夾中\n",
+  "sniplite.exe not found. Put it and the command-line launcher in the same folder\n",
+  "sniplite.exe が見つかりません。コマンドラインランチャーと同じフォルダーに置いてください\n",
+  "sniplite.exe를 찾을 수 없습니다. 명령줄 실행 파일과 같은 폴더에 두세요\n",
+  "sniplite.exe introuvable. Placez-le dans le même dossier que le lanceur de commandes\n",
+  "sniplite.exe nicht gefunden. Legen Sie es in denselben Ordner wie den Befehlszeilenstarter\n",
+  "No se encuentra sniplite.exe. Colócalo en la misma carpeta que el iniciador de comandos\n")
 X(CANNOT_START,
   "无法启动 sniplite.exe\n", "無法啟動 sniplite.exe\n", "Cannot start sniplite.exe\n",
   "sniplite.exe を起動できません\n", "sniplite.exe를 시작할 수 없습니다\n",
@@ -218,6 +218,22 @@ X(UPD_FAILED,
   "更新に失敗しました。後でもう一度お試しください\n", "업데이트 실패. 나중에 다시 시도하세요\n",
   "Échec de la mise à jour. Réessayez plus tard\n", "Update fehlgeschlagen. Später erneut versuchen\n",
   "Error al actualizar. Inténtalo más tarde\n")
+X(PORTABLE_UPDATE,
+  "便携版需手动替换程序，已打开发布页：%s\n", "便攜版需手動替換程式，已開啟發布頁：%s\n",
+  "Portable builds need a manual replacement. Opened release page: %s\n",
+  "ポータブル版は手動で置き換えてください。リリースページを開きました：%s\n",
+  "포터블 버전은 직접 교체해야 합니다. 릴리스 페이지를 열었습니다: %s\n",
+  "La version portable doit être remplacée manuellement. Page ouverte : %s\n",
+  "Portable-Versionen müssen manuell ersetzt werden. Release-Seite geöffnet: %s\n",
+  "La versión portátil debe sustituirse manualmente. Página abierta: %s\n")
+X(PORTABLE_NEWER,
+  "有新版本 %s（现在是 %s）。便携版需手动下载并替换：%s\n", "有新版本 %s（目前是 %s）。便攜版需手動下載並替換：%s\n",
+  "New version %s (this is %s). Download and replace the portable build manually: %s\n",
+  "新バージョン %s があります（現在は %s）。ポータブル版を手動でダウンロードして置き換えてください：%s\n",
+  "새 버전 %s (현재 %s). 포터블 버전을 직접 다운로드해 교체하세요: %s\n",
+  "Nouvelle version %s (actuelle : %s). Téléchargez et remplacez manuellement la version portable : %s\n",
+  "Neue Version %s (installiert: %s). Portable-Version manuell herunterladen und ersetzen: %s\n",
+  "Nueva versión %s (actual: %s). Descarga y sustituye manualmente la versión portátil: %s\n")
 X(NEWER,
   "有新版本 %s（现在是 %s），运行 sniplite update --install 安装\n",
   "有新版本 %s（現在是 %s），執行 sniplite update --install 安裝\n",
@@ -532,6 +548,7 @@ X(TAB_CAPTURE, "截屏", "截圖", "Capture", "キャプチャ", "캡처", "Capt
 X(TAB_HOTKEYS, "控制", "快速鍵", "Hotkeys", "ホットキー", "단축키", "Raccourcis", "Tasten", "Atajos")
 X(TAB_UPDATE, "更新", "更新", "Update", "更新", "업데이트", "Mise à jour", "Update", "Actualización")
 X(TAB_OCR, "文字识别", "文字辨識", "OCR", "OCR", "OCR", "OCR", "OCR", "OCR")
+X(TAB_QR, "二维码", "QR", "QR", "QR", "QR", "QR", "QR", "QR")
 X(TAB_ABOUT, "关于", "關於", "About", "情報", "정보", "À propos", "Info", "Acerca de")
 X(G_AUTOSTART,
   "开机启动", "開機啟動", "Start with Windows", "Windows 起動時に実行", "Windows 시작 시 실행",
@@ -633,6 +650,10 @@ X(U_CHECK_BTN, "检查更新", "檢查更新", "Check now", "更新を確認", "
   "Buscar")
 X(U_INSTALL_BTN, "立即更新", "立即更新", "Update now", "今すぐ更新", "지금 업데이트", "Mettre à jour",
   "Aktualisieren", "Actualizar")
+X(U_PORTABLE_BTN,
+  "打开便携版下载页", "開啟便攜版下載頁", "Open portable download page", "ポータブル版のダウンロードページを開く",
+  "포터블 다운로드 페이지 열기", "Ouvrir la page de téléchargement portable", "Portable-Downloadseite öffnen",
+  "Abrir la página de descarga portátil")
 X(U_AUTO,
   "自动检查更新", "自動檢查更新", "Check for updates automatically", "自動で更新を確認", "업데이트 자동 확인",
   "Recherche automatique", "Automatisch nach Updates suchen", "Buscar automáticamente")
@@ -750,6 +771,18 @@ X(U_INSTALLING, "正在安装...", "正在安裝...", "Installing...", "イン�
 X(U_INSTALL_FAILED,
   "安装失败。", "安裝失敗。", "Install failed.", "インストールに失敗しました。", "설치 실패.",
   "Échec de l'installation.", "Installation fehlgeschlagen.", "Error al instalar.")
+X(U_OPEN_FAILED,
+  "无法打开下载页面。", "無法開啟下載頁面。", "Could not open the download page.", "ダウンロードページを開けませんでした。",
+  "다운로드 페이지를 열 수 없습니다.", "Impossible d'ouvrir la page de téléchargement.", "Die Downloadseite lässt sich nicht öffnen.",
+  "No se pudo abrir la página de descarga.")
+X(UPD_PORTABLE,
+  "便携版需手动替换程序。下载对应的便携包：%s", "便攜版需手動替換程式。下載對應的便攜包：%s",
+  "Portable builds need a manual replacement. Download the matching package: %s",
+  "ポータブル版は手動で置き換えてください。対応するパッケージをダウンロード：%s",
+  "포터블 버전은 직접 교체해야 합니다. 맞는 패키지 다운로드: %s",
+  "La version portable doit être remplacée manuellement. Téléchargez le paquet correspondant : %s",
+  "Portable-Versionen müssen manuell ersetzt werden. Passendes Paket herunterladen: %s",
+  "Las versiones portátiles deben sustituirse manualmente. Descarga el paquete correspondiente: %s")
 X(AUTOSTART_ADD_FAILED,
   "无法创建开机启动快捷方式。", "無法建立開機啟動捷徑。", "Cannot create the startup shortcut.",
   "スタートアップのショートカットを作成できません。", "시작 프로그램 바로 가기를 만들 수 없습니다.",
@@ -949,6 +982,17 @@ X(O_STATE_NONE, "文字识别模块：未安装", "文字辨識模組：未安�
 X(O_STATE_OK, "文字识别模块：已安装（%d MB）", "文字辨識模組：已安裝（%d MB）", "Text recognition module: installed (%d MB)",
   "文字認識モジュール: インストール済み (%d MB)", "텍스트 인식 모듈: 설치됨 (%d MB)", "Module de reconnaissance de texte : installé (%d Mo)",
   "Texterkennungsmodul: installiert (%d MB)", "Módulo de reconocimiento de texto: instalado (%d MB)")
+X(Q_STATE_NONE, "二维码模块：未安装", "QR Code 模組：未安裝", "QR module: not installed", "QR モジュール: 未インストール", "QR 모듈: 설치되지 않음", "Module QR : non installé", "QR-Modul: nicht installiert", "Módulo QR: no instalado")
+X(Q_STATE_OK, "二维码模块：已安装（%d MB）", "QR Code 模組：已安裝（%d MB）", "QR module: installed (%d MB)", "QR モジュール: インストール済み (%d MB)", "QR 모듈: 설치됨 (%d MB)", "Module QR : installé (%d Mo)", "QR-Modul: installiert (%d MB)", "Módulo QR: instalado (%d MB)")
+X(Q_HINT,
+  "可选模块。从 sniplite 的 GitHub 发布页下载二维码助手和许可证。安装后可在截图编辑页用二维码按钮或 Ctrl+Q 识别选区。",
+  "選用模組。從 sniplite 的 GitHub 發布頁下載 QR Code 助手與授權條款。安裝後可在截圖編輯頁用 QR Code 按鈕或 Ctrl+Q 辨識選取範圍。",
+  "Optional module. Downloads the QR helper and its license from sniplite's GitHub releases. Once installed, use the QR button or Ctrl+Q in the capture editor.",
+  "オプションのモジュールです。sniplite の GitHub リリースから QR ヘルパーとライセンスを取得します。導入後、キャプチャ編集画面の QR ボタンまたは Ctrl+Q で選択範囲を認識できます。",
+  "선택 모듈입니다. sniplite GitHub 릴리스에서 QR 도우미와 라이선스를 다운로드합니다. 설치 후 캡처 편집 화면에서 QR 버튼 또는 Ctrl+Q로 선택 영역을 인식합니다.",
+  "Module facultatif. Télécharge l'assistant QR et sa licence depuis les versions GitHub de sniplite. Une fois installé, utilisez le bouton QR ou Ctrl+Q dans l’éditeur.",
+  "Optionales Modul. Lädt den QR-Helfer samt Lizenz aus den GitHub-Veröffentlichungen von sniplite. Danach erkennt die QR-Schaltfläche oder Ctrl+Q den ausgewählten Bereich.",
+  "Módulo opcional. Descarga el asistente QR y su licencia desde las versiones de sniplite en GitHub. Una vez instalado, usa el botón QR o Ctrl+Q en el editor.")
 X(O_INSTALL_BTN, "下载并安装", "下載並安裝", "Download and install", "ダウンロードして導入", "다운로드 및 설치", "Télécharger et installer",
   "Laden und installieren", "Descargar e instalar")
 X(O_CANCEL_BTN, "取消", "取消", "Cancel", "キャンセル", "취소", "Annuler", "Abbrechen", "Cancelar")

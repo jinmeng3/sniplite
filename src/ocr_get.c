@@ -17,10 +17,15 @@
 #include "ocr.h"
 #include "update.h"
 
-/* The published zip. Its size is known here: for the progress, and nothing else is taken.
- * A changed module is published under a new tag, with its size and the hashes below. */
-#define MODULE_PATH UPDATE_REPO L"/releases/download/ocr-1/sniplite_ocr.zip"
+/* OCR ZIP from MrTangLuyao/sniplite, tag ocr-1. Its size is for progress; extracted parts
+ * are verified by the hashes below. */
+#define OCR_MODULE_REPO L"/MrTangLuyao/sniplite"
+#define MODULE_PATH OCR_MODULE_REPO L"/releases/download/ocr-1/sniplite_ocr.zip"
 #define MODULE_BYTES 11651861u
+#define QR_MODULE_PATH UPDATE_REPO L"/releases/download/v" SNIPLITE_VERSION L"/sniplite_" SNIPLITE_VERSION L"_portable_QR_x64.zip"
+#define QR_ARCHIVE_LIMIT (8u * 1024u * 1024u)
+#define QR_HELPER_SIZE 3248943u
+#define QR_LICENSE_SIZE 11560u
 
 typedef struct {
     const WCHAR *name;
@@ -523,4 +528,213 @@ int ocr_size_mb(void)
     for (int i = 0; i < COUNTOF(kParts); i++)
         sum += kParts[i].size;
     return (int)((sum + 512 * 1024) >> 20);
+}
+
+/* ---- the optional QR helper: extracted from this version's portable QR ZIP ---- */
+
+static bool qr_path(const WCHAR *name, const WCHAR *suffix, WCHAR *path, int cap)
+{
+    WCHAR exe[MAX_PATH * 2];
+    DWORD n = GetModuleFileNameW(NULL, exe, COUNTOF(exe));
+    if (!n || n >= COUNTOF(exe))
+        return false;
+    while (n && exe[n - 1] != L'\\' && exe[n - 1] != L'/')
+        n--;
+    if (!n || n + lstrlenW(name) + lstrlenW(suffix) + 1 > (DWORD)cap)
+        return false;
+    exe[n] = 0;
+    wsprintfW(path, L"%s%s%s", exe, name, suffix);
+    return true;
+}
+
+static bool qr_file_size(const WCHAR *name, uint64_t *size)
+{
+    WCHAR path[MAX_PATH * 2];
+    if (!qr_path(name, L"", path, COUNTOF(path)))
+        return false;
+    HANDLE h = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING,
+                           FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h == INVALID_HANDLE_VALUE)
+        return false;
+    LARGE_INTEGER n;
+    bool ok = GetFileSizeEx(h, &n) && n.QuadPart >= 0;
+    CloseHandle(h);
+    if (ok)
+        *size = (uint64_t)n.QuadPart;
+    return ok;
+}
+
+bool qr_installed(void)
+{
+    uint64_t exe, license;
+    return qr_file_size(L"sniplite_qr.exe", &exe) && exe == QR_HELPER_SIZE &&
+           qr_file_size(L"LICENSE-ZXing.txt", &license) && license == QR_LICENSE_SIZE;
+}
+
+int qr_size_mb(void)
+{
+    uint64_t exe = 0, license = 0;
+    qr_file_size(L"sniplite_qr.exe", &exe);
+    qr_file_size(L"LICENSE-ZXing.txt", &license);
+    return (int)((exe + license + 512 * 1024) >> 20);
+}
+
+static bool qr_delete_file(const WCHAR *name, const WCHAR *suffix)
+{
+    WCHAR path[MAX_PATH * 2];
+    if (!qr_path(name, suffix, path, COUNTOF(path)))
+        return false;
+    if (DeleteFileW(path))
+        return true;
+    DWORD e = GetLastError();
+    return e == ERROR_FILE_NOT_FOUND || e == ERROR_PATH_NOT_FOUND;
+}
+
+bool qr_remove(void)
+{
+    bool ok = qr_delete_file(L"sniplite_qr.exe", L"");
+    ok = qr_delete_file(L"LICENSE-ZXing.txt", L"") && ok;
+    qr_delete_file(L"sniplite_qr.exe", L".part");
+    qr_delete_file(L"LICENSE-ZXing.txt", L".part");
+    return ok;
+}
+
+static bool qr_file_write(const WCHAR *name, const uint8_t *data, uint32_t n)
+{
+    WCHAR path[MAX_PATH * 2], tmp[MAX_PATH * 2];
+    if (!qr_path(name, L"", path, COUNTOF(path)) || !qr_path(name, L".part", tmp, COUNTOF(tmp)))
+        return false;
+    HANDLE h = CreateFileW(tmp, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    DWORD wrote = 0;
+    bool ok = h != INVALID_HANDLE_VALUE && WriteFile(h, data, n, &wrote, NULL) && wrote == n;
+    if (h != INVALID_HANDLE_VALUE)
+        CloseHandle(h);
+    if (!ok || !MoveFileExW(tmp, path, MOVEFILE_REPLACE_EXISTING)) {
+        DeleteFileW(tmp);
+        return false;
+    }
+    return true;
+}
+
+static bool qr_entry(const uint8_t *zip, size_t dir_at, const uint8_t *e, uint32_t nlen, uint32_t at,
+                     uint32_t csize, uint32_t usize, uint32_t method, uint32_t flags,
+                     const char *name, uint32_t expected, const uint8_t digest[32],
+                     const uint8_t **data, uint8_t **owned)
+{
+    size_t name_len = lstrlenA(name);
+    if (nlen != name_len || memcmp(e + 46, name, name_len) || usize != expected || (flags & 0x41) ||
+        (method != 0 && method != 8) || (uint64_t)at + 30 > dir_at || rd32(zip + at) != 0x04034b50)
+        return false;
+    uint32_t local_nlen = rd16(zip + at + 26), local_extra = rd16(zip + at + 28);
+    uint64_t pos = (uint64_t)at + 30 + local_nlen + local_extra;
+    if (local_nlen != nlen || pos > dir_at || memcmp(zip + at + 30, name, name_len) || csize > dir_at - pos)
+        return false;
+    const uint8_t *src = zip + (size_t)pos;
+    uint8_t *out = NULL;
+    if (method == 8) {
+        out = mem_alloc(usize);
+        if (!out || !inflate(src, csize, out, usize)) {
+            mem_free(out);
+            return false;
+        }
+        src = out;
+    } else if (csize != usize) {
+        return false;
+    }
+    uint8_t sha[32];
+    sha256(src, usize, sha);
+    if (memcmp(sha, digest, sizeof sha)) {
+        mem_free(out);
+        return false;
+    }
+    *data = src;
+    *owned = out;
+    return true;
+}
+
+static int qr_zip_unpack(const uint8_t *zip, size_t n)
+{
+    static const uint8_t helper_sha[32] = {
+        0x52,0x54,0x2e,0xf7,0x67,0x5e,0x46,0x23,0x55,0x29,0x3f,0x4b,0x76,0xdf,0x2e,0x00,
+        0x23,0x25,0x3c,0xc8,0xc2,0x17,0xd6,0x83,0x0e,0x71,0x57,0xf6,0xad,0x5a,0xe4,0x46};
+    static const uint8_t license_sha[32] = {
+        0x2e,0x54,0xcd,0x84,0xa6,0x45,0xbe,0xa2,0x59,0x43,0xc7,0x5d,0xd8,0xae,0x67,0xcb,
+        0x29,0x1e,0x66,0xa4,0x7a,0x11,0x57,0x83,0x33,0xc9,0xb4,0xb3,0xb6,0xb8,0x6c,0x85};
+    if (n < 22 || rd32(zip + n - 22) != 0x06054b50 || rd16(zip + n - 22 + 4) || rd16(zip + n - 22 + 6) ||
+        rd16(zip + n - 22 + 8) != rd16(zip + n - 22 + 10))
+        return QR_GET_CHECK;
+    const uint8_t *end = zip + n - 22;
+    uint32_t count = rd16(end + 10), dir_bytes = rd32(end + 12), dir_at = rd32(end + 16);
+    if ((uint64_t)dir_at + dir_bytes != n - 22)
+        return QR_GET_CHECK;
+    const uint8_t *e = zip + dir_at, *dir_end = e + dir_bytes;
+    const uint8_t *helper = NULL, *license = NULL;
+    uint8_t *helper_mem = NULL, *license_mem = NULL;
+    bool got_helper = false, got_license = false;
+    int result = QR_GET_CHECK;
+    for (uint32_t i = 0; i < count; i++) {
+        if (dir_end - e < 46 || rd32(e) != 0x02014b50)
+            goto done;
+        uint32_t method = rd16(e + 10), flags = rd16(e + 8), csize = rd32(e + 20), usize = rd32(e + 24);
+        uint32_t nlen = rd16(e + 28), at = rd32(e + 42);
+        if ((size_t)(dir_end - e) < 46 + (size_t)nlen + rd16(e + 30) + rd16(e + 32))
+            goto done;
+        const uint8_t *entry = e;
+        e += 46 + nlen + rd16(e + 30) + rd16(e + 32);
+        if (nlen == sizeof("sniplite_qr.exe") - 1 && !memcmp(entry + 46, "sniplite_qr.exe", nlen)) {
+            if (got_helper || !qr_entry(zip, dir_at, entry, nlen, at, csize, usize, method, flags,
+                                        "sniplite_qr.exe", QR_HELPER_SIZE, helper_sha, &helper, &helper_mem))
+                goto done;
+            got_helper = true;
+        } else if (nlen == sizeof("LICENSE-ZXing.txt") - 1 && !memcmp(entry + 46, "LICENSE-ZXing.txt", nlen)) {
+            if (got_license || !qr_entry(zip, dir_at, entry, nlen, at, csize, usize, method, flags,
+                                         "LICENSE-ZXing.txt", QR_LICENSE_SIZE, license_sha, &license, &license_mem))
+                goto done;
+            got_license = true;
+        }
+    }
+    if (!got_helper || !got_license)
+        goto done;
+    if (!qr_file_write(L"LICENSE-ZXing.txt", license, QR_LICENSE_SIZE) ||
+        !qr_file_write(L"sniplite_qr.exe", helper, QR_HELPER_SIZE)) {
+        result = QR_GET_WRITE;
+        goto done;
+    }
+    result = QR_GET_OK;
+done:
+    mem_free(helper_mem);
+    mem_free(license_mem);
+    return result;
+}
+
+typedef struct {
+    uint8_t *buf;
+    size_t have;
+    volatile LONG *cancel;
+} QrFetch;
+
+static bool qr_fetch_sink(const void *data, DWORD n, void *ctx)
+{
+    QrFetch *f = ctx;
+    if (*f->cancel || n > QR_ARCHIVE_LIMIT - f->have)
+        return false;
+    memcpy(f->buf + f->have, data, n);
+    f->have += n;
+    return true;
+}
+
+int qr_get(volatile LONG *cancel, void (*progress)(int, void *), void *ctx)
+{
+    QrFetch f = {mem_alloc(QR_ARCHIVE_LIMIT), 0, cancel};
+    if (!f.buf)
+        return QR_GET_WRITE;
+    if (progress)
+        progress(-1, ctx);
+    DWORD status = 0;
+    bool whole = http_fetch(UPDATE_HOST, QR_MODULE_PATH, NULL, &status, qr_fetch_sink, &f);
+    int result = *cancel ? QR_GET_CANCEL : !whole ? QR_GET_NET : qr_zip_unpack(f.buf, f.have);
+    mem_free(f.buf);
+    if (result == QR_GET_OK && progress)
+        progress(100, ctx);
+    return result;
 }

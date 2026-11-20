@@ -32,15 +32,40 @@ static bool has_json(int argc, WCHAR **argv)
     return false;
 }
 
+static bool main_exe(WCHAR *exe)
+{
+    DWORD n = GetModuleFileNameW(NULL, exe, MAX_PATH);
+    WCHAR *dot = n && n < MAX_PATH ? wcsrchr(exe, L'.') : NULL;
+    if (!dot || dot - exe + 4 >= MAX_PATH)
+        return false;
+    lstrcpyW(dot, L".exe");
+    if (GetFileAttributesW(exe) != INVALID_FILE_ATTRIBUTES)
+        return true;
+
+    WCHAR *slash = wcsrchr(exe, L'\\');
+    if (!slash)
+        return false;
+    slash[1] = 0;
+    static const WCHAR *names[] = {
+        L"sniplite.exe",
+        L"sniplite_" SNIPLITE_VERSION L"_portable_x64.exe",
+        L"sniplite_" SNIPLITE_VERSION L"_portable_with_OCR_x64.exe",
+    };
+    for (int i = 0; i < COUNTOF(names); i++) {
+        size_t dir = (size_t)(slash + 1 - exe), name = wcslen(names[i]);
+        if (dir + name >= MAX_PATH)
+            continue;
+        memcpy(exe + dir, names[i], (name + 1) * sizeof(WCHAR));
+        if (GetFileAttributesW(exe) != INVALID_FILE_ATTRIBUTES)
+            return true;
+    }
+    return false;
+}
+
 static HWND spawn_daemon(int argc, WCHAR **argv, bool is_start)
 {
     WCHAR exe[MAX_PATH];
-    DWORD n = GetModuleFileNameW(NULL, exe, MAX_PATH);
-    WCHAR *dot = n ? wcsrchr(exe, L'.') : NULL;
-    if (!dot || dot - exe + 4 >= MAX_PATH)
-        return NULL;
-    lstrcpyW(dot, L".exe");
-    if (GetFileAttributesW(exe) == INVALID_FILE_ATTRIBUTES) {
+    if (!main_exe(exe)) {
         print(T(NO_EXE), true);
         return NULL;
     }
@@ -76,6 +101,17 @@ static HWND spawn_daemon(int argc, WCHAR **argv, bool is_start)
     return d;
 }
 
+static bool open_url(const WCHAR *url)
+{
+    HMODULE shell = LoadLibraryW(L"shell32.dll");
+    if (!shell)
+        return false;
+    typedef HINSTANCE(WINAPI *PFN_ShellExecuteW)(HWND, LPCWSTR, LPCWSTR, LPCWSTR, LPCWSTR, INT);
+    PFN_ShellExecuteW run = (PFN_ShellExecuteW)(void *)GetProcAddress(shell, "ShellExecuteW");
+    bool ok = run && (INT_PTR)run(NULL, L"open", url, NULL, NULL, SW_SHOWNORMAL) > 32;
+    FreeLibrary(shell);
+    return ok;
+}
 /* `sniplite update [--install] [--json]`: runs here, no background process needed. */
 static int cmd_update(int ac, WCHAR **av, bool json)
 {
@@ -91,9 +127,16 @@ static int cmd_update(int ac, WCHAR **av, bool json)
     static const WCHAR *kState[] = {L"error", L"none", L"latest", L"newer"};
     UpdateResult r;
     update_check(&r);
-    bool installed = false;
+    bool installed = false, portable_copy = !update_installed_copy(),
+         portable = install && r.state == UPD_NEWER && portable_copy, opened = false;
+    WCHAR url[256] = {0};
     int code = r.state == UPD_ERROR ? EXIT_FAIL : EXIT_OK;
-    if (install && r.state == UPD_NEWER) {
+    if (r.state == UPD_NEWER && portable_copy)
+        wsprintfW(url, L"https://github.com" UPDATE_REPO L"/releases/tag/%s", r.tag);
+    if (portable) {
+        opened = open_url(url);
+        code = opened ? EXIT_OK : EXIT_FAIL;
+    } else if (install && r.state == UPD_NEWER) {
         WCHAR setup[MAX_PATH];
         if (!json)
             print(T(DOWNLOADING), false);
@@ -123,11 +166,22 @@ static int cmd_update(int ac, WCHAR **av, bool json)
                  SNIPLITE_VERSION, r.tag);
         if (install)
             str_addf(&out, L",\"installed\":%s", installed ? L"true" : L"false");
+        if (r.state == UPD_NEWER && portable_copy)
+            str_addf(&out, L",\"portable\":true,\"release_url\":\"%s\"", url);
+        if (portable)
+            str_addf(&out, L",\"opened\":%s", opened ? L"true" : L"false");
         str_add(&out, L"}\n");
     } else if (installed) {
         str_addf(&out, T(UPDATED), r.tag);
+    } else if (portable) {
+        if (opened)
+            str_addf(&out, T(PORTABLE_UPDATE), url);
+        else
+            str_addf(&out, T(PORTABLE_NEWER), r.tag, SNIPLITE_VERSION, url);
     } else if (code != EXIT_OK) {
         str_add(&out, r.state == UPD_ERROR ? T(NET_FAILED) : T(UPD_FAILED));
+    } else if (r.state == UPD_NEWER && portable_copy) {
+        str_addf(&out, T(PORTABLE_NEWER), r.tag, SNIPLITE_VERSION, url);
     } else if (r.state == UPD_NEWER) {
         str_addf(&out, T(NEWER), r.tag, SNIPLITE_VERSION);
     } else if (r.state == UPD_NONE) {

@@ -78,6 +78,13 @@
 #define IDC_O_REMOVE 189
 #define IDC_O_BAR 190
 #define IDC_O_STATUS 191
+#define IDD_PAGE_QR 187
+#define IDC_Q_STATE 223
+#define IDC_Q_INSTALL 224
+#define IDC_Q_REMOVE 225
+#define IDC_Q_BAR 226
+#define IDC_Q_STATUS 227
+#define IDC_Q_HINT 228
 
 /* preferences, more: ids that are free between the pages above and the installer */
 #define IDC_PIN_TOP 192
