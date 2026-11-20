@@ -32,10 +32,10 @@
 
 ## Download
 
-Get the current version from [GitHub Releases](https://github.com/jinmeng3/sniplite/releases). Version 1.4.1 provides these QR portable packages:
+Get the current version from [GitHub Releases](https://github.com/jinmeng3/sniplite/releases). Version 1.4.1.2 provides these QR portable packages:
 
-- [QR portable package](https://github.com/jinmeng3/sniplite/releases/download/v1.4.1/sniplite_1.4.1_portable_QR_x64.zip): the app, QR helper, and its license.
-- [QR + OCR portable package](https://github.com/jinmeng3/sniplite/releases/download/v1.4.1/sniplite_1.4.1_portable_QR_OCR_x64.zip): includes the OCR module as well as QR recognition.
+- [QR portable package](https://github.com/jinmeng3/sniplite/releases/download/v1.4.1.2/sniplite_1.4.1.2_portable_QR_x64.zip): the app, QR helper, and its license.
+- [QR + OCR portable package](https://github.com/jinmeng3/sniplite/releases/download/v1.4.1.2/sniplite_1.4.1.2_portable_QR_OCR_x64.zip): includes the OCR module as well as QR recognition.
 
 Extract the ZIP and run `sniplite.exe`. The `sniplite-cli.com` companion provides command-line features; it is included in the QR ZIPs and is a separate download for single-file portable builds. Keep it beside the app. Portable builds can download or remove OCR from the OCR tab in Preferences. The Update tab opens the matching GitHub release page so you can download a new portable package. The QR helper can also be installed or removed from the QR tab. Portable builds can enable “Start with Windows” in Preferences. The shortcut points to the current program location, so do not move or rename its directory afterward. If you move it, turn the option off and on again to update the shortcut.
 
