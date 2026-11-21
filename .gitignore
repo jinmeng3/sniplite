@@ -3,3 +3,4 @@ w64devkit/
 *.ini
 # local tests against earlier versions of the code, not part of the repository
 tests/
+.codegraph/

@@ -945,6 +945,12 @@ X(PM_TOP_ALL, "置顶所有贴图", "置頂所有貼圖", "All pins on top", "�
   "Toutes les épingles au premier plan", "Alle Pins im Vordergrund", "Todas las imágenes siempre visibles")
 X(PM_TOP, "置顶这个贴图", "置頂這張貼圖", "This pin on top", "このピンを手前に表示", "이 고정 이미지를 위에",
   "Cette épingle au premier plan", "Diesen Pin im Vordergrund", "Esta imagen siempre visible")
+X(RACK_TITLE, "晾衣架", "晾衣架", "Pin rack", "ピンラック", "이미지 보관대", "Porte-images", "Bilderablage", "Estante de imágenes")
+X(RACK_HINT, "拖入贴图收纳，点击缩略图恢复", "拖入貼圖收納，點擊縮圖還原", "Drop pins here; click a thumbnail to restore", "ピンをドラッグして収納、クリックで復元", "이미지를 끌어 보관하고 클릭하여 복원", "Déposez une image ; cliquez pour la restaurer", "Bilder hier ablegen; zum Wiederherstellen anklicken", "Arrastra imágenes; pulsa una miniatura para restaurar")
+X(PM_STORE, "收纳到晾衣架\tCtrl+H", "收納到晾衣架\tCtrl+H", "Store on rack\tCtrl+H", "ラックに収納\tCtrl+H", "보관대에 넣기\tCtrl+H", "Ranger sur le porte-images\tCtrl+H", "In Ablage legen\tCtrl+H", "Guardar en el estante\tCtrl+H")
+X(RACK_RESTORE, "恢复贴图", "還原貼圖", "Restore pin", "ピンを復元", "이미지 복원", "Restaurer l’image", "Pin wiederherstellen", "Restaurar imagen")
+X(RACK_CLOSE_ONE, "关闭贴图", "關閉貼圖", "Close pin", "ピンを閉じる", "이미지 닫기", "Fermer l’image", "Pin schließen", "Cerrar imagen")
+X(RACK_HELP, "拖动卡片排序 · 右键管理", "拖動卡片排序 · 右鍵管理", "Drag cards to reorder · Right-click to manage", "カードをドラッグして並べ替え · 右クリックで管理", "카드를 끌어 정렬 · 우클릭하여 관리", "Glisser pour trier · clic droit pour gérer", "Zum Sortieren ziehen · Rechtsklick für Optionen", "Arrastra para ordenar · clic derecho para gestionar")
 
 /* ---- text recognition (ocr.c) ---- */
 X(OCR_WORKING, "正在识别...", "正在辨識...", "Reading the text...", "読み取り中...", "인식 중...",

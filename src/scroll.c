@@ -69,7 +69,7 @@ static struct {
     HWND frame, bar, view;
     Img shot;         /* the frame just read */
     uint32_t *canvas; /* reserved for max_rows, committed as it grows */
-    size_t committed; /* bytes */
+    size_t committed, hash_committed; /* canvas and row hashes, committed as rows arrive */
     int rows, max_rows;
     int pos;          /* the canvas row at the top of the last frame that fitted */
     uint32_t *chash;  /* STRIPS hashes per canvas row */
@@ -81,6 +81,7 @@ static struct {
     int quiet;        /* ticks without a change */
     uint32_t *thumb;  /* the canvas, small: tw wide */
     int tw, trows, tcap;
+    size_t thumb_committed;
     Img barimg;
     int hover, down;  /* the bar's button under the mouse, pressed; -1 none */
 } L;
@@ -181,6 +182,23 @@ static bool place(int *at)
     return all && same * 4 >= all;
 }
 
+static void *reserve_bytes(size_t bytes)
+{
+    return VirtualAlloc(NULL, (bytes + 0xFFFF) & ~(size_t)0xFFFF, MEM_RESERVE, PAGE_READWRITE);
+}
+
+/* Keep reservation and commitment boundaries aligned, including the final partial chunk. */
+static bool commit_to(void *base, size_t *committed, size_t need)
+{
+    if (need <= *committed)
+        return true;
+    size_t upto = (need + 0xFFFF) & ~(size_t)0xFFFF;
+    if (!VirtualAlloc(base, upto, MEM_COMMIT, PAGE_READWRITE))
+        return false;
+    *committed = upto;
+    return true;
+}
+
 /* n rows of the frame, from row y, to the end of the canvas */
 static void append(int y, int n)
 {
@@ -188,13 +206,9 @@ static void append(int y, int n)
     if (n <= 0)
         return;
     size_t row = (size_t)L.w * 4, need = (size_t)(L.rows + n) * row;
-    if (need > L.committed) {
-        size_t upto = (need + (4u << 20)) & ~(size_t)0xFFFF, all = (size_t)L.max_rows * row;
-        upto = MINI(upto, (all + 0xFFFF) & ~(size_t)0xFFFF);
-        if (!VirtualAlloc(L.canvas, upto, MEM_COMMIT, PAGE_READWRITE))
-            return;
-        L.committed = upto;
-    }
+    size_t hashes = (size_t)(L.rows + n) * STRIPS * sizeof(uint32_t);
+    if (!commit_to(L.canvas, &L.committed, need) || !commit_to(L.chash, &L.hash_committed, hashes))
+        return;
     memcpy(L.canvas + (size_t)L.rows * L.w, L.shot.px + (size_t)y * L.w, (size_t)n * row);
     memcpy(L.chash + (size_t)L.rows * STRIPS, L.fhash + (size_t)y * STRIPS, (size_t)n * STRIPS * sizeof(uint32_t));
     L.rows += n;
@@ -208,7 +222,10 @@ static void thumb_update(void)
     int w = L.w, tw = L.tw;
     if (!tw)
         return;
-    for (; L.trows < L.tcap && (L.trows + 1) * w / tw <= L.rows; L.trows++) {
+    int rows = MINI(L.tcap, (int)(((int64_t)(L.rows + 1) * tw - 1) / w));
+    if (!commit_to(L.thumb, &L.thumb_committed, (size_t)rows * tw * sizeof(uint32_t)))
+        return;
+    for (; L.trows < rows; L.trows++) {
         int y0 = L.trows * w / tw, y1 = (L.trows + 1) * w / tw;
         uint32_t *d = L.thumb + (size_t)L.trows * tw;
         for (int x = 0; x < tw; x++) {
@@ -376,7 +393,8 @@ static void stitch_free(void)
     if (L.canvas)
         VirtualFree(L.canvas, 0, MEM_RELEASE);
     img_destroy(&L.shot);
-    mem_free(L.chash);
+    if (L.chash)
+        VirtualFree(L.chash, 0, MEM_RELEASE);
     mem_free(L.fhash);
     mem_free(L.phash);
     mem_free(L.table);
@@ -392,13 +410,13 @@ static bool stitch_start(int w, int h)
 {
     L.w = w, L.h = h;
     L.first = true, L.lost = L.full = false;
-    L.rows = L.pos = 0, L.committed = 0;
+    L.rows = L.pos = 0, L.committed = L.hash_committed = 0;
     L.max_rows = MAXI(MINI(MAX_ROWS, MAX_PIXELS / w), 2 * h);
     L.x0 = w / 16, L.sw = MAXI((w - 2 * L.x0) / STRIPS, 1);
     for (L.tsize = 1024; L.tsize < 6 * h; L.tsize *= 2)
         ;
-    L.canvas = VirtualAlloc(NULL, (size_t)L.max_rows * w * 4, MEM_RESERVE, PAGE_READWRITE);
-    L.chash = mem_alloc((size_t)L.max_rows * STRIPS * sizeof(uint32_t));
+    L.canvas = reserve_bytes((size_t)L.max_rows * w * 4);
+    L.chash = reserve_bytes((size_t)L.max_rows * STRIPS * sizeof(uint32_t));
     L.fhash = mem_alloc((size_t)h * STRIPS * sizeof(uint32_t));
     L.phash = mem_alloc((size_t)h * STRIPS * sizeof(uint32_t));
     L.table = mem_alloc((size_t)L.tsize * sizeof(Slot));
@@ -555,7 +573,8 @@ static void long_end(void)
             DestroyWindow(w[i]);
     stitch_free();
     img_destroy(&L.barimg);
-    mem_free(L.thumb);
+    if (L.thumb)
+        VirtualFree(L.thumb, 0, MEM_RELEASE);
     memset(&L, 0, sizeof L);
 }
 
@@ -699,7 +718,7 @@ void long_begin(void)
     if (vx >= mon->left && tw < w) {
         L.tw = tw;
         L.tcap = (int)((int64_t)L.max_rows * tw / w) + 1;
-        L.thumb = mem_alloc((size_t)L.tcap * tw * 4);
+        L.thumb = reserve_bytes((size_t)L.tcap * tw * sizeof(uint32_t));
         L.view = L.thumb ? make(WS_EX_LAYERED | WS_EX_TRANSPARENT, vx, rc.top, tw, h) : NULL;
         if (!L.view)
             L.tw = 0;

@@ -66,6 +66,7 @@ Extract the ZIP and run `sniplite.exe`. The `sniplite-cli.com` companion provide
 | **Arrow keys, W A S D** | Move the pointer or selection; hold Shift to move 10 pixels at a time |
 | **Mouse wheel** | Change the window target while capturing; zoom a pin |
 | **Double-click a pin** | Close it |
+| **Ctrl+H (in a pin window)** | Store the current pin on the rack |
 
 ## FAQ
 
@@ -82,9 +83,23 @@ Select an area and click the text recognition button or press `Ctrl+O`. Results 
 
 Select an area, click the scrolling screenshot button or press `Ctrl+L`, then scroll the page. The app stitches the content as you scroll. You can copy, save, pin, or recognize text in the result.
 
+### How do I organize multiple pins?
+
+Dragging a pin reveals a rack near the top of the screen. Drop the pin onto the rack to collect it as a thumbnail. You can also press `Ctrl+H` in a pin window or choose “Store on rack” from its context menu. The “Pin rack” menu item opens the bar on its own.
+
+Click a thumbnail to restore its pin. Drag a card onto another card to reorder; right-click a card to restore or close that pin. Click the empty rack area to focus it, then use the arrow keys to select, `Home`/`End` to jump, `Enter` to restore, or `Delete` to close. Drag the rack title to move it; use the wheel or `<` and `>` buttons to browse more thumbnails. Closing the rack restores every collected pin. `Shift+F3` hides or shows the rack together with uncollected pins. Collection lasts for the current session; exiting the app releases all images.
+
+The rack uses rounded cards with hover highlights. Each card shows the original image dimensions, and the footer shows the visible range.
+
+![Pin rack](../pics/ui/pin-rack.png)
+
 ### How can I reduce memory use?
 
 The capture page in Preferences has a “Low memory” mode. It reduces memory use at the cost of slower capture.
+
+When zooming a pin, the percentage label uses a temporary drawing buffer sized to the text area instead of the entire scaled image. The default capture mode initializes graphics libraries and devices in the background; GDI capture remains available during initialization.
+
+Scrolling screenshots commit memory for the canvas, row hashes, and thumbnail as content is stitched, instead of allocating the full maximum length in advance. These buffers are released when the scrolling capture ends.
 
 ### How do I change the language or uninstall?
 

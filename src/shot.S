@@ -264,6 +264,58 @@ SFUNC gpu_state_free
         ret
 ENDF
 
+/* Only the build worker loads graphics DLLs; startup can enter its message loop meanwhile. */
+SFUNC gpu_load
+        PUSHREG rbx
+        PUSHREG rsi
+        ALLOC 40
+        ENDPROLOG
+        mov eax, 1
+        cmp qword ptr [rip + g_shot + G_CREATE_FACTORY], 0
+        jne .Lgl_ret
+        lea rcx, [rip + w_dxgi]
+        API LoadLibraryW
+        mov rbx, rax
+        lea rcx, [rip + w_d3d11]
+        API LoadLibraryW
+        mov rsi, rax
+        test rbx, rbx
+        jz .Lgl_fail
+        test rsi, rsi
+        jz .Lgl_fail
+        mov rcx, rbx
+        lea rdx, [rip + a_create_factory]
+        API GetProcAddress
+        mov qword ptr [rsp + 32], rax
+        test rax, rax
+        jz .Lgl_fail
+        mov rcx, rsi
+        lea rdx, [rip + a_create_device]
+        API GetProcAddress
+        test rax, rax
+        jz .Lgl_fail
+        mov qword ptr [rip + g_shot + G_CREATE_DEVICE], rax
+        mov rax, qword ptr [rsp + 32]
+        mov qword ptr [rip + g_shot + G_CREATE_FACTORY], rax
+        mov eax, 1
+        jmp .Lgl_ret
+.Lgl_fail:
+        test rsi, rsi
+        jz 1f
+        mov rcx, rsi
+        API FreeLibrary
+1:      test rbx, rbx
+        jz 2f
+        mov rcx, rbx
+        API FreeLibrary
+2:      xor eax, eax
+.Lgl_ret:
+        add rsp, 40
+        pop rsi
+        pop rbx
+        ret
+ENDF
+
 /* DWORD WINAPI gpu_build(void *): the worker thread. One D3D11 device per adapter
  * with a usable output (attached, not rotated, not HDR); posts the state to the
  * notify window (freed if that fails). */
@@ -285,6 +337,10 @@ SFUNC gpu_build
         PUSHREG r13
         ALLOC GB_FRAME
         ENDPROLOG
+        xor ebx, ebx
+        call gpu_load
+        test eax, eax
+        jz .Lgb_post
         mov ecx, GS_BYTES
         call mem_alloc
         mov rbx, rax                    /* st */
@@ -459,37 +515,10 @@ ENDF
 
 /* void gpu_start(HWND notify) */
 FUNC gpu_start
-        PUSHREG rbx
-        PUSHREG rsi
         ALLOC 40
         ENDPROLOG
         mov qword ptr [rip + g_shot + G_NOTIFY], rcx
-        cmp qword ptr [rip + g_shot + G_CREATE_FACTORY], 0
-        jne .Lgs_enable
-        lea rcx, [rip + w_dxgi]
-        API LoadLibraryW
-        mov rbx, rax
-        lea rcx, [rip + w_d3d11]
-        API LoadLibraryW
-        mov rsi, rax
-        test rbx, rbx
-        jz .Lgs_ret
-        test rsi, rsi
-        jz .Lgs_ret
-        mov rcx, rbx
-        lea rdx, [rip + a_create_factory]
-        API GetProcAddress
-        mov rbx, rax
-        mov rcx, rsi
-        lea rdx, [rip + a_create_device]
-        API GetProcAddress
-        mov qword ptr [rip + g_shot + G_CREATE_DEVICE], rax
-        test rbx, rbx
-        jz .Lgs_ret
-        test rax, rax
-        jz .Lgs_ret
-        mov qword ptr [rip + g_shot + G_CREATE_FACTORY], rbx
-.Lgs_enable:
+        /* DLL resolution and device creation both run on the existing worker. */
         mov byte ptr [rip + g_shot + G_ENABLED], 1
         cmp byte ptr [rip + g_shot + G_BUILDING], 0
         je .Lgs_spawn
@@ -499,8 +528,6 @@ FUNC gpu_start
         call gpu_spawn
 .Lgs_ret:
         add rsp, 40
-        pop rsi
-        pop rbx
         ret
 ENDF
 
