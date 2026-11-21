@@ -2236,6 +2236,20 @@ FUNC on_button
         call redo
         jmp .Lob_refresh
 5:
+        cmp ebx, B_FORMULA
+        jne .Lob_formula_preview
+        call formula_scan
+        test al, al
+        jz .Lob_refresh
+        add rsp, 32
+        pop rbx
+        jmp ov_cancel
+.Lob_formula_preview:
+        cmp ebx, B_FORMULA_PREVIEW
+        jne 50f
+        call formula_preview
+        jmp .Lob_refresh
+50:
         cmp ebx, B_QR
         jne 51f
         call qr_scan

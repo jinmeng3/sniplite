@@ -878,10 +878,9 @@ SFUNC put_int
 ENDF
 
 /* ecx = toolbar id -> rax = its tooltip text in the language in use, "" for an id
- * without one. The nine tools, the six buttons, the three sizes and the eight colors
- * are each a run of consecutive ids, and a run of consecutive texts in the same
- * order (lang_text.h): the text is the run's first one plus the id's place in the
- * run. Clobbers rcx. */
+ * without one. The nine tools, all commands, the three sizes and the eight colors are
+ * each consecutive ids with consecutive texts in the same order (lang_text.h).
+ * Clobbers rcx. */
 SFUNC tip_text
         ENDPROLOG
         lea eax, [rcx - T_RECT]
@@ -4469,6 +4468,11 @@ FUNC draw_toolbar
         cmp ebp, dword ptr Ov(OV_HOVER)
         jne 6f
         mov r8d, dword ptr [rax + P_HOVER*4]
+        lea ecx, [rbp - B_QR]
+        cmp ecx, B_FORMULA_PREVIEW - B_QR
+        ja .Ldt_hover_fill
+        mov r8d, dword ptr [rax + P_ON*4]
+.Ldt_hover_fill:
         cmp dword ptr Ov(OV_DRAG), DR_BUTTON
         jne 5f
         cmp ebp, dword ptr Ov(OV_BTN_DOWN)
@@ -4494,6 +4498,15 @@ FUNC draw_toolbar
         cmovnz eax, dword ptr [rdx + P_ICON_ON*4]
         test r13d, r13d
         cmovnz eax, dword ptr [rdx + P_ICON_OFF*4]
+        test r13d, r13d
+        jnz .Ldt_icon_color_done
+        cmp ebp, dword ptr Ov(OV_HOVER)
+        jne .Ldt_icon_color_done
+        lea ecx, [rbp - B_QR]
+        cmp ecx, B_FORMULA_PREVIEW - B_QR
+        ja .Ldt_icon_color_done
+        mov eax, dword ptr [rdx + P_ICON_ON*4]
+.Ldt_icon_color_done:
         lea ecx, [rbp - T_RECT]
         cmp ecx, T_NUMBER - T_RECT
         ja 7f

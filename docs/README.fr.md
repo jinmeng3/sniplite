@@ -37,7 +37,7 @@
 
 Récupérez le dernier installeur dans [Releases](https://github.com/MrTangLuyao/sniplite/releases/latest).
 
-Il existe aussi deux versions portables, sans installation : `sniplite_<version>_portable_x64.exe`, et `sniplite_<version>_portable_with_OCR_x64.exe`, qui contient le module de reconnaissance de texte.
+Trois archives ZIP portables, sans installation, sont disponibles et incluent toutes la lecture des QR codes : `sniplite_<version>_portable_QR_x64.zip`, `sniplite_<version>_portable_QR_OCR_x64.zip` et `sniplite_<version>_portable_QR_OCR_FormulaNet_x64.zip`. Une quatrième option, `sniplite_<version>_portable_QR_OCR_FormulaNet_WebView2_x64.zip`, contient une version fixe de WebView2 pour les PC sans Runtime ; lancez-la avec `start-sniplite.bat`.
 
 > [!TIP]
 > L'icône se trouve à droite de la barre des tâches ; si vous ne la voyez pas, cliquez sur la petite flèche. Pour la garder visible, cherchez « Autres icônes de la barre d'état système » dans les paramètres de Windows et activez sniplite.
@@ -129,7 +129,7 @@ Installez [w64devkit](https://github.com/skeeto/w64devkit) (ou un autre MinGW-w6
 
 ## Licence
 
-[MIT](../LICENSE)
+[AGPL-3.0](../LICENSE-AGPL-3.0)
 
 ## Logiciels libres tiers
 

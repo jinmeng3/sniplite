@@ -1,24 +1,5 @@
 @echo off
-rem Release files, into build\dist. Run build.bat first.
-rem
-rem   sniplite_win_setup_amd64.exe                    the installer. Its name never changes: installed
-rem                                                   copies ask for it by name when they update
-rem   sniplite_<version>_portable_x64.exe             the portable app; keep sniplite_qr.exe beside it
-rem   sniplite-cli.com                                 console commands for either portable executable;
-rem                                                   keep it beside the program
-rem   sniplite_qr.exe                                 shared QR reader used by the portable executables
-rem   sniplite_<version>_portable_with_OCR_x64.exe    the same program carrying the text recognition
-rem                                                   module: the module's zip is put after it, and it
-rem                                                   unpacks that beside itself when text is first
-rem                                                   read (src\ocr_get.c)
-rem
-rem The module's zip is the one this project publishes under a tag of its own (ocr-1), the very file
-rem Settings downloads: kept in build\sniplite_ocr.zip, fetched once with the curl that comes with
-rem Windows. Its size must be the one src\ocr_get.c names, so the two cannot drift apart.
-rem
-rem A changed module is a new zip, made by hand: the ocr folder (onnxruntime.dll, the two models,
-rem res\ocr-notice.txt as NOTICE.txt, the licenses of its parts), published under a new tag; the tag
-rem goes here, the tag, the size and the hashes into src\ocr_get.c.
+rem Release the installer and portable ZIPs into build\dist. Run build.bat first.
 setlocal
 cd /d "%~dp0"
 if not exist build\sniplite.exe (echo build\sniplite.exe is missing: run build.bat first & exit /b 1)
@@ -34,21 +15,30 @@ set ZIP=build\sniplite_ocr.zip
 set URL=https://github.com/MrTangLuyao/sniplite/releases/download/ocr-1/sniplite_ocr.zip
 set D=build\dist
 if not exist "%D%" mkdir "%D%" || exit /b 1
-for %%f in ("%D%\sniplite_win_setup_amd64.exe" "%D%\sniplite_%V%_portable_x64.exe" "%D%\sniplite-cli.com" "%D%\sniplite_qr.exe" "%D%\LICENSE-ZXing.txt" "%D%\sniplite_%V%_portable_with_OCR_x64.exe") do if exist "%%~f" del /q "%%~f"
-
-if not exist %ZIP% "%SystemRoot%\System32\curl.exe" -sfL -o %ZIP% %URL%
-if not exist %ZIP% (echo could not fetch the module's zip: %URL% & exit /b 1)
-for %%f in (%ZIP%) do if not "%%~zf"=="%BYTES%" (
-  echo %ZIP% is %%~zf bytes, src\ocr_get.c names %BYTES%: delete it to fetch the published one again
-  exit /b 1
+for %%f in (onnxruntime.dll PP-OCRv6_det_tiny.onnx PP-OCRv6_rec_tiny.onnx LICENSE-onnxruntime.txt ThirdPartyNotices-onnxruntime.txt LICENSE-PaddleOCR.txt NOTICE.txt) do if not exist "build\ocr\%%f" set NEED_OCR=1
+if defined NEED_OCR (
+  if not exist "%ZIP%" "%SystemRoot%\System32\curl.exe" -sfL -o "%ZIP%" "%URL%"
+  if not exist "%ZIP%" (echo could not fetch the OCR module: %URL% & exit /b 1)
+  for %%f in ("%ZIP%") do if not "%%~zf"=="%BYTES%" (
+    echo %ZIP% is %%~zf bytes, src\ocr_get.c names %BYTES%: delete it to fetch the published one again
+    exit /b 1
+  )
+  "%SystemRoot%\System32\tar.exe" -xf "%ZIP%" -C build || exit /b 1
 )
-
-copy /y build\sniplite_win_setup_amd64.exe %D% >nul || exit /b 1
-copy /y build\sniplite.exe %D%\sniplite_%V%_portable_x64.exe >nul || exit /b 1
-copy /y build\sniplite.com %D%\sniplite-cli.com >nul || exit /b 1
-copy /y build\sniplite_qr.exe %D%\sniplite_qr.exe >nul || exit /b 1
-copy /y third_party\zxing-cpp\LICENSE %D%\LICENSE-ZXing.txt >nul || exit /b 1
-copy /b /y build\sniplite.exe + %ZIP% %D%\sniplite_%V%_portable_with_OCR_x64.exe >nul || exit /b 1
-
+for %%f in (LICENSE-ZXing.txt LICENSE-WebView2.txt NOTICE-WebView2.txt) do if exist "%D%\%%f" del /q "%D%\%%f"
+for %%f in ("%D%\sniplite_%V%_portable_x64.exe" "%D%\sniplite_%V%_portable_with_OCR_x64.exe") do if exist "%%~f" del /q "%%~f"
+copy /y build\sniplite_win_setup_amd64.exe "%D%\sniplite_win_setup_amd64.exe" >nul || exit /b 1
+copy /y third_party\zxing-cpp\LICENSE "%D%\LICENSE-ZXing.txt" >nul || exit /b 1
+copy /y third_party\webview2\LICENSE.txt "%D%\LICENSE-WebView2.txt" >nul || exit /b 1
+copy /y third_party\webview2\NOTICE.txt "%D%\NOTICE-WebView2.txt" >nul || exit /b 1
+call pack-qr.bat || exit /b 1
+call pack-qr-ocr.bat || exit /b 1
+if exist "build\webview2-runtime\msedgewebview2.exe" (
+  call pack-qr-ocr-formula-webview2.bat || exit /b 1
+) else (
+  call pack-qr-ocr-formula.bat || exit /b 1
+  if exist "%D%\sniplite_%V%_portable_QR_OCR_FormulaNet_WebView2_x64.zip" del /q "%D%\sniplite_%V%_portable_QR_OCR_FormulaNet_WebView2_x64.zip"
+  echo Fixed WebView2 package skipped: extract the x64 Fixed Version runtime to build\webview2-runtime
+)
 for %%f in (%D%\*) do echo %%~nxf  %%~zf bytes
 exit /b 0

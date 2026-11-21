@@ -18,6 +18,8 @@ copy /y build\sniplite.exe "%D%\sniplite.exe" >nul || exit /b 1
 copy /y build\sniplite.com "%D%\sniplite-cli.com" >nul || exit /b 1
 copy /y build\sniplite_qr.exe "%D%\sniplite_qr.exe" >nul || exit /b 1
 copy /y third_party\zxing-cpp\LICENSE "%D%\LICENSE-ZXing.txt" >nul || exit /b 1
+copy /y third_party\webview2\LICENSE.txt "%D%\LICENSE-WebView2.txt" >nul || exit /b 1
+copy /y third_party\webview2\NOTICE.txt "%D%\NOTICE-WebView2.txt" >nul || exit /b 1
 if exist "%ZIP%" del /q "%ZIP%"
-"%SystemRoot%\System32\tar.exe" -a -c -f "%ZIP%" -C "%D%" sniplite.exe sniplite-cli.com sniplite_qr.exe LICENSE-ZXing.txt || exit /b 1
+"%SystemRoot%\System32\tar.exe" -a -c -f "%ZIP%" -C "%D%" sniplite.exe sniplite-cli.com sniplite_qr.exe LICENSE-ZXing.txt LICENSE-WebView2.txt NOTICE-WebView2.txt || exit /b 1
 for %%f in ("%ZIP%") do echo %%~nxf  %%~zf bytes

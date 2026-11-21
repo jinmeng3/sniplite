@@ -12,6 +12,10 @@
 #define FILE_NAME "sniplite.exe"
 
 IDI_APP ICON "sniplite.ico"
+IDR_FORMULA_LICENSE RCDATA "LICENSE-AGPL-3.0"
+IDR_FORMULA_PREVIEW RCDATA "../src/formula_preview.html"
+IDR_KATEX_ZIP RCDATA "../build/katex.zip"
+IDR_WEBVIEW2_LOADER RCDATA "../third_party/webview2/WebView2Loader.dll"
 
 /* The dialogs give the places and sizes only. Every text is set when a dialog opens,
  * from src/lang_text.h, and the font named here is replaced by the font of the
@@ -27,6 +31,8 @@ FONT 9, "Microsoft YaHei UI", 400, 0, 0x86
 BEGIN
     CONTROL         "", IDC_TABS, "SysTabControl32", WS_TABSTOP, 6, 6, 226, 186
 END
+
+
 
 IDD_PAGE_GENERAL DIALOGEX 0, 0, 220, 166
 STYLE DS_SHELLFONT | DS_CONTROL | WS_CHILD
@@ -153,6 +159,17 @@ BEGIN
     LTEXT           "", IDC_Q_STATUS, 8, 58, 204, 10
     LTEXT           "", IDC_Q_HINT, 8, 74, 204, 62
 END
+IDD_PAGE_FORMULA DIALOGEX 0, 0, 220, 166
+STYLE DS_SHELLFONT | DS_CONTROL | WS_CHILD
+FONT 9, "Microsoft YaHei UI", 400, 0, 0x86
+BEGIN
+    LTEXT           "", IDC_F_STATE, 8, 10, 204, 10
+    PUSHBUTTON      "", IDC_F_INSTALL, 8, 26, 110, 15
+    PUSHBUTTON      "", IDC_F_REMOVE, 124, 26, 60, 15
+    CONTROL         "", IDC_F_BAR, "msctls_progress32", 0, 8, 47, 204, 7
+    LTEXT           "", IDC_F_STATUS, 8, 58, 204, 10
+    LTEXT           "", IDC_F_HINT, 8, 74, 204, 62
+END
 
 IDD_PAGE_ABOUT DIALOGEX 0, 0, 220, 166
 STYLE DS_SHELLFONT | DS_CONTROL | WS_CHILD
@@ -167,8 +184,8 @@ END
 #endif
 
 VS_VERSION_INFO VERSIONINFO
-FILEVERSION 1,4,1,2
-PRODUCTVERSION 1,4,1,2
+FILEVERSION 1,4,1,3
+PRODUCTVERSION 1,4,1,3
 FILEOS VOS_NT_WINDOWS32
 FILETYPE VFT_APP
 BEGIN
@@ -177,9 +194,9 @@ BEGIN
     BLOCK "040904B0"
     BEGIN
       VALUE "FileDescription", FILE_DESC
-      VALUE "FileVersion", "1.4.1.2"
+      VALUE "FileVersion", "1.4.1.3"
       VALUE "ProductName", "sniplite"
-      VALUE "ProductVersion", "1.4.1.2"
+      VALUE "ProductVersion", "1.4.1.3"
       VALUE "OriginalFilename", FILE_NAME
       VALUE "LegalCopyright", "MIT License"
     END

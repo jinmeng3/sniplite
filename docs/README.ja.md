@@ -37,7 +37,7 @@
 
 [Releases](https://github.com/MrTangLuyao/sniplite/releases/latest) から最新版のインストーラーを入手してください。
 
-インストール不要のポータブル版も 2 つあります。`sniplite_<バージョン>_portable_x64.exe` と、文字認識モジュールを含む `sniplite_<バージョン>_portable_with_OCR_x64.exe` です。
+インストール不要のポータブル ZIP は 3 種類あります。すべて QR コード認識に対応し、`sniplite_<バージョン>_portable_QR_x64.zip`、`sniplite_<バージョン>_portable_QR_OCR_x64.zip`、`sniplite_<バージョン>_portable_QR_OCR_FormulaNet_x64.zip` を用意しています。WebView2 Runtime がない PC 向けに、固定版 Runtime を含む `sniplite_<バージョン>_portable_QR_OCR_FormulaNet_WebView2_x64.zip` もあり、`start-sniplite.bat` から起動します。
 
 > [!TIP]
 > アイコンはタスクバーの右端にあります。見当たらないときは、そこの小さな矢印をクリックしてください。常に表示するには、Windows の設定で **その他のシステム トレイ アイコン** を検索し、sniplite をオンにします。
@@ -129,7 +129,7 @@
 
 ## ライセンス
 
-[MIT](../LICENSE)
+[AGPL-3.0](../LICENSE-AGPL-3.0)
 
 ## サードパーティのオープンソース
 

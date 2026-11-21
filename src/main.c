@@ -7,6 +7,7 @@
 #include "install.h"
 #include "lang.h"
 #include "ocr.h"
+#include "formula.h"
 #include "overlay.h"
 #include "pin.h"
 #include "settings.h"
@@ -1246,6 +1247,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmdline, int show)
         return update_check_main();
     if (argc > 1 && (arg_eq(argv[1], L"--ocr") || arg_eq(argv[1], L"--ocr-file")))
         return ocr_helper(argc, argv);
+    if (argc > 1 && (arg_eq(argv[1], L"--formula-raw") || arg_eq(argv[1], L"--formula-file")))
+        return formula_helper(argc, argv);
     if (argc > 2 && arg_eq(argv[1], L"--quick-save"))
         return quick_save(argv[2]);
     if (argc > 1 && arg_eq(argv[1], L"--uninstall"))

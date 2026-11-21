@@ -1,5 +1,5 @@
-/* Preferences window: seven tabs (general, capture, hotkeys, update, text recognition,
- * QR helper, about); changes apply immediately.
+/* Preferences window: eight tabs (general, capture, hotkeys, update, text recognition,
+ * QR helper, FormulaNet, about); changes apply immediately.
  *
  * Every change is written to sniplite.ini and the background process is told to
  * reload it (`_reload`), which also reports whether each hotkey could be
@@ -15,6 +15,7 @@
 #include "install.h"
 #include "lang.h"
 #include "ocr.h"
+#include "formula.h"
 #include "update.h"
 #include "image.h"
 #include <commctrl.h>
@@ -33,7 +34,7 @@ typedef HRESULT(WINAPI *PFN_DrawThemeParentBackground)(HWND, HDC, const RECT *);
 #define HKN_DONE 2
 #define ETDT_ENABLETAB_ 6
 
-enum { PG_GENERAL, PG_CAPTURE, PG_HOTKEYS, PG_UPDATE, PG_OCR, PG_QR, PG_ABOUT, PG_COUNT };
+enum { PG_GENERAL, PG_CAPTURE, PG_HOTKEYS, PG_UPDATE, PG_OCR, PG_QR, PG_FORMULA, PG_ABOUT, PG_COUNT };
 enum { RI_NONE, RI_CLEAR, RI_OK, RI_FAIL, RI_HELP }; /* round icons */
 
 static struct {
@@ -56,6 +57,8 @@ static struct {
     bool qr_busy;    /* the QR helper is being downloaded */
     bool portable;   /* the program by itself, not installed */
     volatile LONG ocr_cancel, qr_cancel;
+    bool formula_busy; /* the FormulaNet model is being downloaded */
+    volatile LONG formula_cancel;
     POINT at;        /* where it was */
 } S;
 
@@ -560,6 +563,8 @@ static void show_help(HWND owner)
 #define WM_APP_QR_PROGRESS (WM_APP + 27) /* wParam = percent */
 #define WM_APP_QR_DONE (WM_APP + 28)     /* wParam = QR_GET_... */
 #define WM_APP_OCR_DONE (WM_APP + 26)     /* wParam = OCR_GET_... */
+#define WM_APP_FORMULA_PROGRESS (WM_APP + 29) /* wParam = percent */
+#define WM_APP_FORMULA_DONE (WM_APP + 30)     /* wParam = FORMULA_GET_... */
 
 static UpdateResult g_upd;
 static bool g_relaunch; /* updated: reopen this window from the new exe */
@@ -888,6 +893,74 @@ static void qr_done(int result)
         daemon_cmd(L"_reload", NULL);
 }
 
+/* ---- FormulaNet page: the optional on-device formula OCR model -------------------- */
+
+static void formula_show(void)
+{
+    HWND f = S.page[PG_FORMULA], focus = GetFocus();
+    WCHAR t[160];
+    bool there = formula_installed();
+    if (there)
+        wsprintfW(t, T(F_STATE_OK), formula_size_mb());
+    else
+        lstrcpynW(t, T(F_STATE_NONE), COUNTOF(t));
+    SetDlgItemTextW(f, IDC_F_STATE, t);
+    SetDlgItemTextW(f, IDC_F_INSTALL, S.formula_busy ? T(O_CANCEL_BTN) : T(O_INSTALL_BTN));
+    bool install = S.formula_busy ? !S.formula_cancel : !there;
+    bool remove = !S.formula_busy && there;
+    if ((!install && focus == GetDlgItem(f, IDC_F_INSTALL)) || (!remove && focus == GetDlgItem(f, IDC_F_REMOVE)))
+        SendMessageW(S.dlg, WM_NEXTDLGCTL, (WPARAM)S.tabs, TRUE);
+    EnableWindow(GetDlgItem(f, IDC_F_INSTALL), install);
+    EnableWindow(GetDlgItem(f, IDC_F_REMOVE), remove);
+    ShowWindow(GetDlgItem(f, IDC_F_BAR), S.formula_busy ? SW_SHOW : SW_HIDE);
+}
+
+static void formula_progress(int pct, void *ctx)
+{
+    (void)ctx;
+    PostMessageW(S.dlg, WM_APP_FORMULA_PROGRESS, (WPARAM)pct, 0);
+}
+
+static DWORD WINAPI formula_thread(void *p)
+{
+    (void)p;
+    int result = formula_get(&S.formula_cancel, formula_progress, NULL);
+    PostMessageW(S.dlg, WM_APP_FORMULA_DONE, (WPARAM)result, 0);
+    return 0;
+}
+
+static void formula_install(void)
+{
+    if (S.formula_busy) {
+        InterlockedExchange(&S.formula_cancel, 1);
+        formula_show();
+        return;
+    }
+    if (formula_installed())
+        return;
+    S.formula_cancel = 0;
+    HANDLE thread = CreateThread(NULL, 0, formula_thread, NULL, 0, NULL);
+    if (!thread)
+        return;
+    CloseHandle(thread);
+    S.formula_busy = true;
+    SendDlgItemMessageW(S.page[PG_FORMULA], IDC_F_BAR, PBM_SETPOS, 0, 0);
+    SetDlgItemTextW(S.page[PG_FORMULA], IDC_F_STATUS, T(U_DOWNLOADING));
+    formula_show();
+}
+
+static void formula_done(int result)
+{
+    S.formula_busy = false;
+    S.formula_cancel = 0;
+    SetDlgItemTextW(S.page[PG_FORMULA], IDC_F_STATUS,
+                    result == FORMULA_GET_NET ? T(U_DOWNLOAD_FAILED) : result == FORMULA_GET_CHECK ? T(F_CHECK_FAILED)
+                    : result == FORMULA_GET_WRITE ? T(O_WRITE_FAILED) : L"");
+    formula_show();
+    if (result == FORMULA_GET_OK)
+        daemon_cmd(L"_reload", NULL);
+}
+
 static void ensure_ini(WCHAR *path)
 {
     config_path(path, MAX_PATH);
@@ -917,7 +990,7 @@ static void page_command(HWND page, int id, int code, HWND ctl)
         int lang = (int)SendMessageW(ctl, CB_GETCURSEL, 0, 0) - 1; /* the first entry is LG_AUTO */
         if (code != CBN_SELCHANGE || lang == lang_choice())
             return;
-        if (S.busy || S.ocr_busy || S.qr_busy) /* a worker thread is about to report to this window */
+        if (S.busy || S.ocr_busy || S.qr_busy || S.formula_busy) /* a worker thread is about to report to this window */
             SendMessageW(ctl, CB_SETCURSEL, (WPARAM)(lang_choice() + 1), 0);
         else
             set_language(lang);
@@ -1012,6 +1085,14 @@ static void page_command(HWND page, int id, int code, HWND ctl)
     case IDC_Q_REMOVE:
         SetDlgItemTextW(page, IDC_Q_STATUS, qr_remove() ? L"" : T(O_WRITE_FAILED));
         qr_show();
+        daemon_cmd(L"_reload", NULL);
+        break;
+    case IDC_F_INSTALL:
+        formula_install();
+        break;
+    case IDC_F_REMOVE:
+        SetDlgItemTextW(page, IDC_F_STATUS, formula_remove() ? L"" : T(O_WRITE_FAILED));
+        formula_show();
         daemon_cmd(L"_reload", NULL);
         break;
     case IDC_U_AUTO:
@@ -1143,6 +1224,8 @@ static const struct {
     {PG_OCR, IDC_O_REMOVE, S_O_REMOVE_BTN},
     {PG_QR, IDC_Q_REMOVE, S_O_REMOVE_BTN},
     {PG_QR, IDC_Q_HINT, S_Q_HINT},
+    {PG_FORMULA, IDC_F_REMOVE, S_O_REMOVE_BTN},
+    {PG_FORMULA, IDC_F_HINT, S_F_HINT},
     {PG_OCR, IDC_HINT, S_O_HINT},
     {PG_ABOUT, IDC_TAGLINE, S_TAGLINE},
     {PG_ABOUT, IDC_LICENSE, S_A_LICENSE},
@@ -1170,7 +1253,7 @@ static INT_PTR CALLBACK main_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
         SetPropW(h, SETTINGS_MARK, (HANDLE)1);
         SetWindowTextW(h, T(SETTINGS_TITLE));
         static const int ids[PG_COUNT] = {IDD_PAGE_GENERAL, IDD_PAGE_CAPTURE, IDD_PAGE_HOTKEYS, IDD_PAGE_UPDATE,
-                                           IDD_PAGE_OCR, IDD_PAGE_QR, IDD_PAGE_ABOUT};
+                                           IDD_PAGE_OCR, IDD_PAGE_QR, IDD_PAGE_FORMULA, IDD_PAGE_ABOUT};
         RECT rc;
         GetWindowRect(S.tabs, &rc);
         MapWindowPoints(NULL, h, (POINT *)&rc, 2);
@@ -1220,6 +1303,7 @@ static INT_PTR CALLBACK main_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
         SendDlgItemMessageW(S.page[PG_QR], IDC_Q_BAR, PBM_SETRANGE, 0, MAKELPARAM(0, 100));
         ocr_show();
         qr_show();
+        formula_show();
         show_hotkeys();
         daemon_cmd(L"_hkstate", NULL);
         SendMessageW(S.tabs, TCM_SETCURSEL, (WPARAM)S.start_page, 0);
@@ -1288,6 +1372,8 @@ static INT_PTR CALLBACK main_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
             }
             if ((int)wp == PG_QR)
                 qr_show();
+            if ((int)wp == PG_FORMULA)
+                formula_show();
         }
         return TRUE;
     case WM_APP_OCR_PROGRESS: {
@@ -1313,10 +1399,22 @@ static INT_PTR CALLBACK main_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
     case WM_APP_QR_DONE:
         qr_done((int)wp);
         return TRUE;
+    case WM_APP_FORMULA_PROGRESS: {
+        WCHAR t[48];
+        wsprintfW(t, T(U_DOWNLOAD_PCT), (int)wp);
+        SetDlgItemTextW(S.page[PG_FORMULA], IDC_F_STATUS, t);
+        SendDlgItemMessageW(S.page[PG_FORMULA], IDC_F_BAR, PBM_SETPOS, wp, 0);
+        return TRUE;
+    }
+    case WM_APP_FORMULA_DONE:
+        formula_done((int)wp);
+        return TRUE;
     case WM_COMMAND:
         if (LOWORD(wp) == IDCANCEL && !S.installing) {
             if (S.qr_busy)
                 InterlockedExchange(&S.qr_cancel, 1);
+            if (S.formula_busy)
+                InterlockedExchange(&S.formula_cancel, 1);
             EndDialog(h, 0);
         }
         return TRUE;
@@ -1324,6 +1422,8 @@ static INT_PTR CALLBACK main_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
         if (!S.installing) {
             if (S.qr_busy)
                 InterlockedExchange(&S.qr_cancel, 1);
+            if (S.formula_busy)
+                InterlockedExchange(&S.formula_cancel, 1);
             EndDialog(h, 0);
         }
         return TRUE;
@@ -1367,6 +1467,7 @@ int settings_main(HINSTANCE inst, const WCHAR *page)
                    : arg_eq(page, L"update")              ? PG_UPDATE
                    : arg_eq(page, L"ocr") || S.ocr_auto     ? PG_OCR
                    : arg_eq(page, L"qr")                    ? PG_QR
+                   : arg_eq(page, L"formula")               ? PG_FORMULA
                    : arg_eq(page, L"about")                 ? PG_ABOUT
                                                              : PG_GENERAL;
     HWND open = ipc_find_dialog(SETTINGS_MARK);

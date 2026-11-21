@@ -9,9 +9,10 @@ cd /d "%~dp0"
 if exist "%~dp0w64devkit\bin\gcc.exe" set "PATH=%~dp0w64devkit\bin;%PATH%"
 where gcc >nul 2>nul || (echo gcc not found: put w64devkit in the project root or install MinGW-w64 on PATH & exit /b 1)
 if not exist build mkdir build
+"%SystemRoot%\System32\tar.exe" -a -c -f build\katex.zip -C third_party katex || exit /b 1
 
 rem src\start.S is the entry point (start); every program links only what it uses.
-set CF=-Isrc -Ires -std=c11 -Os -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers ^
+set CF=-Isrc -Ires -Ithird_party/webview2 -std=c11 -Os -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers ^
  -D_WIN32_WINNT=0x0A00 -DWINVER=0x0A00 -fno-math-errno -ffunction-sections -fdata-sections -fno-ident
 set APP_LDFLAGS=-nostdlib -nostartfiles -e start -s -Wl,--gc-sections -Wl,--nxcompat -Wl,--dynamicbase ^
  -Wl,--high-entropy-va
@@ -22,8 +23,8 @@ windres --input-format=rc -O coff -I res -DSNIPLITE_CLI res\sniplite.rc build\cl
 gcc %CF% -Wl,--subsystem,windows -o build\sniplite.exe src\start.S src\main.c src\ov_base.S src\ov_edit.S ^
  src\ov_paint.S src\ov_show.S src\ov_input.S src\present.S src\shot.S src\draw.S src\pin.c src\image.S ^
  src\config.c src\settings.c src\update.c src\uninstall.c src\util.c src\ipc.c src\lang.c src\crt.c ^
- src\ocr.c src\ocr_ui.c src\ocr_table.c src\ocr_get.c src\scroll.c build\sniplite.res ^
- %APP_LDFLAGS% -lkernel32 -luser32 -lgdi32 -ldwmapi -limm32 -luuid -lgcc || exit /b 1
+ src\ocr.c src\ocr_ui.c src\ocr_table.c src\ocr_get.c src\formula.c src\formula_get.c src\formula_ui.c src\formula_preview.c src\scroll.c build\sniplite.res ^
+ %APP_LDFLAGS% -lkernel32 -luser32 -lgdi32 -ldwmapi -limm32 -luuid -lole32 -lshell32 -lshlwapi -lgcc || exit /b 1
 gcc %CF% -DCONSOLE -Wl,--subsystem,console -o build\sniplite.com src\start.S src\cli.c src\update.c src\util.c ^
  src\ipc.c src\lang.c src\crt.c build\cli.res %APP_LDFLAGS% -lkernel32 -luser32 -lgdi32 -lgcc || exit /b 1
 
@@ -34,6 +35,7 @@ cmake -S src\qr -B build\qr -G Ninja -DCMAKE_BUILD_TYPE=Release ^
  -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ || exit /b 1
 cmake --build build\qr --config Release || exit /b 1
 copy /y build\qr\sniplite_qr.exe build\sniplite_qr.exe >nul || exit /b 1
+copy /y third_party\zxing-cpp\LICENSE build\LICENSE-ZXing.txt >nul || exit /b 1
 
 rem The installer carries the screenshot program, CLI, and QR helper as resources, so it is built last.
 windres --input-format=rc -O coff -I res -I build res\setup.rc build\setup.res || exit /b 1

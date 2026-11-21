@@ -549,6 +549,7 @@ X(TAB_HOTKEYS, "控制", "快速鍵", "Hotkeys", "ホットキー", "단축키",
 X(TAB_UPDATE, "更新", "更新", "Update", "更新", "업데이트", "Mise à jour", "Update", "Actualización")
 X(TAB_OCR, "文字识别", "文字辨識", "OCR", "OCR", "OCR", "OCR", "OCR", "OCR")
 X(TAB_QR, "二维码", "QR", "QR", "QR", "QR", "QR", "QR", "QR")
+X(TAB_FORMULA, "公式识别", "公式辨識", "Formula", "数式認識", "수식 인식", "Formule", "Formel", "Fórmulas")
 X(TAB_ABOUT, "关于", "關於", "About", "情報", "정보", "À propos", "Info", "Acerca de")
 X(G_AUTOSTART,
   "开机启动", "開機啟動", "Start with Windows", "Windows 起動時に実行", "Windows 시작 시 실행",
@@ -666,8 +667,8 @@ X(U_HINT,
   "Fragt bei GitHub nur die neueste Version ab. Es wird nichts hochgeladen.",
   "Solo consulta en GitHub la última versión. No se envía nada.")
 X(A_LICENSE,
-  "开源许可：MIT License", "開源授權：MIT License", "License: MIT", "ライセンス：MIT License",
-  "라이선스: MIT", "Licence : MIT", "Lizenz: MIT", "Licencia: MIT")
+  "开源许可：AGPL-3.0", "開源授權：AGPL-3.0", "License: AGPL-3.0", "ライセンス：AGPL-3.0", "라이선스: AGPL-3.0",
+  "Licence : AGPL-3.0", "Lizenz: AGPL-3.0", "Licencia: AGPL-3.0")
 X(HKF_PRESS, "按下快捷键", "按下快速鍵", "Press the keys", "キーを押してください", "단축키를 누르세요",
   "Tapez le raccourci", "Tasten drücken", "Pulsa las teclas")
 /* the shortcut list: three groups, then what each row does and its keys */
@@ -882,6 +883,9 @@ X(TIP_LONG, "长截图  Ctrl+L", "長截圖  Ctrl+L", "Scrolling capture  Ctrl+L
   "Capture défilante  Ctrl+L", "Scrollaufnahme  Ctrl+L", "Captura con desplazamiento  Ctrl+L")
 X(TIP_QR, "识别二维码  Ctrl+Q", "辨識 QR Code  Ctrl+Q", "Read QR code  Ctrl+Q", "QRコードを読み取る  Ctrl+Q", "QR 코드 인식  Ctrl+Q",
   "Lire le QR code  Ctrl+Q", "QR-Code lesen  Ctrl+Q", "Leer código QR  Ctrl+Q")
+X(TIP_FORMULA, "识别公式并复制 LaTeX", "辨識公式並複製 LaTeX", "Recognize formula and copy LaTeX", "数式を認識して LaTeX をコピー", "수식을 인식해 LaTeX 복사", "Reconnaître la formule et copier le LaTeX", "Formel erkennen und LaTeX kopieren", "Reconocer fórmula y copiar LaTeX")
+X(TIP_FORMULA_PREVIEW, "预览公式", "預覽公式", "Preview formula", "数式をプレビュー", "수식 미리 보기", "Aperçu de la formule", "Formelvorschau", "Vista previa de fórmula")
+X(F_PREVIEW_ERROR, "无法在应用内显示公式预览。请确认已安装 WebView2 Runtime。", "無法在應用內顯示公式預覽。請確認已安裝 WebView2 Runtime。", "Could not show the formula preview in sniplite. Check that WebView2 Runtime is installed.", "数式プレビューをアプリ内に表示できません。WebView2 Runtimeがインストールされているか確認してください。", "앱에서 수식 미리 보기를 표시할 수 없습니다. WebView2 Runtime이 설치되어 있는지 확인하세요.", "Impossible d’afficher l’aperçu dans sniplite. Vérifiez que WebView2 Runtime est installé.", "Formelvorschau kann in sniplite nicht angezeigt werden. Prüfen Sie, ob WebView2 Runtime installiert ist.", "No se puede mostrar la vista previa en sniplite. Comprueba que WebView2 Runtime esté instalado.")
 X(QR_NO_CODE, "选区里没有可识别的二维码。", "選取範圍內沒有可辨識的 QR Code。", "No readable QR code in the selection.",
   "選択範囲に読み取れるQRコードがありません。", "선택 영역에서 읽을 수 있는 QR 코드가 없습니다.",
   "Aucun QR code lisible dans la sélection.", "Kein lesbarer QR-Code in der Auswahl.", "No hay un código QR legible en la selección.")
@@ -999,6 +1003,21 @@ X(Q_HINT,
   "Module facultatif. Télécharge l'assistant QR et sa licence depuis les versions GitHub de sniplite. Une fois installé, utilisez le bouton QR ou Ctrl+Q dans l’éditeur.",
   "Optionales Modul. Lädt den QR-Helfer samt Lizenz aus den GitHub-Veröffentlichungen von sniplite. Danach erkennt die QR-Schaltfläche oder Ctrl+Q den ausgewählten Bereich.",
   "Módulo opcional. Descarga el asistente QR y su licencia desde las versiones de sniplite en GitHub. Una vez instalado, usa el botón QR o Ctrl+Q en el editor.")
+X(F_TITLE, "公式识别", "公式辨識", "Formula recognition", "数式認識", "수식 인식", "Reconnaissance de formules", "Formelerkennung", "Reconocimiento de fórmulas")
+X(F_STATE_NONE, "公式识别模块：未安装", "公式辨識模組：未安裝", "Formula recognition module: not installed", "数式認識モジュール: 未インストール", "수식 인식 모듈: 설치되지 않음", "Module de reconnaissance de formules : non installé", "Formelerkennungsmodul: nicht installiert", "Módulo de reconocimiento de fórmulas: no instalado")
+X(F_STATE_OK, "公式识别模块：已安装（%d MB）", "公式辨識模組：已安裝（%d MB）", "Formula recognition module: installed (%d MB)", "数式認識モジュール: インストール済み (%d MB)", "수식 인식 모듈: 설치됨 (%d MB)", "Module de reconnaissance de formules : installé (%d Mo)", "Formelerkennungsmodul: installiert (%d MB)", "Módulo de reconocimiento de fórmulas: instalado (%d MB)")
+X(F_HINT,
+  "可选模块，下载约 97 MB。截图编辑时点击公式按钮，将选区识别为 LaTeX 并复制到剪贴板。模型在本机运行；FormulaNet 采用 AGPL-3.0 许可。",
+  "選用模組，下載約 97 MB。截圖編輯時點擊公式按鈕，將選取範圍辨識為 LaTeX 並複製到剪貼簿。模型在本機執行；FormulaNet 採 AGPL-3.0 授權。",
+  "Optional module, about a 97 MB download. In the capture editor, click Formula to recognize the selection as LaTeX and copy it to the clipboard. Runs locally. FormulaNet is licensed under AGPL-3.0.",
+  "オプションのモジュールです。ダウンロードは約 97 MB。キャプチャ編集画面で数式ボタンを押すと、選択範囲を LaTeX に変換してクリップボードへコピーします。処理はローカルで行います。FormulaNet は AGPL-3.0 ライセンスです。",
+  "선택 모듈이며 약 97MB를 다운로드합니다. 캡처 편집 화면에서 수식 버튼을 누르면 선택 영역을 LaTeX로 인식해 클립보드에 복사합니다. 로컬에서 처리합니다. FormulaNet은 AGPL-3.0 라이선스입니다.",
+  "Module facultatif, téléchargement d’environ 97 Mo. Dans l’éditeur de capture, cliquez sur Formule pour reconnaître la sélection en LaTeX et la copier. Le traitement est local. FormulaNet est sous licence AGPL-3.0.",
+  "Optionales Modul, etwa 97 MB Download. In der Screenshot-Bearbeitung erkennt die Formel-Schaltfläche die Auswahl als LaTeX und kopiert sie in die Zwischenablage. Die Erkennung läuft lokal. FormulaNet steht unter AGPL-3.0.",
+  "Módulo opcional, descarga de unos 97 MB. En el editor de capturas, pulsa Fórmulas para reconocer la selección como LaTeX y copiarla al portapapeles. El procesamiento es local. FormulaNet usa AGPL-3.0.")
+X(F_CHECK_FAILED, "公式识别模块文件校验失败，请重试。", "公式辨識模組檔案驗證失敗，請重試。", "Formula module files failed verification. Try again.", "数式認識モジュールの検証に失敗しました。もう一度お試しください。", "수식 모듈 파일 검증에 실패했습니다. 다시 시도하세요.", "La vérification du module de formules a échoué. Réessayez.", "Die Prüfung der Formelmoduldateien ist fehlgeschlagen. Bitte erneut versuchen.", "Falló la verificación de los archivos del módulo de fórmulas. Inténtalo de nuevo.")
+X(F_NO_RESULT, "选区里没有识别到公式。", "選取範圍內沒有辨識到公式。", "No formula was recognized in the selection.", "選択範囲から数式を認識できませんでした。", "선택 영역에서 수식을 인식하지 못했습니다.", "Aucune formule reconnue dans la sélection.", "In der Auswahl wurde keine Formel erkannt.", "No se reconoció ninguna fórmula en la selección.")
+X(F_ERROR, "公式识别失败。请检查 FormulaNet 模块是否完整安装。", "公式辨識失敗。請檢查 FormulaNet 模組是否完整安裝。", "Formula recognition failed. Check that the FormulaNet module is installed correctly.", "数式認識に失敗しました。FormulaNet モジュールが正しくインストールされているか確認してください。", "수식 인식에 실패했습니다. FormulaNet 모듈이 올바르게 설치되었는지 확인하세요.", "Échec de la reconnaissance. Vérifiez l’installation du module FormulaNet.", "Formelerkennung fehlgeschlagen. Prüfen Sie die FormulaNet-Installation.", "Falló el reconocimiento. Comprueba la instalación del módulo FormulaNet.")
 X(O_INSTALL_BTN, "下载并安装", "下載並安裝", "Download and install", "ダウンロードして導入", "다운로드 및 설치", "Télécharger et installer",
   "Laden und installieren", "Descargar e instalar")
 X(O_CANCEL_BTN, "取消", "取消", "Cancel", "キャンセル", "취소", "Annuler", "Abbrechen", "Cancelar")

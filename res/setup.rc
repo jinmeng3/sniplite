@@ -10,6 +10,8 @@ IDR_APP_EXE RCDATA "sniplite.exe"
 IDR_APP_COM RCDATA "sniplite.com"
 IDR_APP_QR RCDATA "sniplite_qr.exe"
 IDR_QR_LICENSE RCDATA "third_party/zxing-cpp/LICENSE"
+IDR_WEBVIEW2_LICENSE RCDATA "third_party/webview2/LICENSE.txt"
+IDR_WEBVIEW2_NOTICE RCDATA "third_party/webview2/NOTICE.txt"
 
 /* Places and sizes only: the texts come from src/lang_text.h and the font is replaced
  * by the one of the language in use (src/lang.c). */
@@ -31,8 +33,8 @@ BEGIN
 END
 
 VS_VERSION_INFO VERSIONINFO
-FILEVERSION 1,4,1,2
-PRODUCTVERSION 1,4,1,2
+FILEVERSION 1,4,1,3
+PRODUCTVERSION 1,4,1,3
 FILEOS VOS_NT_WINDOWS32
 FILETYPE VFT_APP
 BEGIN
@@ -41,9 +43,9 @@ BEGIN
     BLOCK "040904B0"
     BEGIN
       VALUE "FileDescription", "sniplite setup"
-      VALUE "FileVersion", "1.4.1.2"
+      VALUE "FileVersion", "1.4.1.3"
       VALUE "ProductName", "sniplite"
-      VALUE "ProductVersion", "1.4.1.2"
+      VALUE "ProductVersion", "1.4.1.3"
       VALUE "OriginalFilename", "sniplite_win_setup_amd64.exe"
       VALUE "LegalCopyright", "MIT License"
     END

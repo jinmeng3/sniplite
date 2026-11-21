@@ -307,12 +307,14 @@ static bool part_path(const WCHAR *name, const WCHAR *suffix, WCHAR *path, int c
     return true;
 }
 
-/* one file into the module's folder: written under another name, then given its own */
-static bool file_write(const WCHAR *name, const uint8_t *data, uint32_t n)
+/* A ZIP entry into its destination folder: written under another name, then given its own. */
+static bool file_write(const WCHAR *dir, const WCHAR *name, const uint8_t *data, uint32_t n)
 {
     WCHAR path[MAX_PATH * 2], tmp[MAX_PATH * 2];
-    if (!part_path(name, L"", path, COUNTOF(path)) || !part_path(name, L".part", tmp, COUNTOF(tmp)))
+    if (lstrlenW(dir) + lstrlenW(name) + 8 >= COUNTOF(path))
         return false;
+    wsprintfW(path, L"%s\\%s", dir, name);
+    wsprintfW(tmp, L"%s.part", path);
     HANDLE h = CreateFileW(tmp, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     DWORD wrote = 0;
     bool ok = h != INVALID_HANDLE_VALUE && WriteFile(h, data, n, &wrote, NULL) && wrote == n;
@@ -325,12 +327,9 @@ static bool file_write(const WCHAR *name, const uint8_t *data, uint32_t n)
     return true;
 }
 
-/* The zip, whole in memory, taken apart into the module's folder: OCR_GET_OK, _CHECK or
- * _WRITE. A zip is read from its end, where its directory is (no comment after it: pack.bat
- * writes none). Only plain files right in "ocr/" are looked at: the module's three, each
- * with the size and the SHA-256 it must have, and text files (the notice, the licenses).
- * Nothing else is written, so nothing can land outside the folder or be loaded from it. */
-static int zip_unpack(const uint8_t *zip, size_t n)
+/* The ZIP, whole in memory. Normal extraction writes the OCR module; runtime-only
+ * extraction writes its verified ONNX Runtime files to target without installing OCR. */
+static int zip_unpack(const uint8_t *zip, size_t n, const WCHAR *target, bool runtime_only)
 {
     WCHAR dir[MAX_PATH * 2];
     if (n < 22 || rd32(zip + n - 22) != 0x06054b50)
@@ -339,10 +338,16 @@ static int zip_unpack(const uint8_t *zip, size_t n)
     uint32_t count = rd16(end + 10), dir_bytes = rd32(end + 12), dir_at = rd32(end + 16);
     if ((uint64_t)dir_at + dir_bytes > n - 22)
         return OCR_GET_CHECK;
-    ocr_dir(dir, COUNTOF(dir));
-    if (!CreateDirectoryW(dir, NULL) && GetLastError() != ERROR_ALREADY_EXISTS)
+    if (runtime_only && (!target || !*target))
+        return OCR_GET_WRITE;
+    if (runtime_only)
+        lstrcpynW(dir, target, COUNTOF(dir));
+    else
+        ocr_dir(dir, COUNTOF(dir));
+    if (!dir[0] || (!CreateDirectoryW(dir, NULL) && GetLastError() != ERROR_ALREADY_EXISTS))
         return OCR_GET_WRITE;
     const uint8_t *e = zip + dir_at, *dir_end = e + dir_bytes;
+    bool runtime_seen = false, runtime_license = false, runtime_notices = false;
     for (uint32_t i = 0; i < count; i++) {
         if (dir_end - e < 46 || rd32(e) != 0x02014b50)
             return OCR_GET_CHECK;
@@ -361,12 +366,27 @@ static int zip_unpack(const uint8_t *zip, size_t n)
         if (!plain)
             continue; /* the folder's own entry, or something not expected here */
         file[nlen - 4] = 0;
+        bool runtime_text = runtime_only && (!lstrcmpiW(file, L"LICENSE-onnxruntime.txt") ||
+                                             !lstrcmpiW(file, L"ThirdPartyNotices-onnxruntime.txt"));
         const Part *part = NULL;
-        for (int k = 0; k < COUNTOF(kParts); k++)
-            if (!lstrcmpiW(file, kParts[k].name))
-                part = &kParts[k];
-        if (!part && (nlen < 8 || lstrcmpiW(file + nlen - 8, L".txt")))
-            continue;
+        if (runtime_only) {
+            if (!lstrcmpiW(file, L"onnxruntime.dll")) {
+                if (runtime_seen)
+                    return OCR_GET_CHECK;
+                part = &kParts[2];
+            } else if (!runtime_text) {
+                continue;
+            }
+        } else {
+            for (int k = 0; k < COUNTOF(kParts); k++)
+                if (!lstrcmpiW(file, kParts[k].name))
+                    part = &kParts[k];
+            if (!part && (nlen < 8 || lstrcmpiW(file + nlen - 8, L".txt")))
+                continue;
+        }
+        if (runtime_text && ((!lstrcmpiW(file, L"LICENSE-onnxruntime.txt") && (runtime_license || usize != 1073)) ||
+                             (!lstrcmpiW(file, L"ThirdPartyNotices-onnxruntime.txt") && (runtime_notices || usize != 325054))))
+            return OCR_GET_CHECK;
         if ((part && usize != part->size) || (uint64_t)at + 30 > dir_at || rd32(zip + at) != 0x04034b50)
             return OCR_GET_CHECK;
         const uint8_t *data = zip + at + 30 + rd16(zip + at + 26) + rd16(zip + at + 28);
@@ -381,13 +401,22 @@ static int zip_unpack(const uint8_t *zip, size_t n)
             if (memcmp(sha, part->sha, 32))
                 result = OCR_GET_CHECK;
         }
-        if (result == OCR_GET_OK && !file_write(file, out, usize))
+        if (result == OCR_GET_OK && !file_write(dir, file, out, usize))
             result = OCR_GET_WRITE;
+        if (result == OCR_GET_OK && runtime_only) {
+            if (part)
+                runtime_seen = true;
+            else if (!lstrcmpiW(file, L"LICENSE-onnxruntime.txt"))
+                runtime_license = true;
+            else if (!lstrcmpiW(file, L"ThirdPartyNotices-onnxruntime.txt"))
+                runtime_notices = true;
+        }
         mem_free(mem);
         if (result != OCR_GET_OK)
             return result;
     }
-    return ocr_installed() ? OCR_GET_OK : OCR_GET_CHECK;
+    return runtime_only ? (runtime_seen && runtime_license && runtime_notices ? OCR_GET_OK : OCR_GET_CHECK)
+                        : ocr_installed() ? OCR_GET_OK : OCR_GET_CHECK;
 }
 
 /* ---- downloaded ---- */
@@ -421,7 +450,22 @@ int ocr_get(volatile LONG *cancel, void (*progress)(int percent, void *ctx), voi
     if (!f.buf)
         return OCR_GET_WRITE;
     bool whole = http_fetch(UPDATE_HOST, MODULE_PATH, NULL, &status, fetch_sink, &f) && f.have == MODULE_BYTES;
-    int result = *cancel ? OCR_GET_CANCEL : !whole ? OCR_GET_NET : zip_unpack(f.buf, f.have);
+    int result = *cancel ? OCR_GET_CANCEL : !whole ? OCR_GET_NET : zip_unpack(f.buf, f.have, NULL, false);
+    mem_free(f.buf);
+    return result;
+}
+
+int ocr_runtime_get(const WCHAR *dir, volatile LONG *cancel, void (*progress)(int percent, void *ctx), void *ctx)
+{
+    LONG never_cancel = 0;
+    if (!cancel)
+        cancel = &never_cancel;
+    Fetch f = {mem_alloc(MODULE_BYTES), 0, cancel, progress, ctx, -1};
+    if (!f.buf)
+        return OCR_GET_WRITE;
+    DWORD status;
+    bool whole = http_fetch(UPDATE_HOST, MODULE_PATH, NULL, &status, fetch_sink, &f) && f.have == MODULE_BYTES;
+    int result = *cancel ? OCR_GET_CANCEL : !whole ? OCR_GET_NET : zip_unpack(f.buf, f.have, dir, true);
     mem_free(f.buf);
     return result;
 }
@@ -489,7 +533,7 @@ bool ocr_unpack(void)
     if (!pack_open(&k))
         return false;
     uint8_t *zip = mem_alloc(k.bytes);
-    bool ok = zip && read_at(k.f, k.at, zip, k.bytes) && zip_unpack(zip, k.bytes) == OCR_GET_OK;
+    bool ok = zip && read_at(k.f, k.at, zip, k.bytes) && zip_unpack(zip, k.bytes, NULL, false) == OCR_GET_OK;
     mem_free(zip);
     CloseHandle(k.f);
     return ok;

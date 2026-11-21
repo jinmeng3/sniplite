@@ -127,6 +127,7 @@ void refresh(void);
 bool ov_begin(void);
 bool ov_active(void);
 extern const int32_t kTbOrder[], kTbPlain[], kTbOrderNoQR[], kTbPlainNoQR[];
+extern const int32_t kTbOrderFormula[], kTbPlainFormula[], kTbOrderNoQRFormula[], kTbPlainNoQRFormula[];
 extern const int32_t *tb_order;
 extern int32_t tb_count;
 extern uint32_t ovp_scale_key; /* what the overlay's table of sizes was made for (ov_paint.S) */
@@ -134,6 +135,8 @@ extern uint32_t ovp_scale_key; /* what the overlay's table of sizes was made for
 uint8_t ocr_panel_on; /* read by refresh(): call ocr_follow() */
 uint8_t ocr_there;
 uint8_t qr_there;
+extern uint8_t formula_there;
+extern void formula_refresh(void);
 
 static struct {
     SRWLOCK lock;
@@ -149,8 +152,13 @@ void ocr_refresh(void)
 {
     ocr_there = ocr_installed() || ocr_packed();
     qr_there = qr_installed();
-    tb_order = ocr_there ? (qr_there ? kTbOrder : kTbOrderNoQR) : (qr_there ? kTbPlain : kTbPlainNoQR);
-    tb_count = TB_ITEMS - (ocr_there ? 0 : 2) - (qr_there ? 0 : 1);
+    formula_refresh();
+    if (formula_there)
+        tb_order = ocr_there ? (qr_there ? kTbOrderFormula : kTbOrderNoQRFormula)
+                             : (qr_there ? kTbPlainFormula : kTbPlainNoQRFormula);
+    else
+        tb_order = ocr_there ? (qr_there ? kTbOrder : kTbOrderNoQR) : (qr_there ? kTbPlain : kTbPlainNoQR);
+    tb_count = TB_ITEMS - (ocr_there ? 0 : 2) - (qr_there ? 0 : 1) - (formula_there ? 0 : 2);
     ovp_scale_key = ~0u; /* that table has the bar's width, counted from the old order */
 }
 

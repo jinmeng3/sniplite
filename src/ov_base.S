@@ -114,6 +114,18 @@ kTbOrderNoQR:   .long T_RECT, T_ELLIPSE, T_LINE, T_ARROW, T_PEN, T_MARKER, T_MOS
         .globl kTbPlainNoQR
 kTbPlainNoQR:   .long T_RECT, T_ELLIPSE, T_LINE, T_ARROW, T_PEN, T_MARKER, T_MOSAIC, T_TEXT, T_NUMBER
                 .long -1, B_UNDO, B_REDO, -1, B_LONG, B_PIN, B_SAVE, B_CLOSE, B_OK
+        .globl kTbOrderFormula
+kTbOrderFormula: .long T_RECT, T_ELLIPSE, T_LINE, T_ARROW, T_PEN, T_MARKER, T_MOSAIC, T_TEXT, T_NUMBER
+                .long -1, B_UNDO, B_REDO, -1, B_LONG, B_QR, B_OCR, B_OCRCOPY, B_PIN, B_SAVE, B_FORMULA, B_FORMULA_PREVIEW, B_CLOSE, B_OK
+        .globl kTbPlainFormula
+kTbPlainFormula: .long T_RECT, T_ELLIPSE, T_LINE, T_ARROW, T_PEN, T_MARKER, T_MOSAIC, T_TEXT, T_NUMBER
+                .long -1, B_UNDO, B_REDO, -1, B_LONG, B_QR, B_PIN, B_SAVE, B_FORMULA, B_FORMULA_PREVIEW, B_CLOSE, B_OK
+        .globl kTbOrderNoQRFormula
+kTbOrderNoQRFormula: .long T_RECT, T_ELLIPSE, T_LINE, T_ARROW, T_PEN, T_MARKER, T_MOSAIC, T_TEXT, T_NUMBER
+                .long -1, B_UNDO, B_REDO, -1, B_LONG, B_OCR, B_OCRCOPY, B_PIN, B_SAVE, B_FORMULA, B_FORMULA_PREVIEW, B_CLOSE, B_OK
+        .globl kTbPlainNoQRFormula
+kTbPlainNoQRFormula: .long T_RECT, T_ELLIPSE, T_LINE, T_ARROW, T_PEN, T_MARKER, T_MOSAIC, T_TEXT, T_NUMBER
+                .long -1, B_UNDO, B_REDO, -1, B_LONG, B_PIN, B_SAVE, B_FORMULA, B_FORMULA_PREVIEW, B_CLOSE, B_OK
 /* the bars' colors, by P_* (ov_layout.inc) */
         .globl kPalLight
 kPalLight:      .long 0xF7F7F7, 0xBDBDBD, 0xD0D0D0, 0xCCE4F7, 0xE5E5E5, 0xD4D4D4, 0x333333, 0x005FB8, 0xB4B4B4, 0x107C10

@@ -52,8 +52,10 @@
 #define B_OCRCOPY                    27
 #define B_LONG                       28
 #define B_QR                         29
-#define B_LAST                       B_QR /* the commands are B_UNDO .. B_LAST */
-#define TB_ITEMS                     21    /* entries of kTbOrder; other toolbar orders omit disabled items */
+#define B_FORMULA                   30
+#define B_FORMULA_PREVIEW           31
+#define B_LAST                      B_FORMULA_PREVIEW /* the commands are B_UNDO .. B_LAST */
+#define TB_ITEMS                    23    /* entries of kTbOrder; other toolbar orders omit disabled items */
 #define B_SIZE                       40
 #define B_COLOR                      50
 #define ACT_COPY                     0

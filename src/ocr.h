@@ -26,6 +26,9 @@ void ocr_dir(WCHAR *dir, int cap); /* the module's folder: "ocr" next to the pro
  * gets 0..100; *cancel set from another thread gives up. Blocking. */
 enum { OCR_GET_OK, OCR_GET_NET, OCR_GET_CHECK, OCR_GET_WRITE, OCR_GET_CANCEL };
 int ocr_get(volatile LONG *cancel, void (*progress)(int percent, void *ctx), void *ctx);
+/* formula_get.c: download the same pinned OCR bundle, extracting only its verified
+ * ONNX Runtime DLL and runtime licenses into dir. */
+int ocr_runtime_get(const WCHAR *dir, volatile LONG *cancel, void (*progress)(int percent, void *ctx), void *ctx);
 bool ocr_remove(void); /* false when a file is in use */
 /* The program may carry the module itself (the portable one with OCR). ocr_unpack writes
  * it into that folder, checked the same way; ocr_load does this when the folder is missing. */

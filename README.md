@@ -8,7 +8,7 @@
 
 [![English](https://img.shields.io/badge/English-eaeef2?style=flat-square)](docs/README.en.md) [![简体中文](https://img.shields.io/badge/%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-1677e5?style=flat-square)](#sniplite) [![繁體中文](https://img.shields.io/badge/%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87-eaeef2?style=flat-square)](docs/README.zh-TW.md) [![日本語](https://img.shields.io/badge/%E6%97%A5%E6%9C%AC%E8%AA%9E-eaeef2?style=flat-square)](docs/README.ja.md) [![한국어](https://img.shields.io/badge/%ED%95%9C%EA%B5%AD%EC%96%B4-eaeef2?style=flat-square)](docs/README.ko.md) [![Français](https://img.shields.io/badge/Fran%C3%A7ais-eaeef2?style=flat-square)](docs/README.fr.md) [![Deutsch](https://img.shields.io/badge/Deutsch-eaeef2?style=flat-square)](docs/README.de.md) [![Español](https://img.shields.io/badge/Espa%C3%B1ol-eaeef2?style=flat-square)](docs/README.es.md) · [下载 Releases](https://github.com/jinmeng3/sniplite/releases)
 
-[![版本](https://img.shields.io/github/v/tag/jinmeng3/sniplite?sort=date&label=%E7%89%88%E6%9C%AC&style=flat-square&color=1677e5)](https://github.com/jinmeng3/sniplite/releases) [![系统](https://img.shields.io/badge/%E7%B3%BB%E7%BB%9F-Windows%2010%20%2F%2011-3b82f6?style=flat-square)](#系统要求) [![许可证](https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF%E8%AF%81-MIT-3b82f6?style=flat-square)](LICENSE)
+[![版本](https://img.shields.io/github/v/tag/jinmeng3/sniplite?sort=date&label=%E7%89%88%E6%9C%AC&style=flat-square&color=1677e5)](https://github.com/jinmeng3/sniplite/releases) [![系统](https://img.shields.io/badge/%E7%B3%BB%E7%BB%9F-Windows%2010%20%2F%2011-3b82f6?style=flat-square)](#系统要求) [![许可证](https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF%E8%AF%81-AGPL--3.0-3b82f6?style=flat-square)](LICENSE-AGPL-3.0)
 
 <img src="pics/zh/demo-edit.png" alt="截图后直接绘制箭头、文字和标记" width="66%">
 <br>
@@ -25,6 +25,7 @@
 - **截图**：识别窗口和控件，提供放大镜及像素级选区调整。
 - **标注和贴图**：绘制箭头、文字、序号和马赛克，也可将截图置顶显示。
 - **二维码识别**：在截图选区按 `Ctrl+Q` 识别二维码，结果留在本机并可复制。
+- **公式识别**：可选 FormulaNet 模块，在本机将截图选区转换为 LaTeX 并复制。
 - **文字识别**：可选 OCR 模块，支持普通文字和表格识别，在本机运行。
 - **长截图**：滚动页面时自动拼接内容。
 - **轻量运行**：截图、画面合成和绘制等性能敏感部分使用 x86-64 汇编；主程序不链接 C 运行库。
@@ -32,18 +33,23 @@
 
 ## 下载
 
-前往 [GitHub Releases](https://github.com/jinmeng3/sniplite/releases) 下载当前版本。v1.4.1.2 提供以下二维码便携包：
+前往 [GitHub Releases](https://github.com/jinmeng3/sniplite/releases) 下载当前版本。v1.4.1.3 提供以下版本：
 
-- [二维码便携版](https://github.com/jinmeng3/sniplite/releases/download/v1.4.1.2/sniplite_1.4.1.2_portable_QR_x64.zip)：主程序、二维码识别程序及其许可证。
-- [二维码 + OCR 便携版](https://github.com/jinmeng3/sniplite/releases/download/v1.4.1.2/sniplite_1.4.1.2_portable_QR_OCR_x64.zip)：在二维码便携版基础上附带 OCR 模块。
+- [Windows 安装程序](https://github.com/jinmeng3/sniplite/releases/download/v1.4.1.3/sniplite_win_setup_amd64.exe)
+- [二维码便携版](https://github.com/jinmeng3/sniplite/releases/download/v1.4.1.3/sniplite_1.4.1.3_portable_QR_x64.zip)：主程序、二维码识别程序及其许可证。
+- [二维码 + OCR 便携版](https://github.com/jinmeng3/sniplite/releases/download/v1.4.1.3/sniplite_1.4.1.3_portable_QR_OCR_x64.zip)
+- [二维码 + OCR + FormulaNet 便携版](https://github.com/jinmeng3/sniplite/releases/download/v1.4.1.3/sniplite_1.4.1.3_portable_QR_OCR_FormulaNet_x64.zip)
+- [无需预装 WebView2 的便携版](https://github.com/jinmeng3/sniplite/releases/download/v1.4.1.3/sniplite_1.4.1.3_portable_QR_OCR_FormulaNet_WebView2_x64.zip)：附带 Fixed Version Runtime 158.0.4370.33，约 578 MiB。
 
 解压后运行 `sniplite.exe`。命令行功能由 `sniplite-cli.com` 提供；二维码 ZIP 已附带此文件，单文件便携版请从发布页另行下载，并与主程序放在同一目录。OCR 模块可在首选项的“OCR”页面下载安装或删除；更新页检查后会打开对应的 GitHub 发布页，供手动下载新版便携包。二维码助手也可在首选项的“二维码”页面单独下载安装或删除。便携版可在首选项中开启“开机启动”；快捷方式会指向当前程序位置，因此开启后不要移动或重命名程序目录。若已移动目录，请重新关闭并开启此选项以更新快捷方式。
+FormulaNet 公式识别模块也可在首选项的“公式识别”页面下载安装或删除。
 
 ## 系统要求
 
 - Windows 10 或 Windows 11 x64
 - 普通截图与绘图不需要额外运行库
 - OCR 需要随包提供或另行安装 OCR 模块
+- 公式识别需要另行安装 FormulaNet 模块
 
 ## 默认快捷键
 
@@ -78,6 +84,11 @@
 ### 如何提取截图中的文字？
 
 框选区域后点击文字识别按钮或按 `Ctrl+O`。识别结果显示在选区旁的面板中，可以编辑和复制；表格可保留列结构，也可切换为 Markdown。此功能需要 OCR 模块，使用 PaddleOCR PP-OCRv6 模型和 ONNX Runtime，识别过程在本机完成。
+### 如何识别截图中的公式？
+
+在截图编辑页框选公式，点击“∫”识别按钮即可识别并直接复制 LaTeX；复制成功后截图界面会自动退出。点击它旁边的眼睛按钮，会在 sniplite 自带的 WebView2 窗口中打开离线 KaTeX 预览与编辑页。修改公式后可复制，按 `Ctrl+Enter` 也可复制源码；公式语法有误时，预览页会显示提示。点击预览时，如果当前截图或选区还没有对应的识别结果，会先识别再打开；未识别出公式时不会打开空白页。预览窗口显示在选区所在的显示器。复制前会整理模型输出空格：移除括号和运算符周围多余空格，保留词间空格。首次使用前，在首选项的“公式识别”页面下载安装约 97 MB 的 FormulaNet 模块；推理在本机完成。
+识别期间不会弹出进度窗口；识别失败或结果未完整生成时，不会覆盖剪贴板。纯色空白选区会直接提示未识别到公式。
+
 
 ### 如何截取长图？
 
@@ -117,10 +128,11 @@
 
 ## 自行编译
 
-项目根目录的 `w64devkit` 可直接用于构建；也可使用 MinGW-w64、CMake 和 Ninja。运行 `build.bat` 编译程序；运行 `pack-qr.bat` 和 `pack-qr-ocr.bat` 可生成对应的二维码便携 ZIP。输出位于 `build` 文件夹。
+项目根目录的 `w64devkit` 可直接用于构建；也可使用 MinGW-w64、CMake 和 Ninja。运行 `build.bat` 编译程序，再运行 `pack.bat` 生成安装程序和三种二维码便携 ZIP：基础版、OCR 版、OCR+FormulaNet 版。脚本会准备 OCR 模块；生成含公式识别的版本前，先在 `build\sniplite.exe` 的首选项中安装 FormulaNet。输出位于 `build\dist`。
+还可生成适用于未安装 WebView2 电脑的第四种 ZIP：从[微软 WebView2 下载页](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)下载 x64 Fixed Version Runtime，运行 `if not exist build\webview2-runtime mkdir build\webview2-runtime`，再用 `expand.exe <runtime.cab> -F:* build\webview2-runtime` 解压；随后 `pack.bat` 会生成 `..._portable_QR_OCR_FormulaNet_WebView2_x64.zip`。固定 Runtime 超过 250 MB 且不会自动更新，需定期替换；目标电脑解压到本地磁盘后，请用包内的 `start-sniplite.bat` 启动，它会设置 Windows 10 所需权限。Fixed Version 不能从网络路径运行。
 
 二维码识别使用 [ZXing-C++ v3.1.1](https://github.com/zxing-cpp/zxing-cpp)，仅启用 QR Code 解码，遵循 Apache License 2.0。详细实现和限制见[二维码识别文档](docs/qr-code-recognition.md)。
 
 ## 许可证
 
-本项目采用 [MIT 许可证](LICENSE)。第三方组件各自遵循随程序包提供的许可证。OCR 组件和模型的许可信息见[上游 OCR 发布说明](https://github.com/MrTangLuyao/sniplite/releases/tag/ocr-1)。
+本项目采用 [GNU Affero 通用公共许可证 v3.0（AGPL-3.0）](LICENSE-AGPL-3.0)。FormulaNet 模型由 [alephpi/FormulaNet](https://huggingface.co/alephpi/FormulaNet) 提供并采用 AGPL-3.0；ONNX Runtime 遵循 MIT 许可证。其他第三方组件遵循各自的许可证；WebView2 SDK 组件的许可和声明见 `third_party/webview2` 与发布包中的 `LICENSE-WebView2.txt`、`NOTICE-WebView2.txt`；OCR 模块的具体许可信息见[上游 OCR 发布说明](https://github.com/MrTangLuyao/sniplite/releases/tag/ocr-1)。

@@ -33,7 +33,9 @@ enum {
     ORT_OPTIMIZE_ALL = 99,
     ORT_ARENA_ALLOCATOR = 1,
     ORT_MEM_DEFAULT = 0,
-    ORT_FLOAT = 1, /* ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT */
+    ORT_FLOAT = 1,
+    ORT_INT64 = 7,
+    ORT_BOOL = 9,
 };
 
 /* X(slot, name, return type, parameters) */

@@ -25,6 +25,7 @@
 - **Screenshots:** Detect windows and controls, with a magnifier and pixel-level selection adjustment.
 - **Annotations and pins:** Draw arrows, text, numbers, and mosaics; keep screenshots above other windows.
 - **QR recognition:** Press `Ctrl+Q` inside a screenshot selection. Results stay on your PC and can be copied.
+- **Formula recognition:** An optional FormulaNet module converts screenshot selections to LaTeX locally and copies the result.
 - **Text recognition:** An optional OCR module recognizes text and tables locally.
 - **Scrolling screenshots:** Scroll a page and automatically stitch the captured content.
 - **Lightweight:** Performance-sensitive capture, composition, and drawing code uses x86-64 assembly. The main program does not link the C runtime.
@@ -32,18 +33,23 @@
 
 ## Download
 
-Get the current version from [GitHub Releases](https://github.com/jinmeng3/sniplite/releases). Version 1.4.1.2 provides these QR portable packages:
+Get the current version from [GitHub Releases](https://github.com/jinmeng3/sniplite/releases). Version 1.4.1.3 provides these packages:
 
-- [QR portable package](https://github.com/jinmeng3/sniplite/releases/download/v1.4.1.2/sniplite_1.4.1.2_portable_QR_x64.zip): the app, QR helper, and its license.
-- [QR + OCR portable package](https://github.com/jinmeng3/sniplite/releases/download/v1.4.1.2/sniplite_1.4.1.2_portable_QR_OCR_x64.zip): includes the OCR module as well as QR recognition.
+- [Windows installer](https://github.com/jinmeng3/sniplite/releases/download/v1.4.1.3/sniplite_win_setup_amd64.exe)
+- [QR portable package](https://github.com/jinmeng3/sniplite/releases/download/v1.4.1.3/sniplite_1.4.1.3_portable_QR_x64.zip): the app, QR helper, and its license.
+- [QR + OCR portable package](https://github.com/jinmeng3/sniplite/releases/download/v1.4.1.3/sniplite_1.4.1.3_portable_QR_OCR_x64.zip)
+- [QR + OCR + FormulaNet portable package](https://github.com/jinmeng3/sniplite/releases/download/v1.4.1.3/sniplite_1.4.1.3_portable_QR_OCR_FormulaNet_x64.zip)
+- [Portable package without a preinstalled WebView2 Runtime](https://github.com/jinmeng3/sniplite/releases/download/v1.4.1.3/sniplite_1.4.1.3_portable_QR_OCR_FormulaNet_WebView2_x64.zip): includes Fixed Version Runtime 158.0.4370.33 (about 578 MiB).
 
 Extract the ZIP and run `sniplite.exe`. The `sniplite-cli.com` companion provides command-line features; it is included in the QR ZIPs and is a separate download for single-file portable builds. Keep it beside the app. Portable builds can download or remove OCR from the OCR tab in Preferences. The Update tab opens the matching GitHub release page so you can download a new portable package. The QR helper can also be installed or removed from the QR tab. Portable builds can enable “Start with Windows” in Preferences. The shortcut points to the current program location, so do not move or rename its directory afterward. If you move it, turn the option off and on again to update the shortcut.
+The FormulaNet module can also be installed or removed from the Formula tab in Preferences.
 
 ## System requirements
 
 - Windows 10 or Windows 11, x64
 - No additional runtime is required for screenshots and annotations.
 - OCR requires the included or separately installed OCR module.
+- Formula recognition requires the separately installed FormulaNet module.
 
 ## Default shortcuts
 
@@ -78,6 +84,11 @@ The QR tab in Preferences can install or remove the helper. After installation, 
 ### How do I extract text from a screenshot?
 
 Select an area and click the text recognition button or press `Ctrl+O`. Results appear in a panel beside the selection and can be edited and copied. Tables can preserve their columns or be converted to Markdown. This requires the OCR module, which uses PaddleOCR PP-OCRv6 and ONNX Runtime and processes images locally.
+### How do I recognize a formula in a screenshot?
+
+Select the formula in the capture editor and click the “∫” button to recognize and copy LaTeX directly. The capture editor closes after the copy succeeds. The adjacent eye button opens an offline KaTeX preview/editor in sniplite’s WebView2 window. Edited formulas can be copied with the button or `Ctrl+Enter`; syntax errors are flagged in the preview. If the current capture or selection has no matching recognition result, the eye button recognizes it before opening; it does not open an empty page when no formula is found. The preview opens on the monitor containing the selection. Extra spaces around braces and operators are removed while word separators are preserved. First install FormulaNet (about 97 MB) from the Formula tab in Preferences. Inference runs locally.
+No progress dialog appears during recognition. Failures and incomplete output leave the clipboard unchanged. Solid-color blank selections are rejected.
+
 
 ### How do I take a scrolling screenshot?
 
@@ -117,10 +128,11 @@ The app follows the Windows language by default. Open Preferences from the syste
 
 ## Build from source
 
-The project-local `w64devkit` can build the project directly. Alternatively, install MinGW-w64, CMake, and Ninja. Run `build.bat` to build the programs. Run `pack-qr.bat` and `pack-qr-ocr.bat` to create the corresponding QR portable ZIPs. Output is placed in the `build` directory.
+The project-local `w64devkit` can build the project directly. Alternatively, install MinGW-w64, CMake, and Ninja. Run `build.bat`, then `pack.bat` to create the installer and three portable ZIPs with QR recognition: the base version, the OCR version, and the OCR+FormulaNet version. The script prepares the OCR module. Before packaging FormulaNet, install it from Preferences in `build\sniplite.exe`. Output is placed in `build\dist`.
+For PCs without WebView2, download the x64 Fixed Version Runtime from [Microsoft's WebView2 page](https://developer.microsoft.com/en-us/microsoft-edge/webview2/), run `if not exist build\webview2-runtime mkdir build\webview2-runtime`, then extract it with `expand.exe <runtime.cab> -F:* build\webview2-runtime`. Running `pack.bat` then creates `..._portable_QR_OCR_FormulaNet_WebView2_x64.zip`. The fixed runtime adds over 250 MB and does not update automatically; replace it periodically. Extract the package to a local disk and launch it with the included `start-sniplite.bat`, which applies the required Windows 10 permissions. Fixed Version does not run from a network path.
 
 QR recognition uses [ZXing-C++ v3.1.1](https://github.com/zxing-cpp/zxing-cpp), with only QR Code decoding enabled, under Apache License 2.0. See the [QR recognition guide](qr-code-recognition.en.md) for implementation details and limitations.
 
 ## License
 
-This project is licensed under the [MIT License](../LICENSE). Third-party components are distributed under their respective licenses. See the [upstream OCR release notes](https://github.com/MrTangLuyao/sniplite/releases/tag/ocr-1) for OCR component and model licensing details.
+This project is licensed under the [GNU Affero General Public License v3.0 (AGPL-3.0)](../LICENSE-AGPL-3.0). The FormulaNet model is provided by [alephpi/FormulaNet](https://huggingface.co/alephpi/FormulaNet) under AGPL-3.0; ONNX Runtime is under the MIT License. Other third-party components are distributed under their own licenses. See `third_party/webview2` and `LICENSE-WebView2.txt` / `NOTICE-WebView2.txt` in release packages for WebView2 SDK terms and notices. See the [upstream OCR release notes](https://github.com/MrTangLuyao/sniplite/releases/tag/ocr-1) for OCR licensing details.

@@ -37,7 +37,7 @@
 
 Den neuesten Installer gibt es unter [Releases](https://github.com/MrTangLuyao/sniplite/releases/latest).
 
-Dazu gibt es zwei portable Versionen ohne Installation: `sniplite_<Version>_portable_x64.exe` und `sniplite_<Version>_portable_with_OCR_x64.exe`, die das Texterkennungsmodul mitbringt.
+Es gibt drei portable ZIP-Pakete ohne Installation, alle mit QR-Erkennung: `sniplite_<Version>_portable_QR_x64.zip`, `sniplite_<Version>_portable_QR_OCR_x64.zip` und `sniplite_<Version>_portable_QR_OCR_FormulaNet_x64.zip`. Optional gibt es `sniplite_<Version>_portable_QR_OCR_FormulaNet_WebView2_x64.zip` mit fest versionierter WebView2-Runtime für PCs ohne Runtime; starten Sie es mit `start-sniplite.bat`.
 
 > [!TIP]
 > Das Symbol sitzt am rechten Ende der Taskleiste; ist es nicht zu sehen, klicken Sie dort auf den kleinen Pfeil. Damit es sichtbar bleibt, suchen Sie in den Windows-Einstellungen nach „Weitere Taskleistensymbole“ und schalten sniplite ein.
@@ -129,7 +129,7 @@ Ja. `sniplite help` zeigt alle Befehle.
 
 ## Lizenz
 
-[MIT](../LICENSE)
+[AGPL-3.0](../LICENSE-AGPL-3.0)
 
 ## Open Source von Dritten
 
