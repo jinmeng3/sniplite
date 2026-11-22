@@ -6,6 +6,20 @@
 #include "formula.h"
 #include "lang.h"
 #include "resource.h"
+#include <dwmapi.h>
+
+#ifndef DWMWA_WINDOW_CORNER_PREFERENCE
+#define DWMWA_WINDOW_CORNER_PREFERENCE 33
+#endif
+#ifndef DWMWA_BORDER_COLOR
+#define DWMWA_BORDER_COLOR 34
+#endif
+#ifndef DWMWA_CAPTION_COLOR
+#define DWMWA_CAPTION_COLOR 35
+#endif
+#ifndef DWMWA_TEXT_COLOR
+#define DWMWA_TEXT_COLOR 36
+#endif
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpedantic"
 #include <WebView2.h>
@@ -181,6 +195,20 @@ static LRESULT CALLBACK preview_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
     return DefWindowProcW(h, m, wp, lp);
 }
 
+static void preview_error(HWND h, const WCHAR *stage, HRESULT error)
+{
+    WCHAR text[320];
+    wsprintfW(text, L"%s\n\n%s: 0x%08lx", T(F_PREVIEW_ERROR), stage, (unsigned long)error);
+    MessageBoxW(h, text, T(F_TITLE), MB_OK | MB_ICONERROR);
+}
+
+static bool preview_fail(WCHAR *detail, int cap, const WCHAR *stage, HRESULT error)
+{
+    if (detail && cap > 0)
+        wsprintfW(detail, L"%s\n\n%s: 0x%08lx", T(F_PREVIEW_ERROR), stage, (unsigned long)error);
+    return false;
+}
+
 static HRESULT STDMETHODCALLTYPE controller_invoke(ICoreWebView2CreateCoreWebView2ControllerCompletedHandler *self, HRESULT error, ICoreWebView2Controller *controller)
 {
     ControllerHandler *handler = (ControllerHandler *)self;
@@ -189,7 +217,7 @@ static HRESULT STDMETHODCALLTYPE controller_invoke(ICoreWebView2CreateCoreWebVie
     if (FAILED(error) || !controller || !IsWindow(h) || P.window != h) {
         if (controller) ICoreWebView2Controller_Close(controller);
         if (FAILED(error) && IsWindow(h) && P.window == h) {
-            MessageBoxW(h, T(F_PREVIEW_ERROR), T(F_TITLE), MB_OK | MB_ICONERROR);
+            preview_error(h, L"CreateCoreWebView2Controller", FAILED(error) ? error : E_FAIL);
             DestroyWindow(h);
         }
         preview_release_if_idle();
@@ -197,8 +225,9 @@ static HRESULT STDMETHODCALLTYPE controller_invoke(ICoreWebView2CreateCoreWebVie
     }
     ICoreWebView2Controller_AddRef(controller); /* callback result is borrowed; retain it until WM_DESTROY */
     P.controller = controller;
-    if (FAILED(ICoreWebView2Controller_get_CoreWebView2(controller, &P.view))) {
-        MessageBoxW(h, T(F_PREVIEW_ERROR), T(F_TITLE), MB_OK | MB_ICONERROR);
+    HRESULT hr = ICoreWebView2Controller_get_CoreWebView2(controller, &P.view);
+    if (FAILED(hr)) {
+        preview_error(h, L"GetCoreWebView2", hr);
         DestroyWindow(h);
         return S_OK;
     }
@@ -216,7 +245,7 @@ static HRESULT STDMETHODCALLTYPE env_invoke(ICoreWebView2CreateCoreWebView2Envir
     if (FAILED(error) || !environment) {
         HWND h = P.window && IsWindow(P.window) ? P.window : handler->window;
         if (IsWindow(h)) {
-            MessageBoxW(h, T(F_PREVIEW_ERROR), T(F_TITLE), MB_OK | MB_ICONERROR);
+            preview_error(h, L"CreateCoreWebView2Environment", FAILED(error) ? error : E_FAIL);
             DestroyWindow(h);
         }
         preview_release_if_idle();
@@ -228,7 +257,7 @@ static HRESULT STDMETHODCALLTYPE env_invoke(ICoreWebView2CreateCoreWebView2Envir
     if (IsWindow(P.window)) {
         ControllerHandler *c = mem_alloc(sizeof *c);
         if (!c) {
-            MessageBoxW(P.window, T(F_PREVIEW_ERROR), T(F_TITLE), MB_OK | MB_ICONERROR);
+            preview_error(P.window, L"Allocate controller callback", E_OUTOFMEMORY);
             DestroyWindow(P.window);
             preview_release_if_idle();
             return E_OUTOFMEMORY;
@@ -241,7 +270,7 @@ static HRESULT STDMETHODCALLTYPE env_invoke(ICoreWebView2CreateCoreWebView2Envir
         ICoreWebView2CreateCoreWebView2ControllerCompletedHandler_Release(&c->iface);
         if (FAILED(hr)) {
             --P.controller_requests;
-            MessageBoxW(P.window, T(F_PREVIEW_ERROR), T(F_TITLE), MB_OK | MB_ICONERROR);
+            preview_error(P.window, L"CreateCoreWebView2Controller", hr);
             DestroyWindow(P.window);
         }
     }
@@ -249,7 +278,7 @@ static HRESULT STDMETHODCALLTYPE env_invoke(ICoreWebView2CreateCoreWebView2Envir
     return S_OK;
 }
 
-static bool preview_environment(HWND h)
+static bool preview_environment(HWND h, WCHAR *detail, int cap)
 {
     WCHAR local[MAX_PATH], appdir[MAX_PATH], userdir[MAX_PATH], loaderpath[MAX_PATH];
     WCHAR runtime[MAX_PATH * 2], runtime_exe[MAX_PATH * 2 + 32];
@@ -269,24 +298,39 @@ static bool preview_environment(HWND h)
     }
     /* Use the package's Fixed Version runtime when present; otherwise use Evergreen. */
     DWORD n = GetEnvironmentVariableW(L"LOCALAPPDATA", local, COUNTOF(local));
-    if (!n || n >= COUNTOF(local)) return false;
+    if (!n || n >= COUNTOF(local)) {
+        DWORD e = n ? ERROR_INSUFFICIENT_BUFFER : GetLastError();
+        return preview_fail(detail, cap, L"Get LOCALAPPDATA", HRESULT_FROM_WIN32(e));
+    }
     wsprintfW(appdir, L"%s\\sniplite", local);
-    if (!CreateDirectoryW(appdir, NULL) && GetLastError() != ERROR_ALREADY_EXISTS) return false;
+    if (!CreateDirectoryW(appdir, NULL) && GetLastError() != ERROR_ALREADY_EXISTS) {
+        DWORD e = GetLastError();
+        return preview_fail(detail, cap, L"Create sniplite data directory", HRESULT_FROM_WIN32(e));
+    }
     wsprintfW(userdir, L"%s\\FormulaPreview", appdir);
-    if (!CreateDirectoryW(userdir, NULL) && GetLastError() != ERROR_ALREADY_EXISTS) return false;
+    if (!CreateDirectoryW(userdir, NULL) && GetLastError() != ERROR_ALREADY_EXISTS) {
+        DWORD e = GetLastError();
+        return preview_fail(detail, cap, L"Create WebView2 user data directory", HRESULT_FROM_WIN32(e));
+    }
     wsprintfW(loaderpath, L"%s\\WebView2Loader.dll", appdir);
-    if (GetFileAttributesW(loaderpath) == INVALID_FILE_ATTRIBUTES && !resource_file(IDR_WEBVIEW2_LOADER, loaderpath)) return false;
+    if (GetFileAttributesW(loaderpath) == INVALID_FILE_ATTRIBUTES && !resource_file(IDR_WEBVIEW2_LOADER, loaderpath)) {
+        DWORD e = GetLastError();
+        return preview_fail(detail, cap, L"Extract WebView2Loader.dll", HRESULT_FROM_WIN32(e));
+    }
     if (!P.loader) P.loader = LoadLibraryW(loaderpath);
-    if (!P.loader) return false;
+    if (!P.loader) {
+        DWORD e = GetLastError();
+        return preview_fail(detail, cap, L"Load WebView2Loader.dll", HRESULT_FROM_WIN32(e));
+    }
     CreateEnvironmentFn create = (CreateEnvironmentFn)GetProcAddress(P.loader, "CreateCoreWebView2EnvironmentWithOptions");
-    if (!create) return false;
+    if (!create) return preview_fail(detail, cap, L"Find WebView2 API", HRESULT_FROM_WIN32(ERROR_PROC_NOT_FOUND));
     if (!P.com_initialized) {
         HRESULT com = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
-        if (FAILED(com)) return false;
+        if (FAILED(com)) return preview_fail(detail, cap, L"Initialize COM STA", com);
         P.com_initialized = true;
     }
     EnvHandler *c = mem_alloc(sizeof *c);
-    if (!c) return false;
+    if (!c) return preview_fail(detail, cap, L"Allocate environment callback", E_OUTOFMEMORY);
     c->iface.lpVtbl = &env_vtbl;
     c->refs = 1;
     c->window = h;
@@ -295,14 +339,15 @@ static bool preview_environment(HWND h)
     ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler_Release(&c->iface);
     if (FAILED(hr)) {
         P.creating = false;
-        return false;
+        return preview_fail(detail, cap, L"CreateCoreWebView2EnvironmentWithOptions", hr);
     }
     return true;
 }
 
-bool formula_preview_host(HWND owner, const WCHAR *url, HMONITOR monitor, bool refresh)
+bool formula_preview_host(HWND owner, const WCHAR *url, HMONITOR monitor, bool refresh, WCHAR *detail, int cap)
 {
-    if (lstrlenW(url) >= PREVIEW_URL_CAP) return false;
+    if (detail && cap > 0) detail[0] = 0;
+    if (lstrlenW(url) >= PREVIEW_URL_CAP) return preview_fail(detail, cap, L"Preview URL", E_INVALIDARG);
     if (!monitor) monitor = MonitorFromWindow(owner, MONITOR_DEFAULTTONEAREST);
     if (P.window && IsWindow(P.window)) {
         bool changed = refresh || lstrcmpW(P.url, url) != 0;
@@ -319,20 +364,34 @@ bool formula_preview_host(HWND owner, const WCHAR *url, HMONITOR monitor, bool r
     WNDCLASSW wc = {0};
     wc.lpfnWndProc = preview_proc;
     wc.hInstance = GetModuleHandleW(NULL);
+    wc.hIcon = LoadIconW(wc.hInstance, MAKEINTRESOURCEW(IDI_APP));
     wc.hCursor = LoadCursorW(NULL, IDC_ARROW);
     wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
     wc.lpszClassName = PREVIEW_CLASS;
-    if (!RegisterClassW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return false;
-    P.window = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_TOPMOST, PREVIEW_CLASS, L"sniplite · 公式预览",
+    if (!RegisterClassW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
+        DWORD e = GetLastError();
+        return preview_fail(detail, cap, L"Register preview window class", HRESULT_FROM_WIN32(e));
+    }
+    P.window = CreateWindowExW(WS_EX_APPWINDOW | WS_EX_TOPMOST, PREVIEW_CLASS, L"sniplite · 公式预览",
                                WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT, PREVIEW_WIDTH, PREVIEW_HEIGHT,
                                owner, NULL, wc.hInstance, NULL);
-    if (!P.window) return false;
+    if (!P.window) {
+        DWORD e = GetLastError();
+        return preview_fail(detail, cap, L"Create preview window", HRESULT_FROM_WIN32(e));
+    }
+    /* Windows 11 uses the page's light palette; older Windows keeps native chrome. */
+    COLORREF caption = RGB(241, 245, 250), text = RGB(25, 50, 82), border = RGB(220, 229, 239);
+    DWORD corner = 2; /* DWMWCP_ROUND */
+    DwmSetWindowAttribute(P.window, DWMWA_CAPTION_COLOR, &caption, sizeof caption);
+    DwmSetWindowAttribute(P.window, DWMWA_TEXT_COLOR, &text, sizeof text);
+    DwmSetWindowAttribute(P.window, DWMWA_BORDER_COLOR, &border, sizeof border);
+    DwmSetWindowAttribute(P.window, DWMWA_WINDOW_CORNER_PREFERENCE, &corner, sizeof corner);
     if (!preview_center(monitor)) ShowWindow(P.window, SW_SHOWNORMAL);
     UpdateWindow(P.window);
     SetForegroundWindow(P.window);
     if (P.environment) {
         ControllerHandler *c = mem_alloc(sizeof *c);
-        if (!c) { DestroyWindow(P.window); return false; }
+        if (!c) { DestroyWindow(P.window); return preview_fail(detail, cap, L"Allocate controller callback", E_OUTOFMEMORY); }
         c->iface.lpVtbl = &controller_vtbl;
         c->refs = 1;
         c->window = P.window;
@@ -342,11 +401,11 @@ bool formula_preview_host(HWND owner, const WCHAR *url, HMONITOR monitor, bool r
         if (FAILED(hr)) {
             --P.controller_requests;
             DestroyWindow(P.window);
-            return false;
+            return preview_fail(detail, cap, L"CreateCoreWebView2Controller", hr);
         }
         return true;
     }
     if (P.creating) return true;
-    if (!preview_environment(P.window)) { DestroyWindow(P.window); return false; }
+    if (!preview_environment(P.window, detail, cap)) { DestroyWindow(P.window); return false; }
     return true;
 }

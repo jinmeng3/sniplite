@@ -8,6 +8,7 @@
 #include "install.h"
 #include "lang.h"
 #include "settings.h"
+#include "formula.h"
 #include <shlobj.h>
 
 typedef HRESULT(WINAPI *PFN_SHGetFolderPathW)(HWND, int, HANDLE, DWORD, LPWSTR);
@@ -81,7 +82,13 @@ int uninstall_main(bool silent)
 
     for (int i = 0; i < 20 && !ocr_remove(); i++) /* the text recognition module; its helper may take a moment to leave */
         Sleep(100);
-    static const WCHAR *files[] = {L"sniplite.com", L"sniplite.ini", L"sniplite.exe.new", L"sniplite.com.new"};
+    for (int i = 0; i < 20 && !formula_remove(); i++) /* the formula worker exits when its pipe closes */
+        Sleep(100);
+    static const WCHAR *files[] = {
+        L"sniplite.com", L"sniplite_qr.exe", L"LICENSE-ZXing.txt", L"LICENSE-WebView2.txt", L"NOTICE-WebView2.txt",
+        L"sniplite.ini", L"sniplite.exe.new", L"sniplite.com.new", L"sniplite_qr.exe.new", L"LICENSE-ZXing.txt.new",
+        L"LICENSE-WebView2.txt.new", L"NOTICE-WebView2.txt.new", L"LICENSE-ZXing.txt.old", L"LICENSE-WebView2.txt.old",
+        L"NOTICE-WebView2.txt.old"};
     for (int i = 0; i < COUNTOF(files); i++)
         if (join(p, dir, files[i]))
             DeleteFileW(p);

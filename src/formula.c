@@ -106,29 +106,74 @@ static bool tokenizer_load(void)
     mem_free(b); return valid;
 }
 
+static void unload(void)
+{
+    if (F.enc.session && F.o.ReleaseSession) F.o.ReleaseSession(F.enc.session);
+    if (F.dec.session && F.o.ReleaseSession) F.o.ReleaseSession(F.dec.session);
+    for (int i = 0; i < TOKENS; i++)
+        mem_free(F.vocab[i]);
+    if (F.mem && F.o.ReleaseMemoryInfo) F.o.ReleaseMemoryInfo(F.mem);
+    if (F.env && F.o.ReleaseEnv) F.o.ReleaseEnv(F.env);
+    if (F.dll) FreeLibrary(F.dll);
+    memset(&F.o, 0, sizeof F.o);
+    F.dll = NULL;
+    F.env = NULL;
+    F.mem = NULL;
+    F.alloc = NULL;
+    F.enc.session = F.dec.session = NULL;
+    memset(F.vocab, 0, sizeof F.vocab);
+    F.ready = false;
+}
+
 static bool load(void)
 {
-    if(F.ready)return true;
-    WCHAR path[MAX_PATH*2];
-    if(!find_path(L"onnxruntime.dll",path,COUNTOF(path))){error(L"formula runtime is not installed");return false;}
-    F.dll=LoadLibraryExW(path,NULL,LOAD_WITH_ALTERED_SEARCH_PATH);
-    if(!F.dll){error(L"formula onnxruntime.dll could not be loaded");return false;}
-    const OrtApiBase *(*base)(void)=(const OrtApiBase *(*)(void))(void*)GetProcAddress(F.dll,"OrtGetApiBase");
-    const void *api=base?base()->GetApi(ORT_API_WANTED):NULL;
-    if(!api){error(L"formula onnxruntime.dll is too old");return false;} ort_bind(&F.o,api);
-    if(!ort_ok(F.o.CreateEnv(ORT_LOG_WARNING+1,"sniplite-formula",&F.env)) ||
-       !ort_ok(F.o.GetAllocatorWithDefaultOptions(&F.alloc)) ||
-       !ort_ok(F.o.CreateCpuMemoryInfo(ORT_ARENA_ALLOCATOR,ORT_MEM_DEFAULT,&F.mem)))return false;
-    OrtSessionOptions *opts=NULL;
-    if(!ort_ok(F.o.CreateSessionOptions(&opts)))return false;
+    if (F.ready) return true;
+    OrtSessionOptions *opts = NULL;
+    WCHAR path[MAX_PATH * 2];
+    if (!find_path(L"onnxruntime.dll", path, COUNTOF(path))) {
+        error(L"formula runtime is not installed");
+        goto failed;
+    }
+    F.dll = LoadLibraryExW(path, NULL, LOAD_WITH_ALTERED_SEARCH_PATH);
+    if (!F.dll) {
+        error(L"formula onnxruntime.dll could not be loaded");
+        goto failed;
+    }
+    const OrtApiBase *(*base)(void) = (const OrtApiBase *(*)(void))(void *)GetProcAddress(F.dll, "OrtGetApiBase");
+    const void *api = base ? base()->GetApi(ORT_API_WANTED) : NULL;
+    if (!api) {
+        error(L"formula onnxruntime.dll is too old");
+        goto failed;
+    }
+    ort_bind(&F.o, api);
+    if (!ort_ok(F.o.CreateEnv(ORT_LOG_WARNING + 1, "sniplite-formula", &F.env)) ||
+        !ort_ok(F.o.GetAllocatorWithDefaultOptions(&F.alloc)) ||
+        !ort_ok(F.o.CreateCpuMemoryInfo(ORT_ARENA_ALLOCATOR, ORT_MEM_DEFAULT, &F.mem)))
+        goto failed;
+    if (!ort_ok(F.o.CreateSessionOptions(&opts)))
+        goto failed;
     DWORD processors = GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
     int threads = processors > 4 ? 4 : (processors ? (int)processors : 1);
-    F.o.SetIntraOpNumThreads(opts,threads); F.o.SetSessionGraphOptimizationLevel(opts,ORT_OPTIMIZE_ALL);
-    bool good=find_path(L"onnx\\encoder_model.onnx",path,COUNTOF(path)) && ort_ok(F.o.CreateSession(F.env,path,opts,&F.enc.session));
-    good=good&&find_path(L"onnx\\decoder_model_merged.onnx",path,COUNTOF(path))&&ort_ok(F.o.CreateSession(F.env,path,opts,&F.dec.session));
+    if (!ort_ok(F.o.SetIntraOpNumThreads(opts, threads)) ||
+        !ort_ok(F.o.SetSessionGraphOptimizationLevel(opts, ORT_OPTIMIZE_ALL)))
+        goto failed;
+    bool good = find_path(L"onnx\\encoder_model.onnx", path, COUNTOF(path)) &&
+                ort_ok(F.o.CreateSession(F.env, path, opts, &F.enc.session));
+    good = good && find_path(L"onnx\\decoder_model_merged.onnx", path, COUNTOF(path)) &&
+           ort_ok(F.o.CreateSession(F.env, path, opts, &F.dec.session));
     F.o.ReleaseSessionOptions(opts);
-    if(!good || !tokenizer_load()){error(L"formula model files could not be loaded");return false;}
-    F.ready=true; return true;
+    opts = NULL;
+    if (!good || !tokenizer_load()) {
+        error(L"formula model files could not be loaded");
+        goto failed;
+    }
+    F.ready = true;
+    return true;
+failed:
+    if (opts && F.o.ReleaseSessionOptions)
+        F.o.ReleaseSessionOptions(opts);
+    unload();
+    return false;
 }
 
 static bool tensor(const void *data,size_t bytes,const int64_t *shape,size_t rank,int type,OrtValue **v)

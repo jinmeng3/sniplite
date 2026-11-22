@@ -119,6 +119,14 @@
         .balign 2
 /* L"" */
 .Lw_empty: .short 0x0000
+/* Command ids are contiguous; their translated texts need not be. */
+.Lcommand_tips:
+        .short S_TIP_UNDO, S_TIP_REDO, S_TIP_PIN, S_TIP_SAVE, S_TIP_QUIT, S_TIP_COPY
+        .short S_TIP_OCR, S_TIP_OCRCOPY, S_TIP_LONG, S_TIP_FRONT, S_TIP_BACK
+        .short S_TIP_QR, S_TIP_FORMULA, S_TIP_FORMULA_PREVIEW
+        .if (. - .Lcommand_tips) != 2 * (B_LAST - B_UNDO + 1)
+        .error "one tooltip per command"
+        .endif
 /* by pass: what it draws */
 .Lpass_bits:
         .byte D_ANNOS | D_FIX_UI                                        /* PASS_UI */
@@ -906,10 +914,8 @@ SFUNC put_int
 ENDF
 
 /* ecx = toolbar id, edx = the property bar's tool -> rax = the id's tooltip text in
- * the language in use, "" for an id without one. The tools, the commands, the three
- * sizes (the magnifier's: its factors) and the eight colors are each a run of
- * consecutive ids, and a run of consecutive texts in the same order (lang_text.h):
- * the text is the run's first one plus the id's place in the run. Clobbers rcx. */
+ * the language in use, "" for an id without one. Commands use an explicit text-id
+ * table; tools, sizes and colors use consecutive text runs. Clobbers rcx, rdx. */
 SFUNC tip_text
         ENDPROLOG
         lea eax, [rcx - T_RECT]
@@ -921,8 +927,10 @@ SFUNC tip_text
 1:      lea eax, [rcx - B_UNDO]
         cmp eax, B_LAST - B_UNDO
         ja 2f
+        lea rdx, [rip + .Lcommand_tips]
+        movzx eax, word ptr [rdx + rax*2]
         mov rcx, qword ptr [rip + g_tr]
-        mov rax, qword ptr [rcx + rax*8 + 8 * S_TIP_UNDO]
+        mov rax, qword ptr [rcx + rax*8]
         ret
 2:      lea eax, [rcx - B_SIZE]
         cmp eax, 2

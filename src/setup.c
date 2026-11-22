@@ -282,18 +282,13 @@ static bool install(int autostart, bool ocr)
             return false;
         }
     stop_running();
-    bool ok = swap(0);
-    if (ok && !(ok = swap(1)))
-        unswap(0);
-    if (ok && !(ok = swap(2))) {
-        unswap(1);
-        unswap(0);
-    }
-    if (ok && !(ok = swap(3))) {
-        unswap(2);
-        unswap(1);
-        unswap(0);
-    }
+    int count = (int)COUNTOF(kFiles), swapped = 0;
+    while (swapped < count && swap(swapped))
+        swapped++;
+    bool ok = swapped == count;
+    if (!ok)
+        while (swapped)
+            unswap(--swapped);
     delete_new();
     if (ok) {
         WCHAR menu[MAX_PATH], lnk[MAX_PATH];
