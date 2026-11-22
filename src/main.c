@@ -1373,15 +1373,6 @@ static LRESULT CALLBACK daemon_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
     return DefWindowProcW(h, m, wp, lp);
 }
 
-/* Started with the rights of an administrator, more than the user's programs have? */
-static bool elevated(void)
-{
-    typedef BOOL(WINAPI *PFN_GetTokenInformation)(HANDLE, TOKEN_INFORMATION_CLASS, void *, DWORD, DWORD *);
-    PFN_GetTokenInformation get = (PFN_GetTokenInformation)(void *)kernelbase("GetTokenInformation");
-    TOKEN_ELEVATION e = {0};
-    DWORD n;
-    return get && get(GetCurrentProcessToken(), TokenElevation, &e, sizeof e, &n) && e.TokenIsElevated;
-}
 
 static int daemon_main(HINSTANCE inst, int argc, WCHAR **argv, bool from_cli)
 {
@@ -1430,10 +1421,8 @@ static int daemon_main(HINSTANCE inst, int argc, WCHAR **argv, bool from_cli)
     D.hwnd = CreateWindowExW(WS_EX_TOOLWINDOW, DAEMON_CLASS, L"sniplite", WS_POPUP, 0, 0, 0, 0, NULL, NULL, inst, NULL);
     if (!D.hwnd)
         return EXIT_FAIL;
-    /* Commands from programs with fewer rights only when this one runs as administrator, so that the user's
-     * own programs, sniplite.com among them, still reach it. Else Windows keeps those programs out. */
-    if (elevated())
-        ChangeWindowMessageFilterEx(D.hwnd, WM_COPYDATA, MSGFLT_ALLOW, NULL);
+    /* Keep UIPI's default filter for WM_COPYDATA. Otherwise lower-integrity callers can use an
+     * elevated daemon as a file-writing broker. Run the CLI elevated to control an elevated daemon. */
     D.wm_taskbar = RegisterWindowMessageW(L"TaskbarCreated");
     ChangeWindowMessageFilterEx(D.hwnd, D.wm_taskbar, MSGFLT_ALLOW, NULL);
     ocr_refresh();

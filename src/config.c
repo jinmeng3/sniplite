@@ -47,7 +47,10 @@ bool hotkey_parse(const WCHAR *s, UINT *mod, UINT *vk)
             for (WCHAR *p = tok + 1; *p; p++) {
                 if (*p < L'0' || *p > L'9')
                     return false;
-                n = n * 10 + (*p - L'0');
+                int digit = *p - L'0';
+                if (n > 24 / 10 || (n == 24 / 10 && digit > 24 % 10))
+                    return false;
+                n = n * 10 + digit;
             }
             if (n < 1 || n > 24)
                 return false;

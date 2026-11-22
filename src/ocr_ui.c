@@ -305,6 +305,30 @@ static Pic selection(RECT *at)
     return pic;
 }
 
+static bool qr_write_pixels(HANDLE pipe, const Pic *pic, int w, int h)
+{
+    uint32_t pixels[1 << 14];
+    int cap = COUNTOF(pixels);
+    for (int y = 0; y < h;) {
+        int rows = w <= cap ? MINI(h - y, cap / w) : 1;
+        for (int x = 0; x < w;) {
+            int cols = w <= cap ? w : MINI(w - x, cap);
+            RECT r = {pic->r.left + x, pic->r.top + y, pic->r.left + x + cols, pic->r.top + y + rows};
+            shot_copy(pic->sh, r, pixels, cols);
+            DWORD bytes = (DWORD)((size_t)cols * rows * sizeof(*pixels)), sent = 0;
+            while (sent < bytes) {
+                DWORD n = 0;
+                if (!WriteFile(pipe, (BYTE *)pixels + sent, bytes - sent, &n, NULL) || !n)
+                    return false;
+                sent += n;
+            }
+            x += cols;
+        }
+        y += rows;
+    }
+    return true;
+}
+
 void qr_scan(void)
 {
     if (!qr_there)
@@ -327,13 +351,6 @@ void qr_scan(void)
         MessageBoxW(*(HWND *)(O + OV_HWND), T(QR_ERROR), T(QR_TITLE), MB_OK | MB_ICONERROR);
         return;
     }
-    size_t bytes = (size_t)w * h * 4;
-    uint32_t *pixels = VirtualAlloc(NULL, bytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-    if (!pixels) {
-        MessageBoxW(*(HWND *)(O + OV_HWND), T(QR_ERROR), T(QR_TITLE), MB_OK | MB_ICONERROR);
-        return;
-    }
-    shot_copy(pic.sh, pic.r, pixels, w);
 
     WCHAR path[MAX_PATH], command[MAX_PATH + 64];
     DWORD n = GetModuleFileNameW(NULL, path, COUNTOF(path));
@@ -366,10 +383,8 @@ void qr_scan(void)
         goto pipe_failed;
     CloseHandle(child_in); child_in = NULL;
     CloseHandle(child_out); child_out = NULL;
-    DWORD sent = 0;
-    bool wrote = WriteFile(parent_in, pixels, (DWORD)bytes, &sent, NULL) && sent == bytes;
+    bool wrote = qr_write_pixels(parent_in, &pic, w, h);
     CloseHandle(parent_in); parent_in = NULL;
-    VirtualFree(pixels, 0, MEM_RELEASE); pixels = NULL;
     if (!wrote)
         TerminateProcess(pi.hProcess, 1);
 
@@ -429,7 +444,6 @@ pipe_failed:
     if (parent_out) CloseHandle(parent_out);
     if (child_out) CloseHandle(child_out);
 failed:
-    if (pixels) VirtualFree(pixels, 0, MEM_RELEASE);
     MessageBoxW(*(HWND *)(O + OV_HWND), T(QR_ERROR), T(QR_TITLE), MB_OK | MB_ICONERROR);
 }
 

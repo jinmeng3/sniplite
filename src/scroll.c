@@ -201,26 +201,27 @@ static bool commit_to(void *base, size_t *committed, size_t need)
 }
 
 /* n rows of the frame, from row y, to the end of the canvas */
-static void append(int y, int n)
+static bool append(int y, int n)
 {
     n = MINI(n, L.max_rows - L.rows);
     if (n <= 0)
-        return;
+        return true;
     size_t row = (size_t)L.w * 4, need = (size_t)(L.rows + n) * row;
     size_t hashes = (size_t)(L.rows + n) * STRIPS * sizeof(uint32_t);
     if (need > L.committed) {
         size_t upto = (need + (4u << 20)) & ~(size_t)0xFFFF, all = (size_t)L.max_rows * row;
         upto = MINI(upto, all);
         if (!VirtualAlloc(L.canvas, upto, MEM_COMMIT, PAGE_READWRITE))
-            return;
+            return false;
         L.committed = upto;
     }
     if (!commit_to(L.chash, &L.hash_committed, hashes))
-        return;
+        return false;
     memcpy(L.canvas + (size_t)L.rows * L.w, L.shot.px + (size_t)y * L.w, (size_t)n * row);
     memcpy(L.chash + (size_t)L.rows * STRIPS, L.fhash + (size_t)y * STRIPS, (size_t)n * STRIPS * sizeof(uint32_t));
     L.rows += n;
     L.full = L.rows >= L.max_rows;
+    return true;
 }
 
 /* the small copy of the canvas: every finished row of it, each pixel the average of
@@ -356,15 +357,17 @@ static void view_paint(HWND h)
     EndPaint(h, &ps);
 }
 
-/* The frame in L.shot goes onto the canvas. False when it is the same as the one before. */
-static bool stitch_frame(void)
+/* The frame in L.shot goes onto the canvas. 0: unchanged, 1: stitched, -1: allocation failed. */
+static int stitch_frame(void)
 {
+    enum { STITCH_FAILED = -1, STITCH_UNCHANGED, STITCH_CHANGED };
     hash_frame();
     if (L.first) {
         L.first = false;
-        append(0, L.h);
+        if (!append(0, L.h))
+            return STITCH_FAILED;
     } else if (!memcmp(L.fhash, L.phash, (size_t)L.h * STRIPS * sizeof(uint32_t))) {
-        return false;
+        return STITCH_UNCHANGED;
     } else {
         int at;
         L.lost = !place(&at);
@@ -379,21 +382,21 @@ static bool stitch_frame(void)
                 L.trows = MINI(L.trows, keep * L.tw / L.w);
             }
             L.pos = at;
-            if (at + L.h - foot > L.rows && L.rows - at >= 0)
-                append(L.rows - at, at + L.h - foot - L.rows);
+            if (at + L.h - foot > L.rows && L.rows - at >= 0 &&
+                !append(L.rows - at, at + L.h - foot - L.rows))
+                return STITCH_FAILED;
         }
     }
     uint32_t *t = L.fhash;
     L.fhash = L.phash, L.phash = t;
-    return true;
+    return STITCH_CHANGED;
 }
 
 /* The end: what the last frame has below the canvas, the footer that was held back. */
-static void stitch_finish(void)
+static bool stitch_finish(void)
 {
     int rest = L.rows - L.pos;
-    if (!L.lost && rest >= 0 && rest < L.h)
-        append(rest, L.h - rest);
+    return L.lost || rest < 0 || rest >= L.h || append(rest, L.h - rest);
 }
 
 static void stitch_free(void)
@@ -433,6 +436,7 @@ static bool stitch_start(int w, int h)
 }
 
 static void long_end(void);
+static void long_memory_fail(void);
 static void long_done(int button);
 static void hotkeys(bool on);
 
@@ -459,7 +463,12 @@ static void tick(void)
     bool was_first = L.first, was_lost = L.lost;
     int rows = L.rows, pos = L.pos;
     grab();
-    if (!stitch_frame()) {
+    int frame = stitch_frame();
+    if (frame < 0) {
+        long_memory_fail();
+        return;
+    }
+    if (!frame) {
         if (++L.quiet == 12)
             SetTimer(L.bar, TIMER_GRAB, TICK_QUIET_MS, NULL);
         return;
@@ -585,6 +594,12 @@ static void long_end(void)
         VirtualFree(L.thumb, 0, MEM_RELEASE);
     memset(&L, 0, sizeof L);
 }
+static void long_memory_fail(void)
+{
+    MessageBoxW(L.bar, T(NO_MEMORY), L"sniplite", MB_OK | MB_ICONWARNING);
+    long_end();
+}
+
 
 /* The text of the long picture as it is now. In the panel (it stands beside the region
  * and the strip, and the picture stops growing while it shows), or to the clipboard,
@@ -600,7 +615,10 @@ static void long_text(bool panel)
     RECT beside = L.rc, view;
     if (L.view && GetWindowRect(L.view, &view))
         beside = rect_union(beside, view);
-    stitch_finish(); /* with what the last frame has below the canvas */
+    if (!stitch_finish()) {
+        long_memory_fail();
+        return;
+    }
     bool sent = ocr_picture(L.canvas, L.w, L.rows, beside, panel ? L.bar : NULL);
     L.rows = rows;
     L.trows = MINI(L.trows, rows * L.tw / L.w);
@@ -651,7 +669,10 @@ static void long_done(int button)
     }
     KillTimer(L.bar, TIMER_GRAB);
     int rows = L.rows;
-    stitch_finish();
+    if (!stitch_finish()) {
+        long_memory_fail();
+        return;
+    }
     HWND daemon = *(HWND *)(O + OV_DAEMON);
     bool done; /* false: the dialog was cancelled, or the pin or the copy failed */
     if (button == BT_SAVE) {

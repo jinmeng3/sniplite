@@ -42,6 +42,9 @@ Get the current version from [GitHub Releases](https://github.com/jinmeng3/snipl
 - [Portable package without a preinstalled WebView2 Runtime](https://github.com/jinmeng3/sniplite/releases/download/v1.4.1.3/sniplite_1.4.1.3_portable_QR_OCR_FormulaNet_WebView2_x64.zip): includes Fixed Version Runtime 158.0.4370.33 (about 578 MiB).
 
 Extract the ZIP and run `sniplite.exe`. The `sniplite-cli.com` companion provides command-line features; it is included in the QR ZIPs and is a separate download for single-file portable builds. Keep it beside the app. Portable builds can download or remove OCR from the OCR tab in Preferences. The Update tab opens the matching GitHub release page so you can download a new portable package. The QR helper can also be installed or removed from the QR tab. Portable builds can enable “Start with Windows” in Preferences. The shortcut points to the current program location, so do not move or rename its directory afterward. If you move it, turn the option off and on again to update the shortcut.
+
+If the app is running as administrator, run the CLI as administrator too; a standard-integrity CLI cannot send commands to the elevated app.
+
 The FormulaNet module can also be installed or removed from the Formula tab in Preferences.
 
 ## System requirements
