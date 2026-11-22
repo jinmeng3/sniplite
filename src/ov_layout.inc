@@ -10,10 +10,14 @@
 #define TIMER_TIP                    1
 #define TIMER_CARET                  2
 #define TIMER_SNAP_ANIMATION         3
+#define WM_APP_SNAP_READY            (WM_APP + 5)
 #define OV_WM_SNAP_READY             0x8005
 #define ACCENT                       0x1A8CFF
 #define MAX_WINS                     1024
 #define MAX_CHAIN                    16
+#define DETECT_CONTROLS              0 /* what is offered under the mouse: windows and their child windows, */
+#define DETECT_WINDOWS               1 /* whole windows only, */
+#define DETECT_ELEMENTS              2 /* or the elements UI Automation knows too (snap.c) */
 #define TEXT_MAX                     20000
 #define PH_SELECT                    1
 #define PH_EDIT                      2
@@ -27,7 +31,11 @@
 #define T_MOSAIC                     7
 #define T_TEXT                       8
 #define T_NUMBER                     9
-#define T_COUNT                      10
+#define T_SPOT                       10
+#define T_LENS                       11
+#define T_LAST                       T_LENS /* the tools are T_RECT .. T_LAST */
+#define T_COUNT                      12
+#define LENS_Z0                      2     /* the magnifier's factor at size 0 */
 #define DR_NONE                      0
 #define DR_MOVE                      1
 #define DR_RESIZE                    2
@@ -44,6 +52,8 @@
 #define OP_ADD                       0
 #define OP_DEL                       1
 #define OP_EDIT                      2
+#define OP_FRONT                     3
+#define OP_BACK                      4
 #define B_UNDO                       20
 #define B_REDO                       21
 #define B_PIN                        22
@@ -53,11 +63,13 @@
 #define B_OCR                        26
 #define B_OCRCOPY                    27
 #define B_LONG                       28
-#define B_QR                         29
-#define B_FORMULA                   30
-#define B_FORMULA_PREVIEW           31
-#define B_LAST                      B_FORMULA_PREVIEW /* the commands are B_UNDO .. B_LAST */
-#define TB_ITEMS                    23    /* entries of kTbOrder; other toolbar orders omit disabled items */
+#define B_FRONT                      29    /* in the property bar, with B_BACK */
+#define B_BACK                       30
+#define B_QR                         31
+#define B_FORMULA                    32
+#define B_FORMULA_PREVIEW            33
+#define B_LAST                       B_FORMULA_PREVIEW /* the commands are B_UNDO .. B_LAST */
+#define TB_ITEMS                     25    /* the longest toolbar order, with optional commands */
 #define B_SIZE                       40
 #define B_COLOR                      50
 #define ACT_COPY                     0
@@ -128,6 +140,7 @@
 #define VIS_TB                       148
 #define VIS_PB                       164
 #define VIS_TIP                      180
+#define VIS_PB_RUNS                  196   /* what the property bar holds (PB_*, ov_paint.S) */
 #define VIS_TB_KEY                   200
 #define VIS_ACT                      208
 #define VIS_ACT_VER                  224
@@ -172,6 +185,7 @@
 #define OV_CUR                       1920
 #define OV_LDOWN                     1928
 #define OV_RUBBER                    1929
+#define OV_DETECT                    1930 /* DETECT_*: a setting, written by apply_config */
 #define OV_DOWN                      1932
 #define OV_HL                        1940
 #define OV_SEL                       1956

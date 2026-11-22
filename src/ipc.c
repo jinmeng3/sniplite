@@ -31,6 +31,17 @@ HWND ipc_find_dialog(const WCHAR *mark)
     return w;
 }
 
+void ipc_close(HWND w)
+{
+    if (!w)
+        return;
+    HWND front = GetWindow(w, GW_ENABLEDPOPUP); /* a message box in front of it goes first */
+    if (front && front != w)
+        PostMessageW(front, WM_CLOSE, 0, 0);
+    for (HWND o = w; o; o = GetWindow(o, GW_OWNER)) /* the shortcut list, then the window it belongs to */
+        PostMessageW(o, WM_CLOSE, 0, 0);
+}
+
 int ipc_call(HWND daemon, int argc, WCHAR **argv, Str *reply)
 {
     HINSTANCE inst = GetModuleHandleW(NULL);

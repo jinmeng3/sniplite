@@ -35,11 +35,7 @@ static void close_wait(HWND w)
     DWORD pid = 0;
     GetWindowThreadProcessId(w, &pid);
     HANDLE h = pid ? OpenProcess(SYNCHRONIZE, FALSE, pid) : NULL;
-    HWND front = GetWindow(w, GW_ENABLEDPOPUP); /* a message box in front of it goes first */
-    if (front && front != w)
-        PostMessageW(front, WM_CLOSE, 0, 0);
-    for (HWND o = w; o; o = GetWindow(o, GW_OWNER)) /* the shortcut list, then the window it belongs to */
-        PostMessageW(o, WM_CLOSE, 0, 0);
+    ipc_close(w);
     if (h) {
         WaitForSingleObject(h, 5000);
         CloseHandle(h);
@@ -109,10 +105,8 @@ int uninstall_main(bool silent)
         wsprintfW(cmd, L"\"%s\\cmd.exe\" /d /c ping -n 3 127.0.0.1 >nul & del /f /q \"%s\" & rmdir \"%s\"", sys, exe, dir);
         STARTUPINFOW si = {sizeof si};
         PROCESS_INFORMATION pi;
-        WCHAR tmp[MAX_PATH];
-        if (!GetTempPathW(MAX_PATH, tmp))
-            lstrcpyW(tmp, sys);
-        if (CreateProcessW(NULL, cmd, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, tmp, &si, &pi)) {
+        /* in System32: not the folder it removes, and where cmd.exe looks for ping first */
+        if (CreateProcessW(NULL, cmd, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, sys, &si, &pi)) {
             CloseHandle(pi.hThread);
             CloseHandle(pi.hProcess);
         }

@@ -115,9 +115,9 @@
 #define WM_APP_GPU_READY (WM_APP + 1)
 
 #define HK_CAPTURE 1
-#define HK_PIN 2
-#define HK_TOGGLE 3
-#define HK_COUNT 4
+#define HK_PIN 3
+#define HK_TOGGLE 4
+#define HK_COUNT 7
 
 /* ---- shared structures ------------------------------------------------------------ */
 

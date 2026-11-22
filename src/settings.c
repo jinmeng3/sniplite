@@ -16,7 +16,7 @@
 #include "ocr.h"
 #include "formula.h"
 #include "update.h"
-#include "image.h"
+#include "ov_layout.inc"
 #include <commctrl.h>
 #include <shlobj.h>
 #include <shobjidl.h>
@@ -33,6 +33,19 @@ typedef HRESULT(WINAPI *PFN_DrawThemeParentBackground)(HWND, HDC, const RECT *);
 #define HKN_DONE 2
 #define ETDT_ENABLETAB_ 6
 
+#define WM_APP_UPD_CHECKED (WM_APP + 20)  /* wParam = UpdState */
+#define WM_APP_UPD_PROGRESS (WM_APP + 21) /* wParam = percent, or -1 when the size is unknown */
+#define WM_APP_UPD_FETCHED (WM_APP + 22)  /* wParam = downloaded */
+#define WM_APP_UPD_DONE (WM_APP + 23)     /* wParam = installer exit code */
+#define WM_APP_SHOW_PAGE (WM_APP + 24)    /* wParam = page, lParam = begin its download; from a second `--settings <page>` */
+#define WM_APP_OCR_PROGRESS (WM_APP + 25) /* wParam = percent */
+#define WM_APP_OCR_DONE (WM_APP + 26)     /* wParam = OCR_GET_... */
+#define WM_APP_SAVE_FAILED (WM_APP + 31)  /* sniplite.ini could not be written */
+#define WM_APP_QR_PROGRESS (WM_APP + 27) /* wParam = percent */
+#define WM_APP_QR_DONE (WM_APP + 28)     /* wParam = QR_GET_... */
+#define WM_APP_FORMULA_PROGRESS (WM_APP + 29) /* wParam = percent */
+#define WM_APP_FORMULA_DONE (WM_APP + 30)     /* wParam = FORMULA_GET_... */
+
 enum { PG_GENERAL, PG_CAPTURE, PG_HOTKEYS, PG_UPDATE, PG_OCR, PG_QR, PG_FORMULA, PG_RACK, PG_ABOUT, PG_COUNT };
 enum { RI_NONE, RI_CLEAR, RI_OK, RI_FAIL, RI_HELP }; /* round icons */
 
@@ -40,7 +53,7 @@ static struct {
     HINSTANCE inst;
     Config cfg;
     HWND dlg, tabs, page[PG_COUNT];
-    int state[HK_COUNT]; /* 0 failed, 1 registered, 2 no hotkey */
+    int state[HK_COUNT]; /* 0 failed, 1 registered or stepping aside, 2 no hotkey */
     PFN_SHGetFolderPathW folder;
     PFN_ShellExecuteW shell_exec;
     PFN_EnableThemeDialogTexture theme_tex;
@@ -86,7 +99,11 @@ static void daemon_cmd(const WCHAR *a, const WCHAR *b)
 
 static void apply(void)
 {
-    config_save(&S.cfg);
+    Config f;
+    config_load(&f); /* the save dialog's folder is the background process's to change: keep what the file has */
+    lstrcpyW(S.cfg.last_dir, f.last_dir);
+    if (!config_save(&S.cfg)) /* told by a posted message: this also runs as a hotkey field loses the focus */
+        PostMessageW(S.dlg, WM_APP_SAVE_FAILED, 0, 0);
     daemon_cmd(L"_reload", NULL);
 }
 
@@ -294,7 +311,9 @@ static LRESULT CALLBACK hk_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
             hk_record(h, f, false);
             return 0;
         }
-        if (!mods && !ok_without_modifier(vk)) { /* a lone letter would hijack typing */
+        WCHAR name[40];
+        hotkey_format(0, vk, name); /* empty for a key the settings file has no name for */
+        if ((!mods && !ok_without_modifier(vk)) || !name[0]) { /* a lone letter would hijack typing */
             MessageBeep(MB_OK);
             return 0;
         }
@@ -392,18 +411,31 @@ static void draw_round_icon(const DRAWITEMSTRUCT *di, int kind)
 
 /* ---- pages ---------------------------------------------------------------------------- */
 
-/* where a quick capture goes: the chosen folder, else the desktop */
-static void show_quick_dir(void)
+/* the default save location: the chosen folder, else the desktop */
+static void show_save_dir(void)
 {
     WCHAR dir[MAX_PATH];
-    lstrcpynW(dir, S.cfg.quick_dir, MAX_PATH);
+    lstrcpynW(dir, S.cfg.save_dir, MAX_PATH);
     if (!dir[0] && (!S.folder || FAILED(S.folder(NULL, CSIDL_DESKTOPDIRECTORY, NULL, 0, dir))))
         dir[0] = 0;
-    SetDlgItemTextW(S.page[PG_GENERAL], IDC_QUICK_DIR, dir);
+    SetDlgItemTextW(S.page[PG_CAPTURE], IDC_SAVE_DIR, dir);
 }
 
-/* the folder picker of Windows; false when nothing was picked */
-static bool pick_folder(WCHAR *dir, int cap)
+/* the file names to choose from, each shown as the name it gives right now */
+static void show_names(void)
+{
+    SYSTEMTIME now;
+    GetLocalTime(&now);
+    for (int i = 0; i < NAME_COUNT; i++) {
+        WCHAR t[NAME_CAP];
+        name_format(i, &now, t);
+        SendDlgItemMessageW(S.page[PG_CAPTURE], IDC_NAME, CB_ADDSTRING, 0, (LPARAM)t);
+    }
+    SendDlgItemMessageW(S.page[PG_CAPTURE], IDC_NAME, CB_SETCURSEL, (WPARAM)S.cfg.name, 0);
+}
+
+/* Windows' picker of a folder, or of a program; false when nothing was picked */
+static bool pick_path(HWND owner, WCHAR *out, int cap, bool program)
 {
     IFileOpenDialog *d = NULL;
     IShellItem *item = NULL;
@@ -413,12 +445,18 @@ static bool pick_folder(WCHAR *dir, int cap)
         return false;
     DWORD opt = 0;
     IFileOpenDialog_GetOptions(d, &opt);
-    IFileOpenDialog_SetOptions(d, opt | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM);
-    if (SUCCEEDED(IFileOpenDialog_Show(d, S.dlg)) && SUCCEEDED(IFileOpenDialog_GetResult(d, &item))) {
+    if (program) {
+        COMDLG_FILTERSPEC f = {T(APPS_FILTER), L"*.exe"};
+        IFileOpenDialog_SetFileTypes(d, 1, &f);
+    } else {
+        opt |= FOS_PICKFOLDERS;
+    }
+    IFileOpenDialog_SetOptions(d, opt | FOS_FORCEFILESYSTEM);
+    if (SUCCEEDED(IFileOpenDialog_Show(d, owner)) && SUCCEEDED(IFileOpenDialog_GetResult(d, &item))) {
         if (SUCCEEDED(IShellItem_GetDisplayName(item, SIGDN_FILESYSPATH, &path))) {
             ok = lstrlenW(path) < cap;
             if (ok)
-                lstrcpyW(dir, path);
+                lstrcpyW(out, path);
             /* ole32 is here: com_create loaded it */
             void(WINAPI * release)(void *) = (void(WINAPI *)(void *))(void *)GetProcAddress(GetModuleHandleW(L"ole32.dll"), "CoTaskMemFree");
             if (release)
@@ -436,9 +474,255 @@ static void show_hotkeys(void)
         SendDlgItemMessageW(S.page[PG_HOTKEYS], IDC_HK_FIELD1 + id - 1, HKM_SETKEY, S.cfg.mod[id], S.cfg.vk[id]);
 }
 
-/* ---- shortcut list: short and plain, the few keys people actually use ------------- */
+/* ---- the programs the hotkeys step aside for: a list like the one Windows has for a path ---- */
 
 typedef BOOL(WINAPI *PFN_SetWindowTheme)(HWND, LPCWSTR, LPCWSTR);
+
+/* a list view as Explorer draws one, the whole row selected */
+static void list_look(HWND list, DWORD more)
+{
+    HMODULE ux = GetModuleHandleW(L"uxtheme.dll");
+    PFN_SetWindowTheme set_theme = ux ? (PFN_SetWindowTheme)(void *)GetProcAddress(ux, "SetWindowTheme") : NULL;
+    if (set_theme)
+        set_theme(list, L"Explorer", NULL);
+    SendMessageW(list, LVM_SETEXTENDEDLISTVIEWSTYLE, 0, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER | more);
+}
+
+static WCHAR *apps_text; /* what the text window edits */
+
+static int apps_sel(HWND list) { return (int)SendMessageW(list, LVM_GETNEXTITEM, (WPARAM)-1, LVNI_SELECTED); }
+
+static void apps_select(HWND list, int i)
+{
+    LVITEMW it = {0};
+    it.stateMask = it.state = LVIS_SELECTED | LVIS_FOCUSED;
+    SendMessageW(list, LVM_SETITEMSTATE, (WPARAM)i, (LPARAM)&it);
+    SendMessageW(list, LVM_ENSUREVISIBLE, (WPARAM)i, FALSE);
+}
+
+static int apps_add(HWND list, const WCHAR *name)
+{
+    LVITEMW it = {0};
+    it.mask = LVIF_TEXT;
+    it.iItem = INT_MAX;
+    it.pszText = (WCHAR *)name;
+    return (int)SendMessageW(list, LVM_INSERTITEMW, 0, (LPARAM)&it);
+}
+
+/* s, names with | between them, as the rows of the list */
+static void apps_fill(HWND list, const WCHAR *s)
+{
+    SendMessageW(list, LVM_DELETEALLITEMS, 0, 0);
+    for (const WCHAR *e; *s; s = *e ? e + 1 : e) {
+        while (*s == L' ')
+            s++;
+        for (e = s; *e && *e != L'|'; e++) {
+        }
+        int n = (int)(e - s);
+        while (n && s[n - 1] == L' ')
+            n--;
+        WCHAR name[MAX_PATH];
+        if (n && n < MAX_PATH) {
+            lstrcpynW(name, s, n + 1);
+            apps_add(list, name);
+        }
+    }
+}
+
+/* the rows back as one text; false when they do not fit */
+static bool apps_join(HWND list, WCHAR *out, int cap)
+{
+    int n = 0, rows = (int)SendMessageW(list, LVM_GETITEMCOUNT, 0, 0);
+    out[0] = 0;
+    for (int i = 0; i < rows; i++) {
+        WCHAR name[MAX_PATH];
+        LVITEMW it = {0};
+        it.pszText = name;
+        it.cchTextMax = MAX_PATH;
+        int len = (int)SendMessageW(list, LVM_GETITEMTEXTW, (WPARAM)i, (LPARAM)&it);
+        if (!len)
+            continue;
+        if (n + !!n + len >= cap)
+            return false;
+        if (n)
+            out[n++] = L'|';
+        lstrcpyW(out + n, name);
+        n += len;
+    }
+    return true;
+}
+
+static void apps_edit_row(HWND list, int i)
+{
+    if (i < 0)
+        return;
+    SetFocus(list);
+    SendMessageW(list, LVM_EDITLABELW, (WPARAM)i, 0);
+}
+
+/* row i goes; the one that takes its place, or the last, is selected */
+static void apps_delete(HWND list, int i)
+{
+    if (i < 0)
+        return;
+    SendMessageW(list, LVM_DELETEITEM, (WPARAM)i, 0);
+    int rows = (int)SendMessageW(list, LVM_GETITEMCOUNT, 0, 0);
+    if (rows)
+        apps_select(list, i < rows ? i : rows - 1);
+}
+
+/* a program picked in Windows' file window: its file name, once */
+static void apps_browse(HWND h, HWND list)
+{
+    WCHAR path[MAX_PATH];
+    if (!pick_path(h, path, MAX_PATH, true))
+        return;
+    const WCHAR *name = wcsrchr(path, L'\\');
+    LVFINDINFOW find = {LVFI_STRING, name ? name + 1 : path};
+    int i = (int)SendMessageW(list, LVM_FINDITEMW, (WPARAM)-1, (LPARAM)&find);
+    apps_select(list, i >= 0 ? i : apps_add(list, find.psz));
+}
+
+static INT_PTR CALLBACK apps_text_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
+{
+    (void)lp;
+    if (m == WM_INITDIALOG) {
+        SetWindowTextW(h, T(APPS_TITLE));
+        SetDlgItemTextW(h, IDC_APPS_TEXT_LABEL, T(APPS_TEXT_LABEL));
+        SetDlgItemTextW(h, IDOK, T(OK_BTN));
+        SetDlgItemTextW(h, IDCANCEL, T(O_CANCEL_BTN));
+        SendDlgItemMessageW(h, IDC_APPS_TEXT_EDIT, EM_LIMITTEXT, COUNTOF(S.cfg.block_apps) - 1, 0);
+        SetDlgItemTextW(h, IDC_APPS_TEXT_EDIT, apps_text);
+        return TRUE;
+    }
+    if (m == WM_COMMAND && (LOWORD(wp) == IDOK || LOWORD(wp) == IDCANCEL)) {
+        if (LOWORD(wp) == IDOK)
+            GetDlgItemTextW(h, IDC_APPS_TEXT_EDIT, apps_text, COUNTOF(S.cfg.block_apps));
+        EndDialog(h, LOWORD(wp));
+        return TRUE;
+    }
+    return FALSE;
+}
+
+static INT_PTR CALLBACK apps_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
+{
+    static const struct {
+        unsigned short id, s;
+    } kButtons[] = {{IDC_APPS_NEW, S_APPS_NEW},       {IDC_APPS_EDIT, S_APPS_EDIT}, {IDC_APPS_BROWSE, S_APPS_BROWSE},
+                    {IDC_APPS_DELETE, S_APPS_DELETE}, {IDC_APPS_TEXT, S_APPS_TEXT}, {IDOK, S_OK_BTN},
+                    {IDCANCEL, S_O_CANCEL_BTN}};
+    HWND list = GetDlgItem(h, IDC_LIST);
+    switch (m) {
+    case WM_INITDIALOG: {
+        SetWindowTextW(h, T(APPS_TITLE));
+        for (int i = 0; i < COUNTOF(kButtons); i++)
+            SetDlgItemTextW(h, kButtons[i].id, g_tr[kButtons[i].s]);
+        list_look(list, LVS_EX_GRIDLINES);
+        LVCOLUMNW col = {0};
+        col.mask = LVCF_WIDTH;
+        SendMessageW(list, LVM_INSERTCOLUMNW, 0, (LPARAM)&col);
+        SendMessageW(list, LVM_SETCOLUMNWIDTH, 0, LVSCW_AUTOSIZE_USEHEADER);
+        apps_fill(list, S.cfg.block_apps);
+        if (SendMessageW(list, LVM_GETITEMCOUNT, 0, 0))
+            apps_select(list, 0);
+        return TRUE;
+    }
+    case WM_NOTIFY: {
+        const NMHDR *n = (const NMHDR *)lp;
+        if (n->idFrom != IDC_LIST)
+            break;
+        if (n->code == NM_DBLCLK)
+            apps_edit_row(list, ((const NMITEMACTIVATE *)lp)->iItem);
+        else if (n->code == LVN_KEYDOWN && ((const NMLVKEYDOWN *)lp)->wVKey == VK_DELETE)
+            apps_delete(list, apps_sel(list));
+        else if (n->code == LVN_KEYDOWN && ((const NMLVKEYDOWN *)lp)->wVKey == VK_F2)
+            apps_edit_row(list, apps_sel(list));
+        else if (n->code == LVN_BEGINLABELEDITW)
+            SendMessageW((HWND)SendMessageW(list, LVM_GETEDITCONTROL, 0, 0), EM_LIMITTEXT, MAX_PATH - 1, 0);
+        else if (n->code == LVN_ENDLABELEDITW) { /* the row keeps what was typed, trimmed; an empty row goes */
+            const NMLVDISPINFOW *d = (const NMLVDISPINFOW *)lp;
+            WCHAR name[MAX_PATH], *t = name;
+            LVITEMW it = {0};
+            it.pszText = name;
+            it.cchTextMax = MAX_PATH;
+            if (d->item.pszText)
+                lstrcpynW(name, d->item.pszText, MAX_PATH);
+            else
+                SendMessageW(list, LVM_GETITEMTEXTW, (WPARAM)d->item.iItem, (LPARAM)&it);
+            while (*t == L' ')
+                t++;
+            for (int k = lstrlenW(t); k && t[k - 1] == L' ';)
+                t[--k] = 0;
+            it.pszText = t;
+            if (*t)
+                SendMessageW(list, LVM_SETITEMTEXTW, (WPARAM)d->item.iItem, (LPARAM)&it);
+            else
+                apps_delete(list, d->item.iItem);
+        }
+        SetWindowLongPtrW(h, DWLP_MSGRESULT, FALSE);
+        return TRUE;
+    }
+    case WM_COMMAND:
+        if (HIWORD(wp) != BN_CLICKED)
+            break;
+        if (SendMessageW(list, LVM_GETEDITCONTROL, 0, 0)) { /* Enter or Esc ends the editing of a row */
+            if (LOWORD(wp) == IDCANCEL)
+                SendMessageW(list, LVM_CANCELEDITLABEL, 0, 0);
+            else
+                SetFocus(list);
+            if (LOWORD(wp) == IDOK || LOWORD(wp) == IDCANCEL)
+                return TRUE;
+        }
+        switch (LOWORD(wp)) {
+        case IDC_APPS_NEW: {
+            int i = apps_add(list, L"");
+            apps_select(list, i);
+            apps_edit_row(list, i);
+            break;
+        }
+        case IDC_APPS_EDIT:
+            apps_edit_row(list, apps_sel(list));
+            break;
+        case IDC_APPS_BROWSE:
+            apps_browse(h, list);
+            break;
+        case IDC_APPS_DELETE:
+            apps_delete(list, apps_sel(list));
+            break;
+        case IDC_APPS_TEXT: {
+            WCHAR t[COUNTOF(S.cfg.block_apps)];
+            apps_join(list, t, COUNTOF(t));
+            apps_text = t;
+            if (lang_dialog_box(S.inst, IDD_APPS_TEXT, h, apps_text_proc) == IDOK)
+                apps_fill(list, t);
+            break;
+        }
+        case IDOK: {
+            WCHAR t[COUNTOF(S.cfg.block_apps)];
+            if (!apps_join(list, t, COUNTOF(t))) {
+                MessageBeep(MB_ICONWARNING);
+                break;
+            }
+            if (lstrcmpW(t, S.cfg.block_apps)) {
+                lstrcpyW(S.cfg.block_apps, t);
+                apply();
+            }
+            EndDialog(h, IDOK);
+            break;
+        }
+        case IDCANCEL:
+            EndDialog(h, IDCANCEL);
+            break;
+        }
+        return TRUE;
+    case WM_CLOSE:
+        EndDialog(h, IDCANCEL);
+        return TRUE;
+    }
+    return FALSE;
+}
+
+/* ---- shortcut list: short and plain, the few keys people actually use ------------- */
 
 /* One row: what it does, and its keys. The keys are a fixed name (the same in every
  * language), else a text, else the global hotkey `hk` as it is set. */
@@ -474,11 +758,7 @@ static const Shortcut kShortcuts[] = {
 
 static void fill_shortcuts(HWND list)
 {
-    HMODULE ux = GetModuleHandleW(L"uxtheme.dll");
-    PFN_SetWindowTheme set_theme = ux ? (PFN_SetWindowTheme)(void *)GetProcAddress(ux, "SetWindowTheme") : NULL;
-    if (set_theme)
-        set_theme(list, L"Explorer", NULL);
-    SendMessageW(list, LVM_SETEXTENDEDLISTVIEWSTYLE, 0, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
+    list_look(list, 0);
     LVCOLUMNW col = {0};
     col.mask = LVCF_TEXT | LVCF_WIDTH;
     col.cx = 100;
@@ -553,17 +833,6 @@ static void show_help(HWND owner)
 
 /* ---- update page: check, download, install (each step on a worker thread) ---------- */
 
-#define WM_APP_UPD_CHECKED (WM_APP + 20)  /* wParam = UpdState */
-#define WM_APP_UPD_PROGRESS (WM_APP + 21) /* wParam = percent, or -1 when the size is unknown */
-#define WM_APP_UPD_FETCHED (WM_APP + 22)  /* wParam = downloaded */
-#define WM_APP_UPD_DONE (WM_APP + 23)     /* wParam = installer exit code */
-#define WM_APP_SHOW_PAGE (WM_APP + 24)    /* wParam = page, lParam = begin its download; from a second `--settings <page>` */
-#define WM_APP_OCR_PROGRESS (WM_APP + 25) /* wParam = percent */
-#define WM_APP_QR_PROGRESS (WM_APP + 27) /* wParam = percent */
-#define WM_APP_QR_DONE (WM_APP + 28)     /* wParam = QR_GET_... */
-#define WM_APP_OCR_DONE (WM_APP + 26)     /* wParam = OCR_GET_... */
-#define WM_APP_FORMULA_PROGRESS (WM_APP + 29) /* wParam = percent */
-#define WM_APP_FORMULA_DONE (WM_APP + 30)     /* wParam = FORMULA_GET_... */
 
 static UpdateResult g_upd;
 static bool g_relaunch; /* updated: reopen this window from the new exe */
@@ -995,10 +1264,11 @@ static void page_command(HWND page, int id, int code, HWND ctl)
             set_language(lang);
         return;
     }
-    if (id == IDC_THEME && code == CBN_SELCHANGE) {
-        int theme = (int)SendMessageW(ctl, CB_GETCURSEL, 0, 0);
-        if (theme >= THEME_AUTO && theme <= THEME_DARK) {
-            S.cfg.theme = theme;
+    int *choice = id == IDC_THEME ? &S.cfg.theme : id == IDC_DETECT ? &S.cfg.detect : id == IDC_NAME ? &S.cfg.name : NULL;
+    if (choice) { /* a list of a setting's values, in their order */
+        int i = (int)SendMessageW(ctl, CB_GETCURSEL, 0, 0);
+        if (code == CBN_SELCHANGE && i >= 0) {
+            *choice = i;
             apply();
         }
         return;
@@ -1038,6 +1308,10 @@ static void page_command(HWND page, int id, int code, HWND ctl)
         S.cfg.pin_top = IsDlgButtonChecked(page, IDC_PIN_TOP) == BST_CHECKED;
         apply();
         break;
+    case IDC_PIN_TEXT:
+        S.cfg.pin_text = IsDlgButtonChecked(page, IDC_PIN_TEXT) == BST_CHECKED;
+        apply();
+        break;
     case IDC_RACK_TOP:
     case IDC_RACK_BOTTOM:
         S.cfg.rack_bottom = id == IDC_RACK_BOTTOM;
@@ -1059,12 +1333,17 @@ static void page_command(HWND page, int id, int code, HWND ctl)
         if (S.shell_exec)
             S.shell_exec(S.dlg, L"open", path, NULL, NULL, SW_SHOWNORMAL);
         break;
-    case IDC_OPEN_DIR:
+    case IDC_OPEN_DIR: { /* Explorer by its full path: by name alone the current folder, the program's, comes first */
+        WCHAR explorer[MAX_PATH + 16];
+        UINT n = GetSystemWindowsDirectoryW(explorer, MAX_PATH);
         ensure_ini(path);
         wsprintfW(arg, L"/select,\"%s\"", path);
-        if (S.shell_exec)
-            S.shell_exec(S.dlg, NULL, L"explorer.exe", arg, NULL, SW_SHOWNORMAL);
+        if (S.shell_exec && n && n < MAX_PATH) {
+            lstrcatW(explorer, L"\\explorer.exe");
+            S.shell_exec(S.dlg, NULL, explorer, arg, NULL, SW_SHOWNORMAL);
+        }
         break;
+    }
     case IDC_PROJECT:
         if (S.shell_exec)
             S.shell_exec(S.dlg, L"open", L"https://" UPDATE_HOST UPDATE_REPO, NULL, NULL, SW_SHOWNORMAL);
@@ -1107,15 +1386,26 @@ static void page_command(HWND page, int id, int code, HWND ctl)
         S.cfg.exit_ask = IsDlgButtonChecked(page, IDC_EXIT_ASK) == BST_CHECKED;
         apply();
         break;
-    case IDC_QUICK_PICK:
-        if (pick_folder(S.cfg.quick_dir, COUNTOF(S.cfg.quick_dir))) {
-            show_quick_dir();
+    case IDC_HK_FULLSCREEN:
+        S.cfg.block_fullscreen = IsDlgButtonChecked(page, IDC_HK_FULLSCREEN) == BST_CHECKED;
+        apply();
+        break;
+    case IDC_SAVE_PICK:
+        if (pick_path(S.dlg, S.cfg.save_dir, COUNTOF(S.cfg.save_dir), false)) {
+            show_save_dir();
             apply();
         }
+        break;
+    case IDC_ALSO_SAVE:
+        S.cfg.also_save = IsDlgButtonChecked(page, IDC_ALSO_SAVE) == BST_CHECKED;
+        apply();
         break;
     case IDC_HELPBTN:
     case IDC_BUILTIN:
         show_help(S.dlg);
+        break;
+    case IDC_HK_APPS:
+        lang_dialog_box(S.inst, IDD_APPS, S.dlg, apps_proc);
         break;
     case IDC_DEFAULTS: {
         Config d;
@@ -1125,26 +1415,37 @@ static void page_command(HWND page, int id, int code, HWND ctl)
             CheckDlgButton(page, IDC_TRAY, d.tray ? BST_CHECKED : BST_UNCHECKED);
             S.cfg.pin_top = d.pin_top;
             CheckDlgButton(page, IDC_PIN_TOP, d.pin_top ? BST_CHECKED : BST_UNCHECKED);
-            S.cfg.quick_dir[0] = 0;
-            show_quick_dir();
+            S.cfg.pin_text = d.pin_text;
+            CheckDlgButton(page, IDC_PIN_TEXT, d.pin_text ? BST_CHECKED : BST_UNCHECKED);
+            S.cfg.theme = d.theme;
+            SendDlgItemMessageW(page, IDC_THEME, CB_SETCURSEL, (WPARAM)d.theme, 0);
             if (!S.portable && (autostart_on() || autostart_set(true))) /* on by default */
                 CheckDlgButton(page, IDC_AUTOSTART, BST_CHECKED);
-            if (lang_choice() != LG_AUTO && !S.busy) {
+            if (lang_choice() != LG_AUTO && !S.busy && !S.ocr_busy) { /* as for the list of languages */
                 set_language(LG_AUTO);
                 return;
             }
         } else if (page == S.page[PG_CAPTURE]) {
             S.cfg.gdi = d.gdi;
             CheckRadioButton(page, IDC_DXGI, IDC_GDI, d.gdi ? IDC_GDI : IDC_DXGI);
-            S.cfg.theme = d.theme;
-            SendDlgItemMessageW(page, IDC_THEME, CB_SETCURSEL, (WPARAM)d.theme, 0);
+            S.cfg.detect = d.detect;
+            SendDlgItemMessageW(page, IDC_DETECT, CB_SETCURSEL, (WPARAM)d.detect, 0);
             S.cfg.exit_ask = d.exit_ask;
             CheckDlgButton(page, IDC_EXIT_ASK, d.exit_ask ? BST_CHECKED : BST_UNCHECKED);
+            S.cfg.save_dir[0] = 0;
+            show_save_dir();
+            S.cfg.name = d.name;
+            SendDlgItemMessageW(page, IDC_NAME, CB_SETCURSEL, (WPARAM)d.name, 0);
+            S.cfg.also_save = d.also_save;
+            CheckDlgButton(page, IDC_ALSO_SAVE, d.also_save ? BST_CHECKED : BST_UNCHECKED);
         } else if (page == S.page[PG_HOTKEYS]) {
             memcpy(S.cfg.mod, d.mod, sizeof d.mod);
             memcpy(S.cfg.vk, d.vk, sizeof d.vk);
             show_hotkeys();
-        } else if (page == S.page[PG_UPDATE]) {
+            S.cfg.block_fullscreen = d.block_fullscreen;
+            CheckDlgButton(page, IDC_HK_FULLSCREEN, d.block_fullscreen ? BST_CHECKED : BST_UNCHECKED);
+            S.cfg.block_apps[0] = 0;
+        } else if (page == S.page[PG_UPDATE] && !S.portable) {
             S.cfg.auto_update = d.auto_update;
             CheckDlgButton(page, IDC_U_AUTO, d.auto_update ? BST_CHECKED : BST_UNCHECKED);
         } else if (page == S.page[PG_RACK]) {
@@ -1194,6 +1495,18 @@ static INT_PTR CALLBACK page_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
 
 /* ---- main window ------------------------------------------------------------------------- */
 
+/* The portable version is the program by itself, not an installed copy (update.h). What only
+ * an installed copy offers is listed here and shown gray in the portable one. */
+static const struct {
+    unsigned char page;
+    unsigned char id; /* IDC_... */
+} kInstalledOnly[] = {
+    {PG_GENERAL, IDC_AUTOSTART}, /* a shortcut to a file that may be somewhere else tomorrow */
+    {PG_UPDATE, IDC_U_CHECK},    /* an update is the installer: it would make an installation of this copy */
+    {PG_UPDATE, IDC_U_AUTO},     /* so none is looked for either: unticked, whatever the file says */
+    {PG_OCR, IDC_O_INSTALL},     /* the module comes with the portable program or not at all */
+    {PG_OCR, IDC_O_REMOVE},
+};
 
 /* The controls with a text of their own (the .rc has the places and sizes only). */
 static const struct {
@@ -1204,19 +1517,22 @@ static const struct {
     {PG_GENERAL, IDC_AUTOSTART, S_G_AUTOSTART},
     {PG_GENERAL, IDC_TRAY, S_G_TRAY},
     {PG_GENERAL, IDC_PIN_TOP, S_G_PIN_TOP},
+    {PG_GENERAL, IDC_PIN_TEXT, S_G_PIN_TEXT},
     {PG_GENERAL, IDC_LANG_LABEL, S_G_LANG},
+    {PG_GENERAL, IDC_THEME_LABEL, S_G_THEME},
     {PG_GENERAL, IDC_INI_GROUP, S_G_INI_GROUP},
     {PG_GENERAL, IDC_PATH_LABEL, S_G_PATH},
     {PG_GENERAL, IDC_OPEN_DIR, S_G_OPEN_DIR},
     {PG_GENERAL, IDC_OPEN_INI, S_G_OPEN_INI},
-    {PG_GENERAL, IDC_QUICK_LABEL, S_G_QUICK_DIR},
-    {PG_GENERAL, IDC_QUICK_PICK, S_G_CHANGE},
     {PG_CAPTURE, IDC_MODE_LABEL, S_C_MODE},
     {PG_CAPTURE, IDC_DXGI, S_C_DXGI},
     {PG_CAPTURE, IDC_GDI, S_C_GDI},
-    {PG_CAPTURE, IDC_HINT, S_C_HINT},
-    {PG_CAPTURE, IDC_THEME_LABEL, S_C_THEME},
+    {PG_CAPTURE, IDC_DETECT_LABEL, S_C_DETECT},
     {PG_CAPTURE, IDC_EXIT_ASK, S_C_EXIT_ASK},
+    {PG_CAPTURE, IDC_SAVE_LABEL, S_C_SAVE_DIR},
+    {PG_CAPTURE, IDC_SAVE_PICK, S_C_CHANGE},
+    {PG_CAPTURE, IDC_NAME_LABEL, S_C_NAME},
+    {PG_CAPTURE, IDC_ALSO_SAVE, S_C_ALSO_SAVE},
     {PG_HOTKEYS, IDC_HK_LABEL1, S_H_CAPTURE}, /* the rows in the order of HK_* */
     {PG_HOTKEYS, IDC_HK_LABEL2, S_H_QUICK},
     {PG_HOTKEYS, IDC_HK_LABEL3, S_H_PIN},
@@ -1224,6 +1540,9 @@ static const struct {
     {PG_HOTKEYS, IDC_HK_LABEL5, S_H_OCR},
     {PG_HOTKEYS, IDC_HK_LABEL6, S_H_OCRCOPY},
     {PG_HOTKEYS, IDC_HINT, S_H_HINT},
+    {PG_HOTKEYS, IDC_HK_FULLSCREEN, S_H_FULLSCREEN},
+    {PG_HOTKEYS, IDC_HK_APPS_LABEL, S_H_APPS},
+    {PG_HOTKEYS, IDC_HK_APPS, S_H_APPS_BTN},
     {PG_HOTKEYS, IDC_BUILTIN, S_H_BUILTIN},
     {PG_UPDATE, IDC_U_CHECK, S_U_CHECK_BTN},
     {PG_UPDATE, IDC_U_INSTALL, S_U_INSTALL_BTN},
@@ -1243,6 +1562,19 @@ static const struct {
     {PG_ABOUT, IDC_LICENSE, S_A_LICENSE},
 };
 _Static_assert(PG_COUNT <= 256, "kTexts keeps page numbers in a byte");
+_Static_assert(S_COUNT <= 65536, "kTexts keeps text numbers in 16 bits");
+
+/* The two ways to capture say what they cost when the mouse rests on them. */
+static void mode_tips(HWND page)
+{
+    HWND tip = CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASSW, NULL, WS_POPUP | TTS_ALWAYSTIP, CW_USEDEFAULT,
+                               CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, page, NULL, S.inst, NULL);
+    for (int i = 0; i < 2; i++) { /* IDC_DXGI, IDC_GDI */
+        TTTOOLINFOW ti = {sizeof ti, TTF_IDISHWND | TTF_SUBCLASS, page, (UINT_PTR)GetDlgItem(page, IDC_DXGI + i)};
+        ti.lpszText = (WCHAR *)g_tr[S_C_DXGI_TIP + i];
+        SendMessageW(tip, TTM_ADDTOOLW, 0, (LPARAM)&ti);
+    }
+}
 
 static void select_page(int i)
 {
@@ -1288,30 +1620,37 @@ static INT_PTR CALLBACK main_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
         CheckDlgButton(g, IDC_AUTOSTART, autostart_on() ? BST_CHECKED : BST_UNCHECKED);
         CheckDlgButton(g, IDC_TRAY, S.cfg.tray ? BST_CHECKED : BST_UNCHECKED);
         CheckDlgButton(g, IDC_PIN_TOP, S.cfg.pin_top ? BST_CHECKED : BST_UNCHECKED);
+        CheckDlgButton(g, IDC_PIN_TEXT, S.cfg.pin_text ? BST_CHECKED : BST_UNCHECKED);
         WCHAR t[96]; /* the languages: what Windows uses, then each by its own name */
         wsprintfW(t, T(G_LANG_AUTO), lang_name(lang_system()));
         SendDlgItemMessageW(g, IDC_LANG, CB_ADDSTRING, 0, (LPARAM)t);
         for (int i = 0; i < LG_COUNT; i++)
             SendDlgItemMessageW(g, IDC_LANG, CB_ADDSTRING, 0, (LPARAM)lang_name(i));
         SendDlgItemMessageW(g, IDC_LANG, CB_SETCURSEL, (WPARAM)(lang_choice() + 1), 0);
+        for (int i = 0; i <= THEME_DARK; i++) /* in the order of THEME_* */
+            SendDlgItemMessageW(g, IDC_THEME, CB_ADDSTRING, 0, (LPARAM)g_tr[S_G_THEME_AUTO + i]);
+        SendDlgItemMessageW(g, IDC_THEME, CB_SETCURSEL, (WPARAM)S.cfg.theme, 0);
         WCHAR ini[MAX_PATH];
         config_path(ini, MAX_PATH);
         SetDlgItemTextW(g, IDC_INI_PATH, ini);
         CheckRadioButton(c, IDC_DXGI, IDC_GDI, S.cfg.gdi ? IDC_GDI : IDC_DXGI);
-        for (int i = 0; i <= THEME_DARK; i++) /* in the order of THEME_* */
-            SendDlgItemMessageW(c, IDC_THEME, CB_ADDSTRING, 0, (LPARAM)g_tr[S_C_THEME_AUTO + i]);
-        SendDlgItemMessageW(c, IDC_THEME, CB_SETCURSEL, (WPARAM)S.cfg.theme, 0);
+        mode_tips(c);
+        for (int i = 0; i <= DETECT_ELEMENTS; i++) /* in the order of DETECT_* */
+            SendDlgItemMessageW(c, IDC_DETECT, CB_ADDSTRING, 0, (LPARAM)g_tr[S_C_DETECT_CONTROLS + i]);
+        SendDlgItemMessageW(c, IDC_DETECT, CB_SETCURSEL, (WPARAM)S.cfg.detect, 0);
         CheckDlgButton(c, IDC_EXIT_ASK, S.cfg.exit_ask ? BST_CHECKED : BST_UNCHECKED);
         CheckRadioButton(S.page[PG_RACK], IDC_RACK_TOP, IDC_RACK_BOTTOM,
                          S.cfg.rack_bottom ? IDC_RACK_BOTTOM : IDC_RACK_TOP);
-        show_quick_dir();
+        show_save_dir();
+        show_names();
+        CheckDlgButton(c, IDC_ALSO_SAVE, S.cfg.also_save ? BST_CHECKED : BST_UNCHECKED);
         SetDlgItemTextW(S.page[PG_ABOUT], IDC_VERSION,
                         S.portable ? L"sniplite " SNIPLITE_VERSION L" portable" : L"sniplite " SNIPLITE_VERSION);
         SetDlgItemTextW(S.page[PG_ABOUT], IDC_PROJECT, UPDATE_HOST UPDATE_REPO); /* the link is its own text */
         HWND u = S.page[PG_UPDATE];
         wsprintfW(t, T(U_VERSION), SNIPLITE_VERSION);
         SetDlgItemTextW(u, IDC_U_VERSION, t);
-        CheckDlgButton(u, IDC_U_AUTO, S.cfg.auto_update ? BST_CHECKED : BST_UNCHECKED);
+        CheckDlgButton(u, IDC_U_AUTO, S.cfg.auto_update && !S.portable ? BST_CHECKED : BST_UNCHECKED);
         ShowWindow(GetDlgItem(u, IDC_U_INSTALL), SW_HIDE);
         SendDlgItemMessageW(S.page[PG_OCR], IDC_O_BAR, PBM_SETRANGE, 0, MAKELPARAM(0, 100));
         SendDlgItemMessageW(S.page[PG_QR], IDC_Q_BAR, PBM_SETRANGE, 0, MAKELPARAM(0, 100));
@@ -1319,6 +1658,8 @@ static INT_PTR CALLBACK main_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
         qr_show();
         formula_show();
         show_hotkeys();
+        HWND k = S.page[PG_HOTKEYS];
+        CheckDlgButton(k, IDC_HK_FULLSCREEN, S.cfg.block_fullscreen ? BST_CHECKED : BST_UNCHECKED);
         daemon_cmd(L"_hkstate", NULL);
         SendMessageW(S.tabs, TCM_SETCURSEL, (WPARAM)S.start_page, 0);
         select_page(S.start_page);
@@ -1423,6 +1764,9 @@ static INT_PTR CALLBACK main_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
     case WM_APP_FORMULA_DONE:
         formula_done((int)wp);
         return TRUE;
+    case WM_APP_SAVE_FAILED:
+        MessageBoxW(h, T(O_WRITE_FAILED), T(SETTINGS_TITLE), MB_OK | MB_ICONWARNING);
+        return TRUE;
     case WM_COMMAND:
         if (LOWORD(wp) == IDCANCEL && !S.installing) {
             if (S.qr_busy)
@@ -1448,7 +1792,9 @@ static INT_PTR CALLBACK main_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
 static void helper_init(HINSTANCE inst)
 {
     S.inst = inst;
-    HMODULE cc = LoadLibraryW(L"comctl32.dll"), sh = LoadLibraryW(L"shell32.dll"), ux = LoadLibraryW(L"uxtheme.dll");
+    /* uxtheme.dll from System32: by name alone, unlike the other two, it is looked for in the program's folder first */
+    HMODULE cc = LoadLibraryW(L"comctl32.dll"), sh = LoadLibraryW(L"shell32.dll"),
+            ux = LoadLibraryExW(L"uxtheme.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
     PFN_InitCommonControlsEx icc = cc ? (PFN_InitCommonControlsEx)(void *)GetProcAddress(cc, "InitCommonControlsEx") : NULL;
     if (icc) {
         INITCOMMONCONTROLSEX ic = {sizeof ic,

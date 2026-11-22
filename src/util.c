@@ -164,6 +164,23 @@ void str_add_quoted(Str *s, const WCHAR *a)
     str_add(s, L"\"");
 }
 
+/* A child that inherits the n handles h and no other: an inheritable handle that another thread has open
+ * meanwhile, for a child of its own, would otherwise stay open as long as this one lives. */
+bool spawn_inheriting(const WCHAR *exe, WCHAR *cmd, const STARTUPINFOW *si, const HANDLE *h, int n,
+                      PROCESS_INFORMATION *pi)
+{
+    SIZE_T list[16], size = sizeof list; /* room for a list of one attribute */
+    STARTUPINFOEXW x = {*si, (LPPROC_THREAD_ATTRIBUTE_LIST)list};
+    x.StartupInfo.cb = sizeof x;
+    if (!InitializeProcThreadAttributeList(x.lpAttributeList, 1, 0, &size))
+        return false;
+    bool ok = UpdateProcThreadAttribute(x.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, (void *)h,
+                                        n * sizeof *h, NULL, NULL) &&
+              CreateProcessW(exe, cmd, NULL, NULL, TRUE, EXTENDED_STARTUPINFO_PRESENT, NULL, NULL, &x.StartupInfo, pi);
+    DeleteProcThreadAttributeList(x.lpAttributeList);
+    return ok;
+}
+
 void str_free(Str *s)
 {
     mem_free(s->p);

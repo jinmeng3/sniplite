@@ -85,6 +85,7 @@ static struct {
     Img barimg;
     int hover, down;  /* the bar's button under the mouse, pressed; -1 none */
 } L;
+static unsigned begun; /* long screenshots so far: one that waited for a dialog can tell whether it is still the one */
 
 static int px(float v) { return (int)lroundf(v * L.s); }
 
@@ -207,7 +208,14 @@ static void append(int y, int n)
         return;
     size_t row = (size_t)L.w * 4, need = (size_t)(L.rows + n) * row;
     size_t hashes = (size_t)(L.rows + n) * STRIPS * sizeof(uint32_t);
-    if (!commit_to(L.canvas, &L.committed, need) || !commit_to(L.chash, &L.hash_committed, hashes))
+    if (need > L.committed) {
+        size_t upto = (need + (4u << 20)) & ~(size_t)0xFFFF, all = (size_t)L.max_rows * row;
+        upto = MINI(upto, all);
+        if (!VirtualAlloc(L.canvas, upto, MEM_COMMIT, PAGE_READWRITE))
+            return;
+        L.committed = upto;
+    }
+    if (!commit_to(L.chash, &L.hash_committed, hashes))
         return;
     memcpy(L.canvas + (size_t)L.rows * L.w, L.shot.px + (size_t)y * L.w, (size_t)n * row);
     memcpy(L.chash + (size_t)L.rows * STRIPS, L.fhash + (size_t)y * STRIPS, (size_t)n * STRIPS * sizeof(uint32_t));
@@ -596,6 +604,10 @@ static void long_text(bool panel)
     bool sent = ocr_picture(L.canvas, L.w, L.rows, beside, panel ? L.bar : NULL);
     L.rows = rows;
     L.trows = MINI(L.trows, rows * L.tw / L.w);
+    if (!sent && ocr_there) { /* the module is there, the picture could not be handed over: it stays */
+        MessageBeep(MB_ICONWARNING);
+        return;
+    }
     if (!panel || !sent) {
         long_end();
         return;
@@ -641,42 +653,65 @@ static void long_done(int button)
     int rows = L.rows;
     stitch_finish();
     HWND daemon = *(HWND *)(O + OV_DAEMON);
+    bool done; /* false: the dialog was cancelled, or the pin or the copy failed */
     if (button == BT_SAVE) {
         WCHAR path[MAX_PATH * 2];
+        unsigned mine = begun;
         for (HWND *w = &L.frame; w <= &L.view; w++)
             if (*w)
                 ShowWindow(*w, SW_HIDE);
         hotkeys(false); /* Enter and Esc are the dialog's now */
-        if (!save_dialog(path, COUNTOF(path))) { /* cancelled: go on scrolling */
-            if (!L.on)
+        done = save_dialog(path, COUNTOF(path));
+        if (!L.on || mine != begun)
+            return; /* ended while the dialog was open, maybe by a capture that began another */
+        if (done && !image_save(path, L.canvas, L.w, L.w, L.rows)) {
+            MessageBoxW(NULL, T(OV_SAVE_FAILED), L"sniplite", MB_OK | MB_ICONWARNING);
+            if (mine != begun)
                 return;
-            L.rows = rows;
-            L.trows = MINI(L.trows, rows * L.tw / L.w);
+        }
+    } else if (button == BT_PIN) {
+        Img im;
+        done = img_create(&im, L.w, L.rows);
+        if (done) {
+            memcpy(im.px, L.canvas, (size_t)L.w * L.rows * 4);
+            done = pin_add(&im, 0, 0, true);
+        }
+    } else {
+        done = clip_put_image(daemon, L.canvas, L.w, L.w, L.rows);
+    }
+    if (!done) {
+        L.rows = rows; /* the picture stays: on with the scrolling */
+        L.trows = MINI(L.trows, rows * L.tw / L.w);
+        if (button == BT_SAVE) {
             for (HWND *w = &L.frame; w <= &L.view; w++)
                 if (*w)
                     ShowWindow(*w, SW_SHOWNOACTIVATE);
             hotkeys(true);
-            SetTimer(L.bar, TIMER_GRAB, TICK_MS, NULL);
-            return;
+        } else {
+            MessageBeep(MB_ICONWARNING);
         }
-        if (L.on && !image_save(path, L.canvas, L.w, L.w, L.rows))
-            MessageBoxW(NULL, T(OV_SAVE_FAILED), L"sniplite", MB_OK | MB_ICONWARNING);
-    } else if (button == BT_PIN) {
-        Img im;
-        if (img_create(&im, L.w, L.rows)) {
-            memcpy(im.px, L.canvas, (size_t)L.w * L.rows * 4);
-            pin_add(&im, 0, 0, true);
-        }
-    } else {
-        clip_put_image(daemon, L.canvas, L.w, L.w, L.rows);
+        L.quiet = 0;
+        SetTimer(L.bar, TIMER_GRAB, TICK_MS, NULL);
+        return;
     }
+    if (button == BT_SAVE) {
+        long_end();
+        return;
+    }
+    /* the end comes before also_save, so the canvas outlives it */
+    uint32_t *canvas = L.canvas;
+    int w = L.w, h = L.rows;
+    L.canvas = NULL;
     long_end();
+    also_save(canvas, w, h);
+    VirtualFree(canvas, 0, MEM_RELEASE);
 }
 
 /* Called by the capture, which closes right after: the selection becomes the region. */
 void long_begin(void)
 {
     long_end();
+    begun++;
     const Shot *sh = (const Shot *)(O + OV_SHOT);
     const RECT *sel = (const RECT *)(O + OV_SEL);
     RECT rc = {sh->vx + sel->left, sh->vy + sel->top, sh->vx + sel->right, sh->vy + sel->bottom};

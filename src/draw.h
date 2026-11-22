@@ -38,13 +38,17 @@ void d_arrow(const Surf *s, float x0, float y0, float x1, float y1, float w, uin
 
 /* Pixelate r on dst; block averages are read from src (may equal dst). */
 void d_mosaic(const Surf *dst, const Surf *src, RECT r, int block);
+/* r shows its own middle z times larger, read from src (may equal dst). */
+void d_lens(const Surf *dst, const Surf *src, RECT r, int z);
+/* Darken all of the clip like d_dim_row but the n rectangles at holes. */
+void d_spot(const Surf *s, const RECT *holes, int n);
 
-/* Darken n pixels from src into dst (screenshot backdrop). */
+/* Darken n pixels from src into dst (dst may be src). */
 void d_dim_row(uint32_t *dst, const uint32_t *src, int n);
 
 enum {
-    IC_RECT, IC_ELLIPSE, IC_LINE, IC_ARROW, IC_PEN, IC_MARKER, IC_MOSAIC, IC_TEXT, IC_NUMBER,
-    IC_UNDO, IC_REDO, IC_PIN, IC_SAVE, IC_CLOSE, IC_OK, IC_OCR, IC_OCRCOPY, IC_LONG, IC_QR, IC_FORMULA, IC_FORMULA_PREVIEW,
+    IC_RECT, IC_ELLIPSE, IC_LINE, IC_ARROW, IC_PEN, IC_MARKER, IC_MOSAIC, IC_TEXT, IC_NUMBER, IC_SPOT, IC_LENS,
+    IC_UNDO, IC_REDO, IC_PIN, IC_SAVE, IC_CLOSE, IC_OK, IC_OCR, IC_OCRCOPY, IC_LONG, IC_FRONT, IC_BACK, IC_QR, IC_FORMULA, IC_FORMULA_PREVIEW,
 };
 /* Draw a toolbar icon into the box (x, y, size, size). */
 void d_icon(const Surf *s, int icon, float x, float y, float size, uint32_t c);

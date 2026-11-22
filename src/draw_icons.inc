@@ -64,6 +64,29 @@
         .long 0x4129999A, 0x40BCCCCD
         .long 0x4129999A, 0x4164CCCD
         .byte 0, 0, 0, 0
+/* spotlight: a dimmed surround (the marker's translucent stroke) around a framed area */
+.Lic_spot:
+        .byte 1, 5, 3, 1
+        .long 0x40600000, 0x40600000
+        .long 0x41840000, 0x40600000
+        .long 0x41840000, 0x41840000
+        .long 0x40600000, 0x41840000
+        .long 0x40600000, 0x40600000
+        .byte 1, 5, 0, 0
+        .long 0x40D00000, 0x40D00000
+        .long 0x41580000, 0x40D00000
+        .long 0x41580000, 0x41580000
+        .long 0x40D00000, 0x41580000
+        .long 0x40D00000, 0x40D00000
+        .byte 0, 0, 0, 0
+/* magnifier: a lens and its handle */
+.Lic_lens:
+        .byte 3, 0, 0, 0
+        .long 0x41080000, 0x41080000, 0x40B00000, 0x40B00000
+        .byte 1, 2, 1, 0
+        .long 0x4149999A, 0x4149999A
+        .long 0x41880000, 0x41880000
+        .byte 0, 0, 0, 0
 .Lic_undo:
         .byte 1, 11, 0, 0
         .long 0x40D00000, 0x40E00000
@@ -272,6 +295,31 @@
         .long 0x41200000, 0x41200000, 0x40400000, 0x40400000
         .byte 2, 4, 0, 0
         .long 0x41200000, 0x41100000, 0x41300000, 0x41200000, 0x41200000, 0x41300000, 0x41100000, 0x41200000
+/* to the front: an arrow up to a line at the top */
+.Lic_front:
+        .byte 1, 2, 0, 0
+        .long 0x40800000, 0x40900000
+        .long 0x41800000, 0x40900000
+        .byte 1, 2, 0, 0
+        .long 0x41200000, 0x41840000
+        .long 0x41200000, 0x41080000
+        .byte 1, 3, 0, 0
+        .long 0x40C00000, 0x41480000
+        .long 0x41200000, 0x41080000
+        .long 0x41600000, 0x41480000
+        .byte 0, 0, 0, 0
+/* to the back: an arrow down to a line at the bottom */
+.Lic_back:
+        .byte 1, 2, 0, 0
+        .long 0x40800000, 0x41780000
+        .long 0x41800000, 0x41780000
+        .byte 1, 2, 0, 0
+        .long 0x41200000, 0x40600000
+        .long 0x41200000, 0x41380000
+        .byte 1, 3, 0, 0
+        .long 0x40C00000, 0x40F00000
+        .long 0x41200000, 0x41380000
+        .long 0x41600000, 0x40F00000
         .byte 0, 0, 0, 0
 /* the mosaic icon's grid lines, (float)(3 + 3.5 * i) */
 .Lic_mosaic_grid: .long 0x40400000, 0x40D00000, 0x41200000, 0x41580000, 0x41880000

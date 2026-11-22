@@ -25,9 +25,9 @@
 ## Características
 
 - **Rápido**: pulsa F1 y la captura está ahí, antes que en el 99 % de las herramientas de captura
-- **Ligero**: unos 280 KB, sin nada más que instalar; el núcleo de captura y dibujo está escrito en ensamblador
+- **Ligero**: unos 320 KB, sin nada más que instalar; el núcleo de captura y dibujo está escrito en ensamblador
 - **Fijar**: fija una captura por encima de todas las ventanas para tenerla a la vista mientras trabajas
-- **Completo**: capturas, imágenes fijadas, flechas, texto, mosaico: no falta nada
+- **Completo**: capturas, imágenes fijadas, flechas, texto, mosaico, foco, lupa: no falta nada
 - **Reconocimiento de texto**: lee el texto de una captura, tablas incluidas; un módulo opcional que funciona por completo en tu equipo
 - **Capturas con desplazamiento**: desplaza la página y se va uniendo sola
 - **Limpio**: sin anuncios, de código abierto, sin archivos de registro, sin recopilar datos
@@ -95,13 +95,21 @@ Selecciona una zona y pulsa el botón de texto (Ctrl+O): el texto aparece en un 
 
 Selecciona la zona, pulsa el botón de captura con desplazamiento (Ctrl+L) y desplaza la página tú mismo. sniplite une lo que va pasando, y una franja junto a la zona muestra el resultado. Enter copia y Esc cancela; también puedes guardarla, fijarla o leer su texto.
 
+**¿Dónde se guardan las capturas?**
+
+Ctrl+S abre el cuadro de diálogo de guardar en la última carpeta que usaste; la primera vez, o si esa carpeta ya no existe, en la carpeta de guardado predeterminada si la cambiaste, y si no, en Imágenes. Las capturas rápidas (Shift+F1) van directamente a la carpeta de guardado predeterminada: el escritorio, mientras no la cambies en la pestaña Captura de los ajustes. Marca allí «Guardar también cada captura en un archivo» y cada captura que copies o fijes se guarda también en esa carpeta. En «Formato del nombre», en la misma pestaña, eliges cómo se llaman los archivos, entre unos cuantos formatos de fecha y hora.
+
+**¿Y si los atajos molestan en un juego?**
+
+En la pestaña Atajos de los ajustes, marca «Ceder los atajos en pantalla completa (juegos, etc.)»: mientras un programa que ocupa toda la pantalla está en primer plano, sniplite libera sus atajos y las teclas le llegan a ese programa; los recupera cuando cambias a otra cosa. Los programas que no se ejecutan a pantalla completa se pueden añadir en «Ceder los atajos a»: haz clic en «Gestionar» y luego en «Nuevo» para escribir un nombre de archivo como `game.exe`, o en «Examinar» para elegir el programa.
+
 **¿Cuánta memoria usa?**
 
 Unos 50 MB casi siempre, la mayor parte ocupada por el controlador gráfico, y un poco más justo después de capturar. Para usar menos, elige Ligero en la pestaña Captura de los ajustes: unos 2 MB, con capturas más lentas.
 
 **¿Qué deja en mi equipo?**
 
-No necesita permisos de administrador ni toca el registro. Al cambiar un ajuste se crea un archivo de ajustes; bórralo para volver a los valores predeterminados.
+No necesita permisos de administrador ni toca el registro. Al cambiar un ajuste, o al guardar con el cuadro de diálogo de guardar (que recuerda la carpeta), se crea un archivo de ajustes; bórralo para volver a los valores predeterminados.
 
 **¿Cómo cambio el idioma?**
 
@@ -109,7 +117,7 @@ sniplite sigue el idioma de Windows. Para usar otro, abre los ajustes desde el i
 
 **¿Cómo se actualiza?**
 
-Una vez al día, sniplite pregunta a GitHub si hay una versión más reciente. Si la hay, aparece un aviso abajo a la derecha y un clic lo actualiza. Solo se comprueba el número de versión y no se envía nada; puedes desactivarlo en los ajustes.
+Una vez al día, sniplite pregunta a GitHub si hay una versión más reciente. Si la hay, aparece un aviso abajo a la derecha y un clic lo actualiza. Solo se comprueba el número de versión y no se envía nada; puedes desactivarlo en los ajustes. Las versiones portables no buscan actualizaciones: descarga la nueva en [Releases](https://github.com/MrTangLuyao/sniplite/releases/latest).
 
 **¿Cómo se desinstala?**
 
@@ -133,8 +141,9 @@ Instala [w64devkit](https://github.com/skeeto/w64devkit) (u otro MinGW-w64), añ
 
 ## Software libre de terceros
 
-sniplite en sí solo usa las bibliotecas del sistema de Windows. El módulo opcional de reconocimiento de texto es obra de otros y se distribuye sin cambios, con sus licencias (en la carpeta `ocr` del módulo y en la [página del módulo](https://github.com/MrTangLuyao/sniplite/releases/tag/ocr-1)):
+sniplite en sí solo usa las bibliotecas del sistema de Windows. El módulo opcional de reconocimiento de texto es obra de otros y se distribuye sin cambios, con sus licencias o enlaces a ellas (en la carpeta `ocr` del módulo y en la [página del módulo](https://github.com/MrTangLuyao/sniplite/releases/tag/ocr-2)):
 
 - [ONNX Runtime](https://github.com/microsoft/onnxruntime) 1.26.0, Copyright (c) Microsoft Corporation, licencia MIT
+- El runtime de [Microsoft Visual C++](https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files) 14.51.36247 que ONNX Runtime necesita (`msvcp140.dll`, `msvcp140_1.dll`, `vcruntime140.dll`, `vcruntime140_1.dll`), Copyright (c) Microsoft Corporation, no es de código abierto: se redistribuye según los [términos de licencia](https://visualstudio.microsoft.com/license-terms/) de Microsoft
 - Los modelos PP-OCRv6 de [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR), Copyright (c) PaddlePaddle Authors, licencia Apache 2.0
 - Su versión ONNX procede de [RapidOCR](https://github.com/RapidAI/RapidOCR), licencia Apache 2.0

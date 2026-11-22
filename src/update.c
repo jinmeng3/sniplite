@@ -38,7 +38,8 @@ static bool wh_load(void)
 {
     if (WH.close)
         return true;
-    HMODULE h = LoadLibraryW(L"winhttp.dll");
+    /* from System32: by name alone the program's folder is searched first */
+    HMODULE h = LoadLibraryExW(L"winhttp.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (!h)
         return false;
 #define GET(field, name) WH.field = (void *)GetProcAddress(h, name)

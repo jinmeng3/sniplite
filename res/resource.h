@@ -110,6 +110,29 @@
 #define IDC_RACK_TOP 241
 #define IDC_RACK_BOTTOM 242
 #define IDC_RACK_HINT 243
+#define IDC_SAVE_LABEL 198 /* where files go and how they are named */
+#define IDC_SAVE_DIR 199
+#define IDC_SAVE_PICK 220
+#define IDC_NAME_LABEL 223
+#define IDC_NAME 224
+#define IDC_ALSO_SAVE 244
+#define IDC_PIN_TEXT 226
+#define IDC_DETECT_LABEL 227 /* what a capture offers under the mouse */
+#define IDC_DETECT 228
+#define IDC_HK_FULLSCREEN 229 /* the hotkeys step aside for a full-screen program and for the ones listed */
+#define IDC_HK_APPS_LABEL 230
+#define IDC_HK_APPS 245
+
+/* the list of programs the hotkeys step aside for (settings.c), and its text */
+#define IDD_APPS 115
+#define IDD_APPS_TEXT 116
+#define IDC_APPS_NEW 232
+#define IDC_APPS_EDIT 233
+#define IDC_APPS_BROWSE 234
+#define IDC_APPS_DELETE 235
+#define IDC_APPS_TEXT 236
+#define IDC_APPS_TEXT_LABEL 237
+#define IDC_APPS_TEXT_EDIT 238
 
 /* the question before a capture is left (main.c) */
 #define IDD_LEAVE 114

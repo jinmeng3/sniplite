@@ -59,7 +59,11 @@
 #define RGN_BUFBYTES (RGN_BUFFER + RGN_MAXRECTS * 16)
 /* draw.h icons */
 #define DIC_RECT 0
-#define DIC_UNDO 9
+#define DIC_UNDO 11
+/* what the property bar holds (VIS_PB_RUNS): runs of buttons */
+#define PB_SIZES 1
+#define PB_COLORS 2
+#define PB_ORDER 4                      /* "to the front", "to the back", at the left: an annotation is picked */
 /* present.h parts */
 #define PR_TOP 0
 #define PR_LABEL 1
@@ -129,6 +133,14 @@
         .balign 2
 .Lpanel_off: .short VIS_LABEL, VIS_MAG, VIS_TB, VIS_PB, VIS_TIP
 .Lpanel_pass: .byte PASS_LABEL, PASS_MAG, PASS_BAR, PASS_BAR, PASS_TIP
+/* by tool: the runs of its property bar (a mosaic has no color, a spotlight neither
+ * size nor color; the magnifier's sizes are its factors) */
+.Lpb_of: .byte 0, PB_SIZES | PB_COLORS, PB_SIZES | PB_COLORS, PB_SIZES | PB_COLORS, PB_SIZES | PB_COLORS
+         .byte PB_SIZES | PB_COLORS, PB_SIZES | PB_COLORS, PB_SIZES, PB_SIZES | PB_COLORS, PB_SIZES | PB_COLORS
+         .byte 0, PB_SIZES | PB_COLORS
+        .if . - .Lpb_of - T_COUNT
+        .error "one entry per tool"
+        .endif
 
 /* ---- state of this part -------------------------------------------------------------- */
 
@@ -168,8 +180,7 @@ ovp_scale_key:
 .Lrad:          .space 12               /* the size discs' radii: rad[i] * O.s */
 .Ltw:           .space 4                /* tool bar width */
 .Lth:           .space 4                /* bar height */
-.Lpw:           .space 4                /* property bar width with colors */
-.Lpw_mos:       .space 4                /* ... for the mosaic (sizes only) */
+.Lpw:           .space 4 * PB_ORDER * 2 /* property bar width by what it holds (PB_*); 0: no bar */
 .Lmag_w:        .space 4
 .Lmag_h:        .space 4
 /* measured text widths: valid for one font (handle, scale), measuring DC and language */
@@ -182,7 +193,7 @@ ovp_scale_key:
 .Llab_w:        .space 4                /* for this bright size */
 .Llab_h:        .space 4
 .Llab_cx:       .space 4
-.Ltip_cx:       .space 4 * 64           /* by tooltip id */
+.Ltip_cx:       .space 4 * 64           /* by tooltip id; the magnifier's sizes at their ids + 3 */
 .Ltip_ok:       .space 64
 .Lclipped:      .space 1                /* band_clip ran since the band DC's clip was last reset */
 .Lpass:         .space 1                /* composition mode: PASS_* of the band being painted */
@@ -342,12 +353,29 @@ SFUNC scale_tab
         mov ecx, dword ptr [rip + .Ls30]
         lea edx, [rcx + rax*2]                  /* th = 2 * pad + bs */
         mov dword ptr [rip + .Lth], edx
-        lea edx, [rcx + rcx*2]
-        lea edx, [rdx + rax*2]                  /* 2 * pad + 3 * bs */
-        mov dword ptr [rip + .Lpw_mos], edx
-        lea edx, [rdx + rcx*8]
-        add edx, dword ptr [rip + .Ls9]         /* + sep + 8 * bs */
-        mov dword ptr [rip + .Lpw], edx
+        /* pw: 2 * pad, the runs' buttons and a separator between two runs */
+        lea r8, [rip + .Lpw]
+        mov edx, 1
+2:      mov eax, dword ptr [rip + .Ls4]
+        add eax, eax
+        sub eax, dword ptr [rip + .Ls9]
+        test edx, PB_SIZES
+        jz 3f
+        lea eax, [rax + rcx*2]
+        add eax, ecx
+        add eax, dword ptr [rip + .Ls9]
+3:      test edx, PB_COLORS
+        jz 4f
+        lea eax, [rax + rcx*8]
+        add eax, dword ptr [rip + .Ls9]
+4:      test edx, PB_ORDER
+        jz 5f
+        lea eax, [rax + rcx*2]
+        add eax, dword ptr [rip + .Ls9]
+5:      mov dword ptr [r8 + rdx*4], eax
+        inc edx
+        cmp edx, PB_ORDER * 2
+        jb 2b
         mov eax, dword ptr Ov(OV_S)
         mov dword ptr [rip + .Lst_key], eax
         movdqu xmm0, xmmword ptr [rsp]
@@ -877,14 +905,15 @@ SFUNC put_int
 4:      ret
 ENDF
 
-/* ecx = toolbar id -> rax = its tooltip text in the language in use, "" for an id
- * without one. The nine tools, all commands, the three sizes and the eight colors are
- * each consecutive ids with consecutive texts in the same order (lang_text.h).
- * Clobbers rcx. */
+/* ecx = toolbar id, edx = the property bar's tool -> rax = the id's tooltip text in
+ * the language in use, "" for an id without one. The tools, the commands, the three
+ * sizes (the magnifier's: its factors) and the eight colors are each a run of
+ * consecutive ids, and a run of consecutive texts in the same order (lang_text.h):
+ * the text is the run's first one plus the id's place in the run. Clobbers rcx. */
 SFUNC tip_text
         ENDPROLOG
         lea eax, [rcx - T_RECT]
-        cmp eax, T_NUMBER - T_RECT
+        cmp eax, T_LAST - T_RECT
         ja 1f
         mov rcx, qword ptr [rip + g_tr]
         mov rax, qword ptr [rcx + rax*8 + 8 * S_TIP_TOOL1]
@@ -899,7 +928,11 @@ SFUNC tip_text
         cmp eax, 2
         ja 3f
         mov rcx, qword ptr [rip + g_tr]
+        cmp edx, T_LENS
+        je 5f
         mov rax, qword ptr [rcx + rax*8 + 8 * S_TIP_SIZE0]
+        ret
+5:      mov rax, qword ptr [rcx + rax*8 + 8 * S_TIP_ZOOM2]
         ret
 3:      lea eax, [rcx - B_COLOR]
         cmp eax, 7
@@ -911,17 +944,23 @@ SFUNC tip_text
         ret
 ENDF
 
-/* eax = prop_tool(): the picked annotation's tool, else O.tool. Clobbers rcx. */
-SFUNC prop_tool_
+/* eax = what the property bar holds (PB_*), ecx = the picked annotation's tool, else
+ * O.tool: the runs of that tool's bar, and for a pick the two that restack it. Leaf. */
+SFUNC pb_runs
         ENDPROLOG
+        mov ecx, dword ptr Ov(OV_TOOL)
         movsxd rax, dword ptr Ov(OV_PICK)
         test eax, eax
         js 1f
         imul rax, rax, AN_BYTES
         add rax, qword ptr Ov(OV_ANN)
-        mov eax, dword ptr [rax + AN_TOOL]
+        mov ecx, dword ptr [rax + AN_TOOL]
+        lea rax, [rip + .Lpb_of]
+        movzx eax, byte ptr [rax + rcx]
+        or eax, PB_ORDER
         ret
-1:      mov eax, dword ptr Ov(OV_TOOL)
+1:      lea rax, [rip + .Lpb_of]
+        movzx eax, byte ptr [rax + rcx]
         ret
 ENDF
 
@@ -964,6 +1003,18 @@ ENDF
 
 /* ---- toolbar layout --------------------------------------------------------------------- */
 
+/* In tb_items: the item id at rsi, columns r8d .. r8d + bs (r10d), rows r9d .. r12d;
+ * rsi and r8d move on */
+.macro TB_ITEM id
+        mov dword ptr [rsi + ITEM_ID], \id
+        mov dword ptr [rsi + ITEM_RC + RC_L], r8d
+        mov dword ptr [rsi + ITEM_RC + RC_T], r9d
+        add r8d, r10d
+        mov dword ptr [rsi + ITEM_RC + RC_R], r8d
+        mov dword ptr [rsi + ITEM_RC + RC_B], r12d
+        add rsi, ITEM_BYTES
+.endm
+
 /* int tb_items(const Visual *v, Item *it) */
 FUNC tb_items
         PUSHREG rbx
@@ -996,13 +1047,7 @@ FUNC tb_items
         jns 1f
         add r8d, dword ptr [rip + .Ls9]
         jmp 2f
-1:      mov dword ptr [rsi + ITEM_ID], edx
-        mov dword ptr [rsi + ITEM_RC + RC_L], r8d
-        mov dword ptr [rsi + ITEM_RC + RC_T], r9d
-        add r8d, r10d
-        mov dword ptr [rsi + ITEM_RC + RC_R], r8d
-        mov dword ptr [rsi + ITEM_RC + RC_B], r12d
-        add rsi, ITEM_BYTES
+1:      TB_ITEM edx
 2:      inc ecx
         cmp ecx, dword ptr [rip + tb_count]
         jb .Lti_order
@@ -1015,32 +1060,27 @@ FUNC tb_items
         add r8d, r11d
         add r9d, r11d
         lea r12d, [r9 + r10]
+        mov eax, dword ptr [rbx + VIS_PB_RUNS]  /* each run, a separator's room between two */
+        test al, PB_ORDER
+        jz 2f
+        TB_ITEM B_FRONT
+        TB_ITEM B_BACK
+        add r8d, dword ptr [rip + .Ls9]
+2:      test al, PB_SIZES
+        jz 4f
         mov edx, B_SIZE
-3:      mov dword ptr [rsi + ITEM_ID], edx
-        mov dword ptr [rsi + ITEM_RC + RC_L], r8d
-        mov dword ptr [rsi + ITEM_RC + RC_T], r9d
-        add r8d, r10d
-        mov dword ptr [rsi + ITEM_RC + RC_R], r8d
-        mov dword ptr [rsi + ITEM_RC + RC_B], r12d
-        add rsi, ITEM_BYTES
+3:      TB_ITEM edx
         inc edx
         cmp edx, B_SIZE + 3
         jb 3b
-        call prop_tool_
-        cmp eax, T_MOSAIC
-        je .Lti_count
         add r8d, dword ptr [rip + .Ls9]
+4:      test al, PB_COLORS
+        jz .Lti_count
         mov edx, B_COLOR
-4:      mov dword ptr [rsi + ITEM_ID], edx
-        mov dword ptr [rsi + ITEM_RC + RC_L], r8d
-        mov dword ptr [rsi + ITEM_RC + RC_T], r9d
-        add r8d, r10d
-        mov dword ptr [rsi + ITEM_RC + RC_R], r8d
-        mov dword ptr [rsi + ITEM_RC + RC_B], r12d
-        add rsi, ITEM_BYTES
+5:      TB_ITEM edx
         inc edx
         cmp edx, B_COLOR + 8
-        jb 4b
+        jb 5b
 .Lti_count:
         mov rax, rsi                            /* (end - it) / ITEM_BYTES */
         sub rax, qword ptr [rsp + 32]
@@ -1066,7 +1106,16 @@ FUNC tb_hit
         mov ebx, ecx                            /* x */
         shr rcx, 32
         mov esi, ecx                            /* y */
-        lea rcx, Ov(OV_VIS)
+        xor eax, eax                            /* on neither bar's rows: no item either */
+        cmp esi, dword ptr Ov(OV_VIS + VIS_TB + RC_T)
+        jl 10f
+        cmp esi, dword ptr Ov(OV_VIS + VIS_TB + RC_B)
+        jl 11f
+10:     cmp esi, dword ptr Ov(OV_VIS + VIS_PB + RC_T)
+        jl 9f
+        cmp esi, dword ptr Ov(OV_VIS + VIS_PB + RC_B)
+        jge 9f
+11:     lea rcx, Ov(OV_VIS)
         lea rdx, [rsp + 32]
         call tb_items
         lea rdi, [rsp + 32]
@@ -1252,7 +1301,8 @@ FUNC place_magnifier
 ENDF
 
 /* void place_toolbar(Visual *v): the bars below the selection (above, or inside it,
- * when there is no room), the tooltip, and tb_key (what the bars' look depends on) */
+ * when there is no room), what the property bar holds, the tooltip, and tb_key (what
+ * the bars' look depends on) */
 #define PT_M 32
 #define PT_BELOW 48
 #define PT_ABOVE 64
@@ -1270,16 +1320,16 @@ FUNC place_toolbar
         ENDPROLOG
         mov rbx, rcx
         ST_ENSURE
-        call prop_tool_
-        mov r12d, eax                           /* pt */
+        call pb_runs
+        mov dword ptr [rbx + VIS_PB_RUNS], eax
+        mov r12d, ecx                           /* pt */
         mov r13d, dword ptr [rip + .Lth]        /* th */
         mov r14d, dword ptr [rip + .Ltw]        /* tw */
-        mov r15d, dword ptr [rip + .Lpw]        /* pw */
-        cmp eax, T_MOSAIC
-        cmove r15d, dword ptr [rip + .Lpw_mos]
+        lea rcx, [rip + .Lpw]
+        mov r15d, dword ptr [rcx + rax*4]       /* pw, 0: no property bar */
         mov esi, dword ptr [rip + .Ls6]         /* gap */
-        mov edi, r13d                           /* total = th + (has_pb ? gap + th : 0) */
-        test eax, eax
+        mov edi, r13d                           /* total = th + (pw ? gap + th : 0) */
+        test r15d, r15d
         jz 1f
         lea edi, [r13 + r13]
         add edi, esi
@@ -1340,7 +1390,7 @@ FUNC place_toolbar
         mov dword ptr [rbx + VIS_TB + RC_R], r8d
         lea r8d, [rax + r13]
         mov dword ptr [rbx + VIS_TB + RC_B], r8d
-        test r12d, r12d
+        test r15d, r15d
         jz .Lpt_tip
         mov r8d, dword ptr [rsp + PT_M + RC_L]  /* px = CLAMPI(x, m.left, m.right - pw) */
         mov r9d, dword ptr [rsp + PT_M + RC_R]
@@ -1368,17 +1418,25 @@ FUNC place_toolbar
         add rsi, ITEM_BYTES
         dec ecx
         jmp 5b
-6:      call tx_check                           /* the text's width, measured once per id */
-        mov ecx, dword ptr Ov(OV_TIP)
-        cmp ecx, 63
+6:      call tx_check                           /* the text's width, measured once per id; */
+        mov edi, dword ptr Ov(OV_TIP)           /* the magnifier's sizes have texts of their */
+        lea eax, [rdi - B_SIZE]                 /* own, kept 3 ids further (no button's ids) */
+        cmp eax, 2
+        ja 15f
+        cmp r12d, T_LENS
+        jne 15f
+        add edi, 3
+15:     cmp edi, 63
         ja 7f
         lea rax, [rip + .Ltip_ok]
-        cmp byte ptr [rax + rcx], 0
+        cmp byte ptr [rax + rdi], 0
         je 7f
         lea rax, [rip + .Ltip_cx]
-        mov eax, dword ptr [rax + rcx*4]
+        mov eax, dword ptr [rax + rdi*4]
         jmp 8f
-7:      call tip_text
+7:      mov ecx, dword ptr Ov(OV_TIP)
+        mov edx, r12d
+        call tip_text
         mov rdx, rax
         mov r8, rax
 10:     cmp word ptr [r8], 0
@@ -1389,13 +1447,12 @@ FUNC place_toolbar
         shr r8d, 1
         mov rcx, qword ptr Ov(OV_FONT_UI)
         call text_size
-        mov ecx, dword ptr Ov(OV_TIP)
-        cmp ecx, 63
+        cmp edi, 63
         ja 8f
         lea rdx, [rip + .Ltip_cx]
-        mov dword ptr [rdx + rcx*4], eax
+        mov dword ptr [rdx + rdi*4], eax
         lea rdx, [rip + .Ltip_ok]
-        mov byte ptr [rdx + rcx], 1
+        mov byte ptr [rdx + rdi], 1
 8:      add eax, dword ptr [rip + .Ls14]
         mov edi, eax                            /* w */
         mov r15d, dword ptr [rip + .Ls24]       /* h */
@@ -1491,8 +1548,21 @@ FUNC place_toolbar
         and eax, 0x7F
         shl rax, 26
         or rsi, rax
-        movsxd rax, r12d
-        shl rax, 33
+        test byte ptr [rbx + VIS_PB_RUNS], PB_ORDER     /* bits 33, 34: the pick can go to the front, to the back */
+        jz 14f
+        cmp byte ptr Ov(OV_TE_ON), 0
+        jne 14f
+        mov eax, dword ptr Ov(OV_NANN)
+        dec eax
+        mov ecx, dword ptr Ov(OV_PICK)
+        cmp ecx, eax
+        jge 15f
+        bts rsi, 33
+15:     test ecx, ecx
+        jle 14f
+        bts rsi, 34
+14:     movsxd rax, r12d
+        shl rax, 35
         or rsi, rax
         mov qword ptr [rbx + VIS_TB_KEY], rsi
         add rsp, 896
@@ -1801,13 +1871,16 @@ ENDF
 
 /* rax = what toolbar item ecx looks like under tb_key rdx (equal values: equal pixels,
  * for the same bars). Leaf; clobbers r8-r11. */
+        .if B_UNDO + 4 != 24 || B_REDO + 4 != 25 || B_FRONT + 4 != 33 || B_BACK + 4 != 34
+        .error "the key bits of undo, redo, front and back are their ids + 4"
+        .endif
 SFUNC item_look
         ENDPROLOG
         xor r8d, r8d                            /* active */
         mov eax, edx
         and eax, 15                             /* O.tool */
         lea r9d, [rcx - T_RECT]
-        cmp r9d, T_NUMBER - T_RECT
+        cmp r9d, T_LAST - T_RECT
         ja 1f
         cmp ecx, eax
         jne 1f
@@ -1819,18 +1892,17 @@ SFUNC item_look
         cmp ecx, eax
         jne 2f
         mov r8d, 1
-2:      xor r9d, r9d                            /* disabled */
-        cmp ecx, B_UNDO
-        jne 3f
-        bt rdx, 24
-        jc 3f
-        mov r9d, 1
-3:      cmp ecx, B_REDO
-        jne 4f
-        bt rdx, 25
-        jc 4f
-        mov r9d, 1
-4:      xor r10d, r10d                          /* background: none, active, hover, pressed */
+2:      xor r9d, r9d                            /* disabled: undo, redo, front, back without their bit, id + 4 */
+        lea eax, [rcx - B_UNDO]
+        cmp eax, B_BACK - B_UNDO
+        ja 10f
+        mov r10d, 1 << (B_UNDO - B_UNDO) | 1 << (B_REDO - B_UNDO) | 1 << (B_FRONT - B_UNDO) | 1 << (B_BACK - B_UNDO)
+        bt r10d, eax
+        jnc 10f
+        lea eax, [rcx + 4]
+        bt rdx, rax
+        setnc r9b
+10:     xor r10d, r10d                          /* background: none, active, hover, pressed */
         test r8d, r8d
         jz 5f
         mov r10d, 1
@@ -1863,7 +1935,7 @@ SFUNC item_look
         shl r11d, 5
         or eax, r11d
         mov r11, rdx
-        shr r11, 33
+        shr r11, 35
         cmp r11, T_MOSAIC
         jne 9f
         or eax, 0x10
@@ -2279,8 +2351,8 @@ SFUNC live_area
 ENDF
 
 /* live_x(RECT *x, const RECT *a): a and the annotations above the pick (also drawn
- * live, inside the selection), on the screen: where the UI layer changes when the
- * selection does */
+ * live, inside the selection), and all of the canvas while the dim layer is drawn
+ * live, on the screen: where the UI layer changes when the selection does */
 SFUNC live_x
         PUSHREG rbx
         PUSHREG rsi
@@ -2290,7 +2362,17 @@ SFUNC live_x
         mov rbx, rcx
         RCOPY([rbx], [rdx])
         mov esi, dword ptr Ov(OV_PICK)
-        test esi, esi
+        mov edi, esi
+        test edi, edi
+        cmovs edi, dword ptr Ov(OV_NANN)        /* the canvas holds those below edi */
+        call spot_top
+        cmp eax, edi
+        jl 0f
+        mov rcx, rbx
+        mov rdx, rbx
+        lea r8, Ov(OV_CRECT)
+        call ovp_union
+0:      test esi, esi
         js 9f
         inc esi
 1:      cmp esi, dword ptr Ov(OV_NANN)
@@ -4261,7 +4343,6 @@ ENDF
 #define DT_B 48
 #define DT_TMP 64
 #define DT_HTIP 96
-#define DT_PT 100
 #define DT_PS 104
 #define DT_PC 108
 #define DT_ITEMS 112
@@ -4344,80 +4425,11 @@ FUNC draw_toolbar
         mov r9d, dword ptr [rax + P_EDGE*4]
         call d_frame
 4:      mov r14d, dword ptr [rip + .Ls30]       /* bs */
-        mov edi, dword ptr [rsi + VIS_TB + RC_L]        /* separators */
-        add edi, dword ptr [rip + .Ls4]         /* x */
-        xor ebp, ebp
-5:      mov rax, qword ptr [rip + tb_order]
-        cmp dword ptr [rax + rbp*4], 0
-        jge 7f
-        mov eax, dword ptr [rip + .Ls9]
-        shr eax, 1
-        add eax, edi
-        mov dword ptr [rsp + DT_TMP + RC_L], eax
-        inc eax
-        mov dword ptr [rsp + DT_TMP + RC_R], eax
-        mov eax, dword ptr [rsi + VIS_TB + RC_T]
-        add eax, dword ptr [rip + .Ls4]
-        add eax, dword ptr [rip + .Ls6]
-        mov dword ptr [rsp + DT_TMP + RC_T], eax
-        mov eax, dword ptr [rsi + VIS_TB + RC_B]
-        sub eax, dword ptr [rip + .Ls4]
-        sub eax, dword ptr [rip + .Ls6]
-        mov dword ptr [rsp + DT_TMP + RC_B], eax
-        mov rcx, rbx
-        lea rdx, [rsp + DT_TMP]
-        call touches
-        test eax, eax
-        jz 6f
-        mov rcx, rbx
-        lea rdx, [rsp + DT_TMP]
-        mov rax, qword ptr [rip + ui_pal]
-        mov r8d, dword ptr [rax + P_SEP*4]
-        call d_fill
-6:      add edi, dword ptr [rip + .Ls9]
-        jmp 8f
-7:      add edi, r14d
-8:      inc ebp
-        cmp ebp, dword ptr [rip + tb_count]
-        jb 5b
-        call prop_tool_
-        mov dword ptr [rsp + DT_PT], eax
         call prop_size_idx
         mov dword ptr [rsp + DT_PS], eax
         call prop_color_idx
         mov dword ptr [rsp + DT_PC], eax
-        JEMPTY(rsi + VIS_PB, 9f)                /* the property bar's separator */
-        cmp dword ptr [rsp + DT_PT], T_MOSAIC
-        je 9f
-        mov eax, dword ptr [rsi + VIS_PB + RC_L]
-        add eax, dword ptr [rip + .Ls4]
-        lea ecx, [r14 + r14*2]
-        add eax, ecx                            /* sx */
-        mov ecx, dword ptr [rip + .Ls9]
-        shr ecx, 1
-        add eax, ecx
-        mov dword ptr [rsp + DT_TMP + RC_L], eax
-        inc eax
-        mov dword ptr [rsp + DT_TMP + RC_R], eax
-        mov eax, dword ptr [rsi + VIS_PB + RC_T]
-        add eax, dword ptr [rip + .Ls4]
-        add eax, dword ptr [rip + .Ls6]
-        mov dword ptr [rsp + DT_TMP + RC_T], eax
-        mov eax, dword ptr [rsi + VIS_PB + RC_B]
-        sub eax, dword ptr [rip + .Ls4]
-        sub eax, dword ptr [rip + .Ls6]
-        mov dword ptr [rsp + DT_TMP + RC_B], eax
-        mov rcx, rbx
-        lea rdx, [rsp + DT_TMP]
-        call touches
-        test eax, eax
-        jz 9f
-        mov rcx, rbx
-        lea rdx, [rsp + DT_TMP]
-        mov rax, qword ptr [rip + ui_pal]
-        mov r8d, dword ptr [rax + P_SEP*4]
-        call d_fill
-9:      mov rcx, rsi
+        mov rcx, rsi
         lea rdx, [rsp + DT_ITEMS]
         call tb_items
         mov r15d, eax                           /* items left */
@@ -4425,7 +4437,37 @@ FUNC draw_toolbar
 .Ldt_item:
         test r15d, r15d
         jle .Ldt_tip
+        lea rax, [rsp + DT_ITEMS]               /* a gap after the button before it in its bar: */
+        cmp rdi, rax                            /* a separator in the middle */
+        je 0f
+        mov eax, dword ptr [rdi + ITEM_RC + RC_T]
+        cmp eax, dword ptr [rdi - ITEM_BYTES + ITEM_RC + RC_T]
+        jne 0f
+        mov ecx, dword ptr [rdi - ITEM_BYTES + ITEM_RC + RC_R]
+        cmp ecx, dword ptr [rdi + ITEM_RC + RC_L]
+        jge 0f
+        mov edx, dword ptr [rip + .Ls9]
+        shr edx, 1
+        add ecx, edx
+        mov dword ptr [rsp + DT_TMP + RC_L], ecx
+        inc ecx
+        mov dword ptr [rsp + DT_TMP + RC_R], ecx
+        add eax, dword ptr [rip + .Ls6]
+        mov dword ptr [rsp + DT_TMP + RC_T], eax
+        mov eax, dword ptr [rdi + ITEM_RC + RC_B]
+        sub eax, dword ptr [rip + .Ls6]
+        mov dword ptr [rsp + DT_TMP + RC_B], eax
         mov rcx, rbx
+        lea rdx, [rsp + DT_TMP]
+        call touches
+        test eax, eax
+        jz 0f
+        mov rcx, rbx
+        lea rdx, [rsp + DT_TMP]
+        mov rax, qword ptr [rip + ui_pal]
+        mov r8d, dword ptr [rax + P_SEP*4]
+        call d_fill
+0:      mov rcx, rbx
         lea rdx, [rdi + ITEM_RC]
         call touches
         test eax, eax
@@ -4433,7 +4475,7 @@ FUNC draw_toolbar
         mov ebp, dword ptr [rdi + ITEM_ID]      /* id */
         xor r12d, r12d                          /* active */
         lea eax, [rbp - T_RECT]
-        cmp eax, T_NUMBER - T_RECT
+        cmp eax, T_LAST - T_RECT
         ja 1f
         cmp ebp, dword ptr Ov(OV_TOOL)
         jne 1f
@@ -4455,7 +4497,16 @@ FUNC draw_toolbar
         cmp eax, dword ptr Ov(OV_NOPS_ALL)
         jl 4f
         mov r13d, 1
-4:      lea rcx, [rsp + DT_TMP]                 /* in = rect_inflate(r, -S(2)) */
+4:      cmp ebp, B_FRONT                        /* front, back: the key's bit, id + 4, says the pick can go there */
+        jb 16f
+        cmp ebp, B_BACK
+        ja 16f
+        lea eax, [rbp + 4]
+        mov rcx, qword ptr [rsi + VIS_TB_KEY]
+        bt rcx, rax
+        jc 16f
+        mov r13d, 1
+16:     lea rcx, [rsp + DT_TMP]                 /* in = rect_inflate(r, -S(2)) */
         lea rdx, [rdi + ITEM_RC]
         mov r8d, dword ptr [rip + .Ls2]
         neg r8d
@@ -4509,7 +4560,7 @@ FUNC draw_toolbar
         mov eax, dword ptr [rdx + P_ICON_ON*4]
 .Ldt_icon_color_done:
         lea ecx, [rbp - T_RECT]
-        cmp ecx, T_NUMBER - T_RECT
+        cmp ecx, T_LAST - T_RECT
         ja 7f
         lea edx, [rcx + DIC_RECT]                /* a tool */
         jmp 8f
@@ -4534,8 +4585,8 @@ FUNC draw_toolbar
         ja 11f
         mov r10, qword ptr [rip + ui_pal]                 /* a size: a disc in the color */
         mov eax, dword ptr [r10 + P_ICON*4]
-        cmp dword ptr [rsp + DT_PT], T_MOSAIC
-        je 12f
+        test byte ptr [rsi + VIS_PB_RUNS], PB_COLORS
+        jz 12f
         mov edx, dword ptr [rsp + DT_PC]
         test edx, edx
         js 13f
@@ -4628,6 +4679,8 @@ FUNC draw_toolbar
         mov r9d, dword ptr [rax + P_TIP_EDGE*4]
         call d_frame
         mov ecx, dword ptr Ov(OV_TIP)
+        mov rdx, qword ptr [rsi + VIS_TB_KEY]
+        shr rdx, 35                             /* the property bar's tool */
         call tip_text
         mov r8, rax
         lea rcx, [rsp + DT_B]
@@ -4753,6 +4806,8 @@ SFUNC paint_rect
 4:      movsxd rdi, esi
         imul rdi, rdi, AN_BYTES
         add rdi, qword ptr Ov(OV_ANN)
+        cmp dword ptr [rdi + AN_TOOL], T_SPOT   /* the dim layer reaches past its bounds */
+        je 8f
         lea rcx, [rsp + PB_TMP]
         mov rdx, rdi
         call anno_bounds
@@ -4761,7 +4816,7 @@ SFUNC paint_rect
         call touches
         test eax, eax
         jz 6f
-        mov rcx, rdi
+8:      mov rcx, rdi
         lea rdx, [rsp + PB_SC]
         mov r8, qword ptr Ov(OV_BAND + IMG_DC)
         lea r9, [rsp + PB_SRC]
@@ -5281,7 +5336,7 @@ ENDF
         .globl ovp_locals
 ovp_locals:
         .quad scale_tab, ovp_cpu, ovp_isect, ovp_union, ovp_inflate, inv_rect, px_copy, px_dim, px_zero
-        .quad px_alpha, pix_at, put_int, tip_text, prop_tool_, tx_check, ring4, rect_sub, covered
+        .quad px_alpha, pix_at, put_int, tip_text, pb_runs, tx_check, ring4, rect_sub, covered
         .quad item_look, compose_pass, paint_rect, tall_rows, zero_rect, same16, sh_check, live_area
         .quad live_x, frame_rects, handle_pos, paint_part, ovp_sync, refresh_dc, op_extra, 0
 #endif

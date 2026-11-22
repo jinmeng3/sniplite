@@ -7,6 +7,13 @@ onnxruntime.dll
     https://github.com/microsoft/onnxruntime
     See LICENSE-onnxruntime.txt and ThirdPartyNotices-onnxruntime.txt.
 
+msvcp140.dll, msvcp140_1.dll, vcruntime140.dll, vcruntime140_1.dll
+    The Visual C++ runtime that onnxruntime.dll needs, version 14.51.36247,
+    Copyright (c) Microsoft Corporation. Not open source: files of the
+    Microsoft Visual C++ Redistributable, redistributed under its license terms.
+    https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files
+    https://visualstudio.microsoft.com/license-terms/
+
 PP-OCRv6_det_tiny.onnx, PP-OCRv6_rec_tiny.onnx
     The PP-OCRv6 text detection and recognition models of PaddleOCR,
     Copyright (c) PaddlePaddle Authors, Apache License 2.0.

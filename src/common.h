@@ -21,7 +21,7 @@
 #include <stdbool.h>
 #include <string.h>
 
-#define SNIPLITE_VERSION L"1.4.1.3"
+#define SNIPLITE_VERSION L"1.5.1"
 
 #define DAEMON_CLASS L"sniplite.daemon"
 #define DAEMON_MUTEX L"Local\\sniplite.daemon"
@@ -59,7 +59,10 @@ WCHAR *wcs_dup(const WCHAR *s, int n); /* n < 0: up to terminator */
 double now_ms(void);
 
 static inline bool rect_empty(const RECT *r) { return r->right <= r->left || r->bottom <= r->top; }
-static inline bool rect_eq(const RECT *a, const RECT *b) { return memcmp(a, b, sizeof *a) == 0; }
+static inline bool rect_eq(const RECT *a, const RECT *b)
+{
+    return a->left == b->left && a->top == b->top && a->right == b->right && a->bottom == b->bottom;
+}
 static inline bool rect_has(const RECT *r, int x, int y)
 {
     return x >= r->left && x < r->right && y >= r->top && y < r->bottom;
@@ -80,11 +83,14 @@ void str_addf(Str *s, const WCHAR *fmt, ...); /* wvsprintfW: no floats, <= 1024 
 void str_add_ms(Str *s, double ms);           /* "12.3" */
 void str_add_json(Str *s, const WCHAR *t);    /* quoted JSON string, non-ASCII as \uXXXX */
 void str_add_quoted(Str *s, const WCHAR *a);  /* one command-line argument, MSVC quoting */
+bool spawn_inheriting(const WCHAR *exe, WCHAR *cmd, const STARTUPINFOW *si, const HANDLE *h, int n,
+                      PROCESS_INFORMATION *pi); /* util.c */
 void str_free(Str *s);
 
 /* ---- ipc.c (client side, shared by sniplite.exe and sniplite.com) --------------- */
 HWND ipc_find(void);
 HWND ipc_find_dialog(const WCHAR *mark); /* the open dialog carrying that mark (settings.h), or NULL */
+void ipc_close(HWND w);                  /* tells a sniplite window to close, with what is open in front of it */
 /* Run a command in the daemon. Returns its exit code, or -1 if it could not be reached. */
 int ipc_call(HWND daemon, int argc, WCHAR **argv, Str *reply);
 

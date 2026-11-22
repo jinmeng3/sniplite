@@ -104,6 +104,7 @@ void config_defaults(Config *c)
     hotkey_parse(L"Shift+F4", &c->mod[HK_OCRCOPY], &c->vk[HK_OCRCOPY]);
     c->tray = true;
     c->pin_top = true;
+    c->pin_text = true;
     c->auto_update = true;
     c->exit_ask = true;
 }
@@ -113,42 +114,86 @@ void config_path(WCHAR *out, int cap) { ini_path(out, cap); }
 static const WCHAR *kHkKeys[HK_COUNT] = {NULL,           L"hotkey",     L"quick_hotkey",   L"pin_hotkey",
                                          L"toggle_hotkey", L"ocr_hotkey", L"ocr_copy_hotkey"};
 static const WCHAR *kThemes[] = {L"auto", L"light", L"dark"}; /* by THEME_* */
+static const WCHAR *kDetects[] = {L"controls", L"windows", L"elements"}; /* by DETECT_* */
+/* the file names: two or more of y M d H m s in a row stand for that part of the time */
+static const WCHAR *kNames[NAME_COUNT] = {L"sniplite_yyyy-MM-dd_HH-mm-ss",   L"sniplite_yyyyMMdd_HHmmss",
+                                          L"Screenshot_yyyy-MM-dd_HH-mm-ss", L"Screenshot_yyyyMMdd_HHmmss",
+                                          L"yyyy-MM-dd_HH-mm-ss",            L"yyyyMMdd_HHmmss",
+                                          L"yyyyMMddHHmmss"};
+
+int name_format(int name, const SYSTEMTIME *t, WCHAR *out)
+{
+    static const WCHAR letter[] = L"yMdHms";
+    static const uint8_t part[] = {0, 1, 3, 4, 5, 6}; /* that WORD of a SYSTEMTIME */
+    WCHAR *o = out;
+    for (const WCHAR *p = kNames[name]; *p;) {
+        const WCHAR *l = wcschr(letter, *p);
+        int n = 1;
+        while (p[n] == *p)
+            n++;
+        if (!l || n < 2) {
+            *o++ = *p++;
+            continue;
+        }
+        unsigned v = ((const WORD *)t)[part[l - letter]];
+        for (int d = n; d--; v /= 10)
+            o[d] = (WCHAR)(L'0' + v % 10);
+        o += n, p += n;
+    }
+    *o = 0;
+    return (int)(o - out);
+}
+
+/* The file's text and a 0 after it (mem_alloc gives zeros); NULL or empty when it cannot be read. */
+static char *ini_text(const WCHAR *path)
+{
+    HANDLE f = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+    if (f == INVALID_HANDLE_VALUE)
+        return NULL;
+    DWORD size = GetFileSize(f, NULL), n = 0;
+    char *text = size < 1 << 20 ? mem_alloc(size + 1) : NULL;
+    if (text && !ReadFile(f, text, size, &n, NULL))
+        text[0] = 0;
+    CloseHandle(f);
+    return text;
+}
 
 /* A value that may be any text (a folder's name). The file is UTF-8, which the profile
  * functions read as the ANSI code page: fine for the keys and values in ASCII, not for this. */
-static void ini_utf8(const WCHAR *path, const char *key, WCHAR *out, int cap)
+static void ini_utf8(const char *text, const char *key, WCHAR *out, int cap)
 {
     out[0] = 0;
-    HANDLE f = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
-    if (f == INVALID_HANDLE_VALUE)
-        return;
-    DWORD size = GetFileSize(f, NULL), n = 0;
-    char *text = size < 1 << 20 ? mem_alloc(size + 1) : NULL;
-    if (text && ReadFile(f, text, size, &n, NULL)) {
-        text[n] = 0;
-        int klen = lstrlenA(key);
-        for (char *p = text; *p;) {
-            char *end = p;
-            while (*end && *end != '\n')
-                end++;
-            char *next = *end ? end + 1 : end, *v = p + klen;
-            while (end > p && (end[-1] == '\r' || end[-1] == ' ' || end[-1] == '\t'))
-                end--;
-            if (end - p > klen && CompareStringA(LOCALE_INVARIANT, NORM_IGNORECASE, p, klen, key, klen) == CSTR_EQUAL) {
-                while (v < end && (*v == ' ' || *v == '\t'))
-                    v++;
-                if (v < end && *v == '=') {
-                    for (v++; v < end && (*v == ' ' || *v == '\t'); v++) {
-                    }
-                    int w = MultiByteToWideChar(CP_UTF8, 0, v, (int)(end - v), out, cap - 1);
-                    out[w > 0 ? w : 0] = 0;
+    int klen = lstrlenA(key);
+    for (const char *p = text; p && *p;) {
+        const char *end = p;
+        while (*end && *end != '\n')
+            end++;
+        const char *next = *end ? end + 1 : end, *v = p + klen;
+        while (end > p && (end[-1] == '\r' || end[-1] == ' ' || end[-1] == '\t'))
+            end--;
+        if (end - p > klen && CompareStringA(LOCALE_INVARIANT, NORM_IGNORECASE, p, klen, key, klen) == CSTR_EQUAL) {
+            while (v < end && (*v == ' ' || *v == '\t'))
+                v++;
+            if (v < end && *v == '=') {
+                for (v++; v < end && (*v == ' ' || *v == '\t'); v++) {
                 }
+                int w = MultiByteToWideChar(CP_UTF8, 0, v, (int)(end - v), out, cap - 1);
+                out[w > 0 ? w : 0] = 0;
             }
-            p = next;
         }
+        p = next;
     }
-    mem_free(text);
-    CloseHandle(f);
+}
+
+/* which of the n words of k the setting key holds: the first when it is none of them */
+static int ini_pick(const WCHAR *path, const WCHAR *key, const WCHAR *const *k, int n)
+{
+    WCHAR v[64];
+    GetPrivateProfileStringW(L"sniplite", key, k[0], v, COUNTOF(v), path);
+    for (int i = n - 1; i > 0; i--)
+        if (arg_eq(v, k[i]))
+            return i;
+    return 0;
 }
 
 bool config_load(Config *c)
@@ -172,13 +217,21 @@ bool config_load(Config *c)
     c->tray = GetPrivateProfileIntW(L"sniplite", L"tray", 1, path) != 0;
     c->pin_top = GetPrivateProfileIntW(L"sniplite", L"pin_top", 1, path) != 0;
     c->rack_bottom = GetPrivateProfileIntW(L"sniplite", L"rack_bottom", 0, path) != 0;
+    c->pin_text = GetPrivateProfileIntW(L"sniplite", L"pin_text", 1, path) != 0;
     c->auto_update = GetPrivateProfileIntW(L"sniplite", L"auto_update", 1, path) != 0;
     c->exit_ask = GetPrivateProfileIntW(L"sniplite", L"exit_ask", 1, path) != 0;
-    GetPrivateProfileStringW(L"sniplite", L"theme", kThemes[THEME_AUTO], v, COUNTOF(v), path);
-    for (int i = 0; i < COUNTOF(kThemes); i++)
-        if (arg_eq(v, kThemes[i]))
-            c->theme = i;
-    ini_utf8(path, "quick_dir", c->quick_dir, COUNTOF(c->quick_dir));
+    c->also_save = GetPrivateProfileIntW(L"sniplite", L"also_save", 0, path) != 0;
+    c->block_fullscreen = GetPrivateProfileIntW(L"sniplite", L"block_fullscreen", 0, path) != 0;
+    c->theme = ini_pick(path, L"theme", kThemes, COUNTOF(kThemes));
+    c->detect = ini_pick(path, L"detect", kDetects, COUNTOF(kDetects));
+    c->name = ini_pick(path, L"file_name", kNames, NAME_COUNT);
+    char *text = ini_text(path);
+    ini_utf8(text, "save_dir", c->save_dir, COUNTOF(c->save_dir));
+    if (!c->save_dir[0]) /* as 1.4 called it */
+        ini_utf8(text, "quick_dir", c->save_dir, COUNTOF(c->save_dir));
+    ini_utf8(text, "block_apps", c->block_apps, COUNTOF(c->block_apps));
+    ini_utf8(text, "last_dir", c->last_dir, COUNTOF(c->last_dir));
+    mem_free(text);
     return true;
 }
 
@@ -198,10 +251,15 @@ bool config_save(const Config *c)
         hotkey_format(c->mod[id], c->vk[id], k);
         str_addf(&s, L"%s=%s\r\n", kHkKeys[id], k);
     }
-    str_addf(&s, L"capture=%s\r\ntray=%d\r\nauto_update=%d\r\npin_top=%d\r\nrack_bottom=%d\r\n", c->gdi ? L"gdi" : L"dxgi",
-             c->tray ? 1 : 0, c->auto_update ? 1 : 0, c->pin_top ? 1 : 0, c->rack_bottom ? 1 : 0);
-    str_addf(&s, L"exit_ask=%d\r\ntheme=%s\r\nquick_dir=", c->exit_ask ? 1 : 0, kThemes[c->theme]);
-    str_add(&s, c->quick_dir); /* by itself: str_addf stops at 1024 characters */
+    str_addf(&s, L"block_fullscreen=%d\r\nblock_apps=%s\r\n", c->block_fullscreen ? 1 : 0, c->block_apps);
+    str_addf(&s, L"capture=%s\r\ntray=%d\r\nauto_update=%d\r\npin_top=%d\r\nrack_bottom=%d\r\npin_text=%d\r\n",
+             c->gdi ? L"gdi" : L"dxgi", c->tray ? 1 : 0, c->auto_update ? 1 : 0, c->pin_top ? 1 : 0,
+             c->rack_bottom ? 1 : 0, c->pin_text ? 1 : 0);
+    str_addf(&s, L"exit_ask=%d\r\ntheme=%s\r\ndetect=%s\r\nalso_save=%d\r\nfile_name=%s\r\nsave_dir=", c->exit_ask ? 1 : 0,
+             kThemes[c->theme], kDetects[c->detect], c->also_save ? 1 : 0, kNames[c->name]);
+    str_add(&s, c->save_dir); /* by itself: str_addf stops at 1024 characters */
+    str_add(&s, L"\r\nlast_dir=");
+    str_add(&s, c->last_dir);
     str_add(&s, L"\r\n");
     if (lang_choice() != LG_AUTO) /* kept by lang.c; without the line the language follows Windows */
         str_addf(&s, L"lang=%s\r\n", lang_code(lang_choice()));
@@ -237,5 +295,13 @@ void config_set_exit_ask(bool on)
     Config c;
     config_load(&c);
     c.exit_ask = on;
+    config_save(&c);
+}
+
+void config_set_last_dir(const WCHAR *dir)
+{
+    Config c;
+    config_load(&c);
+    lstrcpynW(c.last_dir, dir, COUNTOF(c.last_dir));
     config_save(&c);
 }

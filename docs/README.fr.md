@@ -25,9 +25,9 @@
 ## Points forts
 
 - **Rapide** : appuyez sur F1 et la capture est là, plus vite qu'avec 99 % des outils de capture
-- **Léger** : environ 280 Ko, rien d'autre à installer ; le cœur de la capture et du dessin est écrit en assembleur
+- **Léger** : environ 320 Ko, rien d'autre à installer ; le cœur de la capture et du dessin est écrit en assembleur
 - **Épingles** : épinglez une capture au-dessus de toutes les fenêtres pour la garder sous les yeux pendant que vous travaillez
-- **Complet** : captures, épingles, flèches, texte, mosaïque : tout y est
+- **Complet** : captures, épingles, flèches, texte, mosaïque, projecteur, loupe : tout y est
 - **Reconnaissance de texte** : lit le texte d'une capture, tableaux compris ; un module facultatif qui fonctionne entièrement sur votre ordinateur
 - **Captures défilantes** : faites défiler une page, elle est assemblée au fur et à mesure
 - **Propre** : sans publicité, open source, sans journaux, sans collecte de données
@@ -95,13 +95,21 @@ Sélectionnez une zone et cliquez sur le bouton de texte (Ctrl+O) : le texte app
 
 Sélectionnez la zone, cliquez sur le bouton de capture défilante (Ctrl+L) et faites défiler la page vous-même. sniplite assemble ce qui défile, et une bande à côté de la zone montre le résultat. Enter copie et Esc annule ; vous pouvez aussi enregistrer, épingler ou lire le texte.
 
+**Où sont enregistrées les captures ?**
+
+Ctrl+S ouvre la fenêtre d'enregistrement dans le dernier dossier utilisé ; la première fois, ou si ce dossier n'existe plus, dans le dossier d'enregistrement par défaut si vous l'avez changé, sinon dans Images. Les captures rapides (Shift+F1) vont directement dans le dossier d'enregistrement par défaut : le bureau, tant que vous ne le changez pas dans l'onglet Capture des préférences. Cochez-y « Enregistrer aussi chaque capture dans un fichier » : chaque capture copiée ou épinglée est alors aussi enregistrée dans ce dossier. Dans le même onglet, « Format du nom » permet de choisir comment les fichiers sont nommés, parmi quelques modèles avec la date et l'heure.
+
+**Et si les raccourcis gênent un jeu ?**
+
+Dans l'onglet Raccourcis des préférences, cochez « Laisser les raccourcis aux applis plein écran (jeux…) » : tant qu'un programme qui occupe tout l'écran est au premier plan, sniplite libère ses raccourcis et les touches vont à ce programme ; il les reprend quand vous passez à autre chose. Les programmes qui ne tournent pas en plein écran peuvent être ajoutés sous « Laisser les raccourcis à » : cliquez sur « Gérer », puis sur « Nouveau » pour taper un nom de fichier comme `game.exe`, ou sur « Parcourir » pour choisir le programme.
+
 **Combien de mémoire utilise-t-il ?**
 
 Environ 50 Mo la plupart du temps, presque entièrement pris par le pilote graphique, et un peu plus juste après une capture. Pour en utiliser moins, choisissez « Économe » dans l'onglet Capture des préférences : environ 2 Mo, avec des captures plus lentes.
 
 **Que laisse-t-il sur mon ordinateur ?**
 
-Il ne demande pas de droits d'administrateur et ne touche pas au registre. Modifier un réglage crée un fichier de réglages ; supprimez-le pour revenir aux valeurs par défaut.
+Il ne demande pas de droits d'administrateur et ne touche pas au registre. Modifier un réglage, ou enregistrer avec la fenêtre d'enregistrement (qui retient le dossier), crée un fichier de réglages ; supprimez-le pour revenir aux valeurs par défaut.
 
 **Comment changer de langue ?**
 
@@ -109,7 +117,7 @@ sniplite suit la langue de Windows. Pour en utiliser une autre, ouvrez les préf
 
 **Comment le mettre à jour ?**
 
-Une fois par jour, sniplite demande à GitHub s'il existe une version plus récente. Si oui, une notification apparaît en bas à droite, et un clic suffit pour mettre à jour. Seul le numéro de version est vérifié, rien n'est envoyé ; vous pouvez désactiver cela dans les préférences.
+Une fois par jour, sniplite demande à GitHub s'il existe une version plus récente. Si oui, une notification apparaît en bas à droite, et un clic suffit pour mettre à jour. Seul le numéro de version est vérifié, rien n'est envoyé ; vous pouvez désactiver cela dans les préférences. Les versions portables ne recherchent pas les mises à jour : téléchargez la nouvelle depuis [Releases](https://github.com/MrTangLuyao/sniplite/releases/latest).
 
 **Comment le désinstaller ?**
 
@@ -133,8 +141,9 @@ Installez [w64devkit](https://github.com/skeeto/w64devkit) (ou un autre MinGW-w6
 
 ## Logiciels libres tiers
 
-sniplite lui-même n'utilise que les bibliothèques système de Windows. Le module facultatif de reconnaissance de texte est le travail d'autres personnes, redistribué tel quel avec leurs licences (dans le dossier `ocr` du module et sur la [page du module](https://github.com/MrTangLuyao/sniplite/releases/tag/ocr-1)) :
+sniplite lui-même n'utilise que les bibliothèques système de Windows. Le module facultatif de reconnaissance de texte est le travail d'autres personnes, redistribué tel quel avec leurs licences ou des liens vers celles-ci (dans le dossier `ocr` du module et sur la [page du module](https://github.com/MrTangLuyao/sniplite/releases/tag/ocr-2)) :
 
 - [ONNX Runtime](https://github.com/microsoft/onnxruntime) 1.26.0, Copyright (c) Microsoft Corporation, licence MIT
+- Le runtime [Microsoft Visual C++](https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files) 14.51.36247 dont ONNX Runtime a besoin (`msvcp140.dll`, `msvcp140_1.dll`, `vcruntime140.dll`, `vcruntime140_1.dll`), Copyright (c) Microsoft Corporation, pas open source : redistribué selon les [conditions de licence](https://visualstudio.microsoft.com/license-terms/) de Microsoft
 - Les modèles PP-OCRv6 de [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR), Copyright (c) PaddlePaddle Authors, licence Apache 2.0
 - Leur version ONNX vient de [RapidOCR](https://github.com/RapidAI/RapidOCR), licence Apache 2.0

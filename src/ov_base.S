@@ -28,6 +28,7 @@
 #define OB_DT_NUMBER 0x925              /* DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_NOCLIP */
 #define OB_TM_HEIGHT 0                  /* TEXTMETRICW.tmHeight */
 #define OB_TM_SIZE 60                   /* sizeof(TEXTMETRICW) */
+#define OB_CWP_FLAGS 5                 /* CWP_SKIPINVISIBLE | CWP_SKIPTRANSPARENT */
 /* ---- end of checked values ------------------------------------------------------------ */
 
 #define OB_NFONTS 6                     /* OvState.fonts[] */
@@ -100,30 +101,31 @@ O:      .space OV_BYTES
 .Lf_1_25:       .long 0x3FA00000        /* 1.25f */
 
         .globl kTbOrder
-kTbOrder:       .long T_RECT, T_ELLIPSE, T_LINE, T_ARROW, T_PEN, T_MARKER, T_MOSAIC, T_TEXT, T_NUMBER
+        .globl kTbOrder
+kTbOrder:       .long T_RECT, T_ELLIPSE, T_LINE, T_ARROW, T_PEN, T_MARKER, T_MOSAIC, T_TEXT, T_NUMBER, T_SPOT, T_LENS
                 .long -1, B_UNDO, B_REDO, -1, B_LONG, B_QR, B_OCR, B_OCRCOPY, B_PIN, B_SAVE, B_CLOSE, B_OK
 /* the same without the two text buttons: while the text recognition module is not installed */
         .globl kTbPlain
-kTbPlain:       .long T_RECT, T_ELLIPSE, T_LINE, T_ARROW, T_PEN, T_MARKER, T_MOSAIC, T_TEXT, T_NUMBER
+kTbPlain:       .long T_RECT, T_ELLIPSE, T_LINE, T_ARROW, T_PEN, T_MARKER, T_MOSAIC, T_TEXT, T_NUMBER, T_SPOT, T_LENS
                 .long -1, B_UNDO, B_REDO, -1, B_LONG, B_QR, B_PIN, B_SAVE, B_CLOSE, B_OK
 /* no QR command, with and without the two optional text buttons */
         .globl kTbOrderNoQR
-kTbOrderNoQR:   .long T_RECT, T_ELLIPSE, T_LINE, T_ARROW, T_PEN, T_MARKER, T_MOSAIC, T_TEXT, T_NUMBER
+kTbOrderNoQR:   .long T_RECT, T_ELLIPSE, T_LINE, T_ARROW, T_PEN, T_MARKER, T_MOSAIC, T_TEXT, T_NUMBER, T_SPOT, T_LENS
                 .long -1, B_UNDO, B_REDO, -1, B_LONG, B_OCR, B_OCRCOPY, B_PIN, B_SAVE, B_CLOSE, B_OK
         .globl kTbPlainNoQR
-kTbPlainNoQR:   .long T_RECT, T_ELLIPSE, T_LINE, T_ARROW, T_PEN, T_MARKER, T_MOSAIC, T_TEXT, T_NUMBER
+kTbPlainNoQR:   .long T_RECT, T_ELLIPSE, T_LINE, T_ARROW, T_PEN, T_MARKER, T_MOSAIC, T_TEXT, T_NUMBER, T_SPOT, T_LENS
                 .long -1, B_UNDO, B_REDO, -1, B_LONG, B_PIN, B_SAVE, B_CLOSE, B_OK
         .globl kTbOrderFormula
-kTbOrderFormula: .long T_RECT, T_ELLIPSE, T_LINE, T_ARROW, T_PEN, T_MARKER, T_MOSAIC, T_TEXT, T_NUMBER
+kTbOrderFormula: .long T_RECT, T_ELLIPSE, T_LINE, T_ARROW, T_PEN, T_MARKER, T_MOSAIC, T_TEXT, T_NUMBER, T_SPOT, T_LENS
                 .long -1, B_UNDO, B_REDO, -1, B_LONG, B_QR, B_OCR, B_OCRCOPY, B_PIN, B_SAVE, B_FORMULA, B_FORMULA_PREVIEW, B_CLOSE, B_OK
         .globl kTbPlainFormula
-kTbPlainFormula: .long T_RECT, T_ELLIPSE, T_LINE, T_ARROW, T_PEN, T_MARKER, T_MOSAIC, T_TEXT, T_NUMBER
+kTbPlainFormula: .long T_RECT, T_ELLIPSE, T_LINE, T_ARROW, T_PEN, T_MARKER, T_MOSAIC, T_TEXT, T_NUMBER, T_SPOT, T_LENS
                 .long -1, B_UNDO, B_REDO, -1, B_LONG, B_QR, B_PIN, B_SAVE, B_FORMULA, B_FORMULA_PREVIEW, B_CLOSE, B_OK
         .globl kTbOrderNoQRFormula
-kTbOrderNoQRFormula: .long T_RECT, T_ELLIPSE, T_LINE, T_ARROW, T_PEN, T_MARKER, T_MOSAIC, T_TEXT, T_NUMBER
+kTbOrderNoQRFormula: .long T_RECT, T_ELLIPSE, T_LINE, T_ARROW, T_PEN, T_MARKER, T_MOSAIC, T_TEXT, T_NUMBER, T_SPOT, T_LENS
                 .long -1, B_UNDO, B_REDO, -1, B_LONG, B_OCR, B_OCRCOPY, B_PIN, B_SAVE, B_FORMULA, B_FORMULA_PREVIEW, B_CLOSE, B_OK
         .globl kTbPlainNoQRFormula
-kTbPlainNoQRFormula: .long T_RECT, T_ELLIPSE, T_LINE, T_ARROW, T_PEN, T_MARKER, T_MOSAIC, T_TEXT, T_NUMBER
+kTbPlainNoQRFormula: .long T_RECT, T_ELLIPSE, T_LINE, T_ARROW, T_PEN, T_MARKER, T_MOSAIC, T_TEXT, T_NUMBER, T_SPOT, T_LENS
                 .long -1, B_UNDO, B_REDO, -1, B_LONG, B_PIN, B_SAVE, B_FORMULA, B_FORMULA_PREVIEW, B_CLOSE, B_OK
 /* the bars' colors, by P_* (ov_layout.inc) */
         .globl kPalLight
@@ -714,11 +716,17 @@ FUNC text_size
         ret
 ENDF
 
-/* int tool_px(int tool, int idx): the tool's size table entry, scaled */
+/* int tool_px(int tool, int idx): the tool's size table entry, scaled; the magnifier's
+ * factor, 2, 3 or 4 at any scale; 0 for the spotlight, which has no size */
 FUNC tool_px
         ENDPROLOG
-        lea eax, [rcx - T_PEN]          /* marker, mosaic, text, number: tables 1..4 */
         xor r8d, r8d
+        cmp ecx, T_SPOT
+        jb 1f
+        lea eax, [rdx + LENS_Z0]
+        cmove eax, r8d
+        ret
+1:      lea eax, [rcx - T_PEN]          /* marker, mosaic, text, number: tables 1..4 */
         cmp eax, 4
         cmova eax, r8d                  /* everything else: kStroke */
         lea rax, [rax + rax*2]
@@ -917,10 +925,185 @@ FUNC collect_windows
         ret
 ENDF
 
-/* Candidate collection and UI Automation refinement live in snap.c. */
-FUNC update_chain
+/* void chain_push(RECT r): r in screen coordinates; appended in client coordinates,
+ * clipped, unless empty, a repeat of the last one, or the chain is full.
+ * Does not write *rcx (update_chain passes its own rectangles). */
+FUNC chain_push
         ENDPROLOG
-        jmp snap_update
+        mov r10d, dword ptr o(OV_VX)
+        mov r11d, dword ptr o(OV_VY)
+        mov eax, dword ptr [rcx + RC_L]
+        sub eax, r10d
+        mov edx, dword ptr [rcx + RC_T]
+        sub edx, r11d
+        mov r8d, dword ptr [rcx + RC_R]
+        sub r8d, r10d
+        mov r9d, dword ptr [rcx + RC_B]
+        sub r9d, r11d
+        ISECT_CLIENT eax, edx, r8d, r9d, r10d, .Lcp_ret
+        movsxd r10, dword ptr o(OV_NCHAIN)
+        cmp r10d, MAX_CHAIN
+        jge .Lcp_ret
+        lea r11, o(OV_CHAIN)
+        mov rcx, r10
+        shl rcx, 4
+        add r11, rcx
+        test r10d, r10d
+        jz .Lcp_store
+        cmp dword ptr [r11 - 16 + RC_L], eax
+        jne .Lcp_store
+        cmp dword ptr [r11 - 16 + RC_T], edx
+        jne .Lcp_store
+        cmp dword ptr [r11 - 16 + RC_R], r8d
+        jne .Lcp_store
+        cmp dword ptr [r11 - 16 + RC_B], r9d
+        je .Lcp_ret
+.Lcp_store:
+        STORE_RECT r11, eax, edx, r8d, r9d
+        inc r10d
+        mov dword ptr o(OV_NCHAIN), r10d
+.Lcp_ret:
+        ret
+ENDF
+
+/* Candidate collection and UI Automation refinement live in snap.c. */
+#define UC_R 32                         /* RECT from GetWindowRect */
+#define UC_CP 48                        /* POINT for ScreenToClient */
+#define UC_KIDS 64                      /* RECT kids[12] */
+FUNC update_chain
+        cmp byte ptr o(OV_DETECT), DETECT_ELEMENTS
+        je snap_update                  /* snap.c: the elements UI Automation knows as well */
+        PUSHREG rbx
+        PUSHREG rsi
+        PUSHREG rdi
+        PUSHREG r12
+        PUSHREG r13
+        PUSHREG r14
+        PUSHREG r15
+        ALLOC 256
+        ENDPROLOG
+        mov dword ptr o(OV_NCHAIN), 0
+        mov r12d, dword ptr o(OV_CUR + PT_X)
+        add r12d, dword ptr o(OV_VX)    /* the cursor in screen coordinates */
+        mov r13d, dword ptr o(OV_CUR + PT_Y)
+        add r13d, dword ptr o(OV_VY)
+        mov esi, dword ptr o(OV_NWIN)
+        test esi, esi
+        jle .Luc_mon
+        mov r14, qword ptr o(OV_WIN)
+.Luc_find:
+        cmp r12d, dword ptr [r14 + WIN_RC + RC_L]
+        jl .Luc_nextwin
+        cmp r12d, dword ptr [r14 + WIN_RC + RC_R]
+        jge .Luc_nextwin
+        cmp r13d, dword ptr [r14 + WIN_RC + RC_T]
+        jl .Luc_nextwin
+        cmp r13d, dword ptr [r14 + WIN_RC + RC_B]
+        jl .Luc_found
+.Luc_nextwin:
+        add r14, WIN_BYTES
+        dec esi
+        jnz .Luc_find
+        jmp .Luc_mon
+.Luc_found:
+        cmp byte ptr o(OV_DETECT), DETECT_WINDOWS
+        je .Luc_pushwin                 /* whole windows only */
+        mov rbx, qword ptr [r14 + WIN_H]
+        xor edi, edi                    /* kids found */
+.Luc_kid:
+        mov dword ptr [rsp + UC_CP + PT_X], r12d
+        mov dword ptr [rsp + UC_CP + PT_Y], r13d
+        mov rcx, rbx
+        lea rdx, [rsp + UC_CP]
+        API ScreenToClient
+        mov rcx, rbx
+        mov rdx, qword ptr [rsp + UC_CP]
+        mov r8d, OB_CWP_FLAGS
+        API ChildWindowFromPointEx
+        test rax, rax
+        jz .Luc_push
+        cmp rax, rbx
+        je .Luc_push
+        mov rbx, rax
+        mov rcx, rax
+        lea rdx, [rsp + UC_R]
+        API GetWindowRect
+        test eax, eax
+        jz .Luc_push
+        mov eax, dword ptr [rsp + UC_R + RC_L]
+        mov edx, dword ptr [rsp + UC_R + RC_T]
+        mov r8d, dword ptr [rsp + UC_R + RC_R]
+        mov r9d, dword ptr [rsp + UC_R + RC_B]
+        lea r10, [r14 + WIN_RC]
+        ISECT_MEM eax, edx, r8d, r9d, r10, ecx
+        mov ecx, edi
+        shl ecx, 4
+        lea r10, [rsp + UC_KIDS]
+        add r10, rcx
+        STORE_RECT r10, eax, edx, r8d, r9d
+        inc edi
+        cmp edi, 12
+        jb .Luc_kid
+.Luc_push:
+        test edi, edi
+        jz .Luc_pushwin
+        dec edi
+        mov ecx, edi
+        shl ecx, 4
+        lea rcx, [rsp + UC_KIDS + rcx]
+        call chain_push
+        jmp .Luc_push
+.Luc_pushwin:
+        lea rcx, [r14 + WIN_RC]
+        call chain_push
+.Luc_mon:
+        lea rcx, o(OV_SHOT)
+        mov edx, dword ptr o(OV_CUR + PT_X)
+        mov r8d, dword ptr o(OV_CUR + PT_Y)
+        call shot_tile_at
+        cdqe
+        imul rax, rax, TILE_BYTES
+        lea rdx, o(OV_TILE0 + TILE_RC)
+        movdqu xmm0, xmmword ptr [rdx + rax]
+        movq xmm1, qword ptr o(OV_VX)   /* vx, vy */
+        punpcklqdq xmm1, xmm1
+        paddd xmm0, xmm1
+        movdqu xmmword ptr [rsp + UC_R], xmm0
+        lea rcx, [rsp + UC_R]
+        call chain_push
+        /* O.level = CLAMPI(O.level, 0, MAXI(0, nchain - 1)) */
+        mov eax, dword ptr o(OV_LEVEL)
+        mov edx, dword ptr o(OV_NCHAIN)
+        xor r8d, r8d
+        lea ecx, [rdx - 1]
+        test ecx, ecx
+        cmovl ecx, r8d
+        cmp eax, ecx
+        cmovg eax, ecx
+        test eax, eax
+        cmovl eax, r8d
+        mov dword ptr o(OV_LEVEL), eax
+        test edx, edx
+        jz .Luc_client
+        shl eax, 4
+        lea rcx, o(OV_CHAIN)
+        movdqu xmm0, xmmword ptr [rcx + rax]
+        movdqu xmmword ptr o(OV_HL), xmm0
+        jmp .Luc_ret
+.Luc_client:
+        mov rax, qword ptr o(OV_VW)
+        mov qword ptr o(OV_HL + RC_L), 0
+        mov qword ptr o(OV_HL + RC_R), rax
+.Luc_ret:
+        add rsp, 256
+        pop r15
+        pop r14
+        pop r13
+        pop r12
+        pop rdi
+        pop rsi
+        pop rbx
+        ret
 ENDF
 
 /* ---- annotations ----------------------------------------------------------------------------- */
@@ -1241,7 +1424,7 @@ FUNC anno_bounds
         cmp ecx, T_NUMBER
         je .Lab_number
         lea eax, [rcx - 1]
-        cmp eax, T_MOSAIC - 1
+        cmp eax, T_LAST - 1
         ja .Lab_zero                    /* T_NONE or unknown */
         /* box tools and segments: the corners pt[0], pt[npt - 1] */
         lea r9, [r11 + r10*8 - 8]
@@ -1252,7 +1435,7 @@ FUNC anno_bounds
         je .Lab_seg
         cmp ecx, T_ARROW
         je .Lab_seg
-        mov ecx, 2                      /* rectangle, mosaic */
+        mov ecx, 2                      /* rectangle, mosaic, spotlight, magnifier */
         jmp .Lab_inflate
 .Lab_seg:
         mov ecx, dword ptr [rsi + AN_SIZE]
@@ -1497,8 +1680,19 @@ FUNC text_draw
         ret
 ENDF
 
+/* [r13] = the rectangle of the box at \a; r13 on to the next. Clobbers rax, rcx, rdx,
+ * r8, r9, r11. */
+.macro SPOT_HOLE a
+        mov r11, qword ptr [\a + AN_PT]
+        CORNERS eax, edx, r8d, r9d, r11, r11+8, ecx
+        STORE_RECT r13, eax, edx, r8d, r9d
+        add r13, RC_SIZE
+.endm
+
 /* void anno_render(const Anno *a, const Surf *s, HDC dc, const Surf *src): dc draws
- * into the same pixels as s (client coordinates), src is where mosaic reads from */
+ * into the same pixels as s (client coordinates), src is where the mosaic and the
+ * magnifier read from. All spotlights share one dim layer: it is drawn with the one
+ * spot_top names, and the others draw nothing. */
 #define AR_FRAME 128
 #define AR_RC 64                        /* RECT */
 #define AR_NUM 80                       /* the number's digits end at AR_NUM + 24 */
@@ -1539,8 +1733,42 @@ FUNC anno_render
         cmp ecx, T_ELLIPSE
         je .Lar_ellipse
         cmp ecx, T_MOSAIC
+        je .Lar_box
+        cmp ecx, T_LENS
+        je .Lar_box
+        cmp ecx, T_SPOT
         jne .Lar_ret
-        /* mosaic */
+        call spot_top                   /* the layer: the clip dimmed but for every spotlight */
+        cmp rbx, rcx
+        jne .Lar_ret
+        mov ecx, dword ptr o(OV_NANN)
+        lea ecx, [rcx*4 + 4]            /* a RECT each, as four floats */
+        call fbuf_get
+        test rax, rax
+        jz .Lar_ret
+        mov r12, rax                    /* the holes */
+        mov r13, rax                    /* the next one */
+        mov rdi, qword ptr o(OV_ANN)
+        mov r10d, dword ptr o(OV_NANN)
+1:      dec r10d
+        js 3f
+        cmp dword ptr [rdi + AN_TOOL], T_SPOT
+        jne 2f
+        SPOT_HOLE rdi
+2:      add rdi, AN_BYTES
+        jmp 1b
+3:      lea rax, o(OV_ACT)              /* the one being drawn is not in the list */
+        cmp rbx, rax
+        jne 4f
+        SPOT_HOLE rbx
+4:      mov rcx, rsi
+        mov rdx, r12
+        mov r8, r13
+        sub r8, r12
+        shr r8d, 4
+        call d_spot
+        jmp .Lar_ret
+.Lar_box:                               /* mosaic, magnifier */
         CORNERS eax, edx, r8d, r9d, r11, r13, ecx
         lea r10, [rsp + AR_RC]
         STORE_RECT r10, eax, edx, r8d, r9d
@@ -1548,7 +1776,17 @@ FUNC anno_render
         mov rdx, r12
         lea r8, [rsp + AR_RC]
         mov r9d, dword ptr [rbx + AN_SIZE]
+        cmp dword ptr [rbx + AN_TOOL], T_LENS
+        je 5f
         call d_mosaic
+        jmp .Lar_ret
+5:      call d_lens                     /* leaves the RECT as it is: */
+        call border_t                   /* the frame goes inside it */
+        mov rcx, rsi
+        lea rdx, [rsp + AR_RC]
+        mov r8d, eax
+        mov r9d, dword ptr [rbx + AN_COLOR]
+        call d_frame
         jmp .Lar_ret
 .Lar_rect:
         CORNERS eax, edx, r8d, r9d, r11, r13, ecx
@@ -1923,17 +2161,40 @@ FUNC anno_same
         ret
 ENDF
 
-/* bool is_box(int tool): rectangle, ellipse, mosaic */
+/* bool is_box(int tool): rectangle, ellipse, mosaic, spotlight, magnifier */
 FUNC is_box
         ENDPROLOG
+        cmp ecx, T_SPOT
+        setae al
         cmp ecx, T_MOSAIC
-        sete al
+        sete dl
+        or al, dl
         dec ecx
         cmp ecx, 1
         setbe dl
         or al, dl
         movzx eax, al
         ret
+ENDF
+
+/* int spot_top(void): the spotlight the dim layer is drawn with: the one being drawn
+ * (index nann), else the topmost of the list; -1 none. rcx = it. Leaf. */
+FUNC spot_top
+        ENDPROLOG
+        movsxd rax, dword ptr o(OV_NANN)
+        lea rcx, o(OV_ACT)
+        cmp byte ptr o(OV_HAS_ACT), 0
+        je 1f
+        cmp dword ptr [rcx + AN_TOOL], T_SPOT
+        je 3f
+1:      imul rcx, rax, AN_BYTES
+        add rcx, qword ptr o(OV_ANN)
+2:      sub rcx, AN_BYTES
+        dec eax
+        js 3f
+        cmp dword ptr [rcx + AN_TOOL], T_SPOT
+        jne 2b
+3:      ret
 ENDF
 
 /* bool is_seg(int tool): line, arrow */
@@ -1959,7 +2220,8 @@ ENDF
 /* ---- canvas ---------------------------------------------------------------------------------
  * The canvas is the screenshot with the annotations drawn in (all of them, or
  * while one is picked, those below it). It covers the selection and all
- * annotations, so moving or resizing the selection never redraws anything. */
+ * annotations, so moving or resizing the selection redraws nothing, unless a dim
+ * layer must reach further (sel_changed). */
 
 /* void canvas_free(void) */
 FUNC canvas_free
@@ -2010,8 +2272,10 @@ FUNC rect_within
         ret
 ENDF
 
-/* bool canvas_build(bool force): rebuild the canvas (it includes the selection when
- * there are annotations or when force, e.g. for the mosaic tool, which reads from it) */
+/* bool canvas_build(int how): rebuild the canvas. It includes the selection when there
+ * are annotations or when how is not 0 (e.g. for the mosaic tool, which reads from it);
+ * how = 2 adds half the selection's size on each side (a dim layer while the selection
+ * moves: rebuilt once per half a selection, not per step). */
 #define CB_TMP 32                       /* RECT from anno_bounds */
 #define CB_R 48                         /* the area */
 #define CB_CS 64                        /* Surf */
@@ -2033,6 +2297,12 @@ FUNC canvas_build
         cmp dword ptr o(OV_NANN), 0
         jle 2f
 1:      movdqu xmm0, xmmword ptr o(OV_SEL)
+        cmp bl, 2
+        jne 2f
+        pshufd xmm1, xmm0, 0x4E
+        psubd xmm1, xmm0                /* w, h, -w, -h */
+        psrad xmm1, 1
+        psubd xmm0, xmm1
 2:      movdqa xmmword ptr [rsp + CB_R], xmm0
         xor esi, esi
 .Lcb_bounds:                            /* r = rect_union(r, anno_bounds(&O.ann[i])) */
@@ -2150,9 +2420,12 @@ FUNC canvas_rebuild
         jmp canvas_build
 ENDF
 
-/* void canvas_cover_sel(void): the mosaic tool reads the pixels under it from the canvas */
+/* void canvas_cover_sel(int how): the canvas covers the selection, else it is built
+ * with how (canvas_build). The mosaic and the magnifier read the pixels under them
+ * from it; a dim layer reaches as far as it. */
 FUNC canvas_cover_sel
         ENDPROLOG
+        mov r10d, ecx
         cmp byte ptr o(OV_CANVAS_OK), 0
         je .Lcs_build
         mov eax, dword ptr o(OV_SEL + RC_L)
@@ -2165,12 +2438,44 @@ FUNC canvas_cover_sel
 .Lcs_ret:
         ret
 .Lcs_build:
-        mov ecx, 1
+        mov ecx, r10d
         jmp canvas_build
 ENDF
 
+/* void canvas_cover_pick(void): a picked magnifier reads its middle from the canvas,
+ * which must cover all of it */
+FUNC canvas_cover_pick
+        ALLOC 56                        /* [32] RECT */
+        ENDPROLOG
+        movsxd rax, dword ptr o(OV_PICK)
+        test eax, eax
+        js .Lck_ret
+        imul rdx, rax, AN_BYTES
+        add rdx, qword ptr o(OV_ANN)
+        cmp dword ptr [rdx + AN_TOOL], T_LENS
+        jne .Lck_ret
+        lea rcx, [rsp + 32]
+        call anno_bounds
+        mov eax, dword ptr [rsp + 32 + RC_L]
+        mov edx, dword ptr [rsp + 32 + RC_T]
+        mov r8d, dword ptr [rsp + 32 + RC_R]
+        mov r9d, dword ptr [rsp + 32 + RC_B]
+        ISECT_CLIENT eax, edx, r8d, r9d, ecx, .Lck_ret
+        cmp byte ptr o(OV_CANVAS_OK), 0
+        je .Lck_build
+        lea rcx, o(OV_CRECT)
+        WITHIN_MEM eax, edx, r8d, r9d, rcx, .Lck_build
+.Lck_ret:
+        add rsp, 56
+        ret
+.Lck_build:
+        add rsp, 56
+        jmp canvas_rebuild
+ENDF
+
 /* void canvas_add_top(void): the top annotation was committed or unpicked: draw
- * it in, or rebuild if it reaches outside the canvas */
+ * it in, or rebuild if it reaches outside the canvas (a spotlight's dim layer: as
+ * far as the selection) */
 FUNC canvas_add_top
         PUSHREG rbx
         ALLOC 96                        /* [32] RECT, [48] Surf */
@@ -2183,7 +2488,12 @@ FUNC canvas_add_top
         lea rcx, [rsp + 32]
         mov rdx, rbx
         call anno_bounds
-        mov eax, dword ptr [rsp + 32 + RC_L]
+        cmp dword ptr [rbx + AN_TOOL], T_SPOT
+        jne 1f
+        movdqu xmm0, xmmword ptr o(OV_SEL)
+        movdqu xmmword ptr [rsp + 32], xmm0
+        inc dword ptr o(OV_CANVAS_VER)  /* it dims all of the canvas: all is painted again */
+1:      mov eax, dword ptr [rsp + 32 + RC_L]
         mov edx, dword ptr [rsp + 32 + RC_T]
         mov r8d, dword ptr [rsp + 32 + RC_R]
         mov r9d, dword ptr [rsp + 32 + RC_B]

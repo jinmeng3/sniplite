@@ -1,0 +1,35 @@
+name: Bug report
+description: Something is broken or behaves wrongly
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        本人目前很忙，维护时间有限，可能收到反馈，解决反馈时间都会有点长。
+        I am busy at the moment and have little time for maintenance, so replies and fixes may take a while.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: 1.5.1, installed or portable
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows
+      placeholder: Windows 11 24H2 (run winver)
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: Steps, what you saw, what you expected.
+    validations:
+      required: true
+  - type: textarea
+    id: media
+    attributes:
+      label: Screenshots or a recording

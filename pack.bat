@@ -1,18 +1,16 @@
 @echo off
 rem Release the installer and portable ZIPs into build\dist. Run build.bat first.
-setlocal
-cd /d "%~dp0"
-if not exist build\sniplite.exe (echo build\sniplite.exe is missing: run build.bat first & exit /b 1)
-if not exist build\sniplite_qr.exe (echo build\sniplite_qr.exe is missing: run build.bat first & exit /b 1)
 if not exist build\sniplite.com (echo build\sniplite.com is missing: run build.bat first & exit /b 1)
 if not exist build\sniplite_win_setup_amd64.exe (echo the installer is missing: run build.bat first & exit /b 1)
 for /f "tokens=3" %%v in ('findstr /C:"#define SNIPLITE_VERSION" src\common.h') do set V=%%v
 set V=%V:L"=%
 set V=%V:"=%
-for /f "tokens=3" %%v in ('findstr /C:"#define MODULE_BYTES" src\ocr_get.c') do set BYTES=%%v
-set BYTES=%BYTES:u=%
+set RUNTIME=ocr/vcruntime140.dll ocr/vcruntime140_1.dll ocr/msvcp140_1.dll ocr/msvcp140.dll
+set MODULE=ocr/PP-OCRv6_det_tiny.onnx ocr/PP-OCRv6_rec_tiny.onnx ocr/onnxruntime.dll %RUNTIME%
+set LICENSES=ocr/LICENSE-onnxruntime.txt ocr/LICENSE-PaddleOCR.txt ocr/ThirdPartyNotices-onnxruntime.txt
 set ZIP=build\sniplite_ocr.zip
-set URL=https://github.com/MrTangLuyao/sniplite/releases/download/ocr-1/sniplite_ocr.zip
+set RUNTIME_ZIP=build\sniplite_ocr_runtime.zip
+set TAR=%SystemRoot%\System32\tar.exe
 set D=build\dist
 if not exist "%D%" mkdir "%D%" || exit /b 1
 for %%f in (onnxruntime.dll PP-OCRv6_det_tiny.onnx PP-OCRv6_rec_tiny.onnx LICENSE-onnxruntime.txt ThirdPartyNotices-onnxruntime.txt LICENSE-PaddleOCR.txt NOTICE.txt) do if not exist "build\ocr\%%f" set NEED_OCR=1

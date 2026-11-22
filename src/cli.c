@@ -91,8 +91,11 @@ static HWND spawn_daemon(int argc, WCHAR **argv, bool is_start)
     HWND d = NULL;
     for (int i = 0; i < 1000 && !(d = ipc_find()); i++)
         if (WaitForSingleObject(pi.hProcess, 5) == WAIT_OBJECT_0) {
-            d = ipc_find(); /* lost a start race against another instance */
-            break;
+            DWORD code = EXIT_FAIL;
+            GetExitCodeProcess(pi.hProcess, &code);
+            if (code != EXIT_OK)
+                break;
+            Sleep(5); /* it lost a start race against another instance, whose window is on its way */
         }
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
@@ -202,7 +205,7 @@ int wmain(int argc, WCHAR **argv)
     WCHAR *def[] = {L"start"};
     int ac = argc - 1;
     WCHAR **av = argv + 1;
-    if (ac == 0) {
+    if (ac <= 0) { /* -1: a command line of blanks, without even the program */
         ac = 1;
         av = def;
     }

@@ -181,7 +181,6 @@ static bool helper_start(void)
     WCHAR exe[MAX_PATH * 2];
     if (!GetModuleFileNameW(NULL, exe, COUNTOF(exe)) || !CreatePipe(&rd, &wr, &sa, 0))
         return false;
-    SetHandleInformation(wr, HANDLE_FLAG_INHERIT, 0); /* or the helper would never see the pipe close */
     Str cmd = {0};
     str_add_quoted(&cmd, exe);
     str_add(&cmd, L" --ocr");
@@ -190,7 +189,7 @@ static bool helper_start(void)
     si.hStdInput = rd;
     PROCESS_INFORMATION pi;
     AllowSetForegroundWindow(ASFW_ANY);
-    bool ok = cmd.p && CreateProcessW(exe, cmd.p, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi);
+    bool ok = cmd.p && spawn_inheriting(exe, cmd.p, &si, &rd, 1, &pi);
     str_free(&cmd);
     CloseHandle(rd);
     if (!ok) {
@@ -544,7 +543,17 @@ bool ocr_picture(const uint32_t *px, int w, int h, RECT beside, HWND owner)
     return job_send(owner ? OP_PANEL : OP_COPY, &pic, &beside, owner);
 }
 
-bool ocr_picture_shown(void) { return panel_alive(); }
+bool ocr_picture_shown(void)
+{
+    if (!panel_alive())
+        return false;
+    if (H.seen)
+        return true;
+    AcquireSRWLockShared(&H.lock); /* not on the screen yet: only as long as the helper that was asked is there */
+    bool lives = H.proc && WaitForSingleObject(H.proc, 0) == WAIT_TIMEOUT;
+    ReleaseSRWLockShared(&H.lock);
+    return lives;
+}
 
 void ocr_picture_hide(void) { job_send(OP_HIDE, NULL, NULL, NULL); }
 
@@ -585,7 +594,6 @@ static struct {
     int pw;       /* the width the panel wants: more for a table */
     int table_px; /* how wide the table's columns are together */
     const WCHAR *status; /* a line at the bottom left, or NULL */
-    WCHAR why[160];
     Wire *next;   /* the newest job not started; an older one waiting is dropped */
     bool running; /* the reading thread is at work */
     bool eof;
@@ -733,7 +741,7 @@ static void notice_show(const WCHAR *line, const WCHAR *more, int stay_ms)
     SetTimer(N.hwnd, TIMER_STAY, (UINT)stay_ms, NULL);
 }
 
-/* For the helper of a quick capture (main.c): saved, and where. */
+/* For the helper of a quick capture, and for "also save" when none started (main.c): saved or not, and where. */
 void notice_corner(const WCHAR *line, const WCHAR *path, POINT on_monitor, int stay_ms)
 {
     for (HWND w = NULL; (w = FindWindowExW(NULL, w, NOTICE_CLASS, NULL));)
@@ -914,15 +922,7 @@ static void panel_paint(HWND h)
         SetTextColor(dc, RGB(110, 110, 110));
         RECT r = {px(12), bar.top, rc.right - px(8) - px(84) - (IsWindowVisible(U.table) ? px(8) + px(72) : 0) -
                                        (IsWindowVisible(U.mark) ? px(8) + px(104) : 0) - px(8), bar.bottom};
-        WCHAR t[280];
-        lstrcpynW(t, U.status, COUNTOF(t));
-        if (U.status == T(OCR_FAILED) && U.why[0]) {
-            int n = lstrlenW(t);
-            lstrcpynW(t + n, L": ", COUNTOF(t) - n);
-            n = lstrlenW(t);
-            lstrcpynW(t + n, U.why, COUNTOF(t) - n);
-        }
-        DrawTextW(dc, t, -1, &r, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_END_ELLIPSIS);
+        DrawTextW(dc, U.status, -1, &r, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_END_ELLIPSIS);
         SelectObject(dc, old);
     }
     EndPaint(h, &ps);
@@ -949,7 +949,8 @@ static void panel_hide(bool by_user)
         SetForegroundWindow(U.owner); /* the keyboard back to the capture */
 }
 
-/* the whole text to the clipboard, and the capture is done */
+/* the whole text to the clipboard, and the capture is done. When the clipboard cannot be
+ * had, the panel stays with its text for another try. */
 static void panel_copy(void)
 {
     int n = GetWindowTextLengthW(U.edit);
@@ -957,7 +958,13 @@ static void panel_copy(void)
     if (!t)
         return;
     GetWindowTextW(U.edit, t, n + 1);
-    bool copied = n > 0 && clip_put_text(U.panel, t);
+    bool wanted = n > 0 && IsWindowEnabled(U.copy);
+    N.at.x = (U.at.left + U.at.right) / 2, N.at.y = (U.at.top + U.at.bottom) / 2;
+    if (wanted && !clip_put_text(U.panel, t)) {
+        notice_show(T(COPY_FAILED), NULL, 3000);
+        mem_free(t);
+        return;
+    }
     panel_hide(false);
     HWND d = ipc_find();
     if (d) {
@@ -966,10 +973,8 @@ static void panel_copy(void)
         ipc_call(d, 1, argv, &reply);
         str_free(&reply);
     }
-    if (copied) {
-        N.at.x = (U.at.left + U.at.right) / 2, N.at.y = (U.at.top + U.at.bottom) / 2;
+    if (wanted)
         notice_show(T(OCR_COPIED), t, 1300);
-    }
     mem_free(t);
 }
 
@@ -1105,7 +1110,6 @@ static void panel_fill(Result *r)
     U.plain = r->plain, U.tab = r->tab;
     memset(&r->plain, 0, sizeof r->plain);
     memset(&r->tab, 0, sizeof r->tab);
-    lstrcpynW(U.why, r->why, COUNTOF(U.why));
     U.as_table = r->table;
     ShowWindow(U.table, r->table ? SW_SHOW : SW_HIDE);
     SendMessageW(U.table, BM_SETCHECK, r->table ? BST_CHECKED : BST_UNCHECKED, 0);
@@ -1114,6 +1118,8 @@ static void panel_fill(Result *r)
     if (r->table && U.as_md)
         md_build();
     edit_make();
+    if (!r->good)
+        SetWindowTextW(U.edit, r->why); /* the reason, whole: the line at the bottom has no room for it */
     int want = r->table ? MINI(U.table_px + px(10) + GetSystemMetrics(SM_CXVSCROLL) + px(12), px(680)) : 0;
     if (want != U.pw) { /* a table: wide enough for its columns, if the screen has the room */
         U.pw = want;
@@ -1201,8 +1207,10 @@ static void job_done(Result *r)
         notice_show(T(OCR_NONE), NULL, 1300);
     } else {
         const Str *t = r->table ? &r->tab : &r->plain;
-        clip_put_text(U.hub, t->p);
-        notice_show(T(OCR_COPIED), r->plain.p, 1500);
+        if (clip_put_text(U.hub, t->p))
+            notice_show(T(OCR_COPIED), r->plain.p, 1500);
+        else
+            notice_show(T(COPY_FAILED), NULL, 3000);
     }
     str_free(&r->plain);
     str_free(&r->tab);

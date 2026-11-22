@@ -1,0 +1,21 @@
+name: New feature
+description: Suggest something new
+title: "[Feat] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        本人目前很忙，维护时间有限，可能收到反馈，解决反馈时间都会有点长。
+        I am busy at the moment and have little time for maintenance, so replies and fixes may take a while.
+  - type: textarea
+    id: what
+    attributes:
+      label: What you would like
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: What you are trying to do, and what is in the way today.

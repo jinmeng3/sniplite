@@ -40,3 +40,14 @@ FUNC start
         int3
 ENDF
 #endif
+
+/* The load configuration (IMAGE_LOAD_CONFIG_DIRECTORY64, 0x140 bytes), for one field: the DLLs the program
+ * imports are looked for in System32 only, not in the program's folder first (dwmapi.dll is not one of those
+ * Windows always takes from System32). In start's section, so that the linker keeps it. */
+        .balign 8
+        .globl _load_config_used
+_load_config_used:
+        .long 0x140                     /* Size */
+        .fill 0x4E - 4, 1, 0
+        .short 0x800                    /* DependentLoadFlags: LOAD_LIBRARY_SEARCH_SYSTEM32 */
+        .fill 0x140 - 0x50, 1, 0

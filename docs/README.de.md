@@ -25,9 +25,9 @@
 ## Merkmale
 
 - **Schnell**: F1 drücken, und der Screenshot ist da, schneller als bei 99 % der Screenshot-Programme
-- **Schlank**: etwa 280 KB, nichts weiter zu installieren; der Kern für Aufnahme und Zeichnen ist in Assembler geschrieben
+- **Schlank**: etwa 320 KB, nichts weiter zu installieren; der Kern für Aufnahme und Zeichnen ist in Assembler geschrieben
 - **Pins**: einen Screenshot über allen Fenstern anheften, damit er beim Arbeiten im Blick bleibt
-- **Komplett**: Screenshots, Pins, Pfeile, Text, Verpixeln, alles dabei
+- **Komplett**: Screenshots, Pins, Pfeile, Text, Verpixeln, Spotlight, Lupe, alles dabei
 - **Texterkennung**: liest den Text einer Aufnahme, auch Tabellen; ein optionales Modul, das vollständig auf dem eigenen Computer läuft
 - **Scrollaufnahmen**: Seite scrollen, sie wird laufend zusammengesetzt
 - **Sauber**: keine Werbung, Open Source, keine Protokolle, keine Datensammlung
@@ -95,13 +95,21 @@ Einen Bereich auswählen und auf die Text-Schaltfläche klicken (Ctrl+O): Der Te
 
 Den Bereich auswählen, auf die Schaltfläche für die Scrollaufnahme klicken (Ctrl+L) und die Seite selbst scrollen. sniplite setzt zusammen, was vorbeiläuft, und ein Streifen neben dem Bereich zeigt das Ergebnis. Enter kopiert, Esc bricht ab; speichern, anheften oder den Text erkennen geht ebenfalls.
 
+**Wo werden die Aufnahmen gespeichert?**
+
+Ctrl+S öffnet den Speichern-Dialog in dem Ordner, in dem Sie zuletzt gespeichert haben; beim ersten Mal, oder wenn es den Ordner nicht mehr gibt, im Standardspeicherort, falls Sie ihn geändert haben, sonst im Ordner Bilder. Schnellaufnahmen (Shift+F1) landen direkt im Standardspeicherort; das ist der Desktop, solange Sie ihn nicht in den Einstellungen auf der Seite Aufnahme ändern. Wer dort „Aufnahmen zusätzlich als Datei speichern“ ankreuzt, bekommt jede kopierte oder angeheftete Aufnahme auch als Datei in diesem Ordner. Unter „Dateinamenformat“ auf derselben Seite lässt sich wählen, wie die Dateien heißen, aus ein paar Mustern mit Datum und Uhrzeit.
+
+**Und wenn die Tastenkürzel ein Spiel stören?**
+
+In den Einstellungen auf der Seite Tasten „Vollbild-Apps (z. B. Spielen) die Tastenkürzel überlassen“ ankreuzen: Solange ein Programm, das den ganzen Bildschirm füllt, im Vordergrund ist, gibt sniplite seine Tastenkürzel frei, und die Tasten gehen an dieses Programm; wechseln Sie zu einem anderen Fenster, holt es sie zurück. Programme, die nicht im Vollbild laufen, lassen sich unter „Tastenkürzel überlassen“ hinzufügen: auf „Verwalten“ klicken, dann mit „Neu“ einen Dateinamen wie `game.exe` eintragen oder mit „Durchsuchen“ das Programm auswählen.
+
 **Wie viel Speicher braucht es?**
 
 Meist etwa 50 MB, fast alles davon belegt der Grafiktreiber, direkt nach einer Aufnahme kurz etwas mehr. Wer weniger möchte, wählt in den Einstellungen auf der Seite Aufnahme den Modus Sparsam: etwa 2 MB, dafür langsamere Aufnahmen.
 
 **Was bleibt auf meinem Rechner zurück?**
 
-Es braucht keine Administratorrechte und fasst die Registrierung nicht an. Wer eine Einstellung ändert, bekommt eine Einstellungsdatei; wer sie löscht, hat wieder die Standardwerte.
+Es braucht keine Administratorrechte und fasst die Registrierung nicht an. Wer eine Einstellung ändert oder über den Speichern-Dialog speichert (er merkt sich den Ordner), bekommt eine Einstellungsdatei; wer sie löscht, hat wieder die Standardwerte.
 
 **Wie ändere ich die Sprache?**
 
@@ -109,7 +117,7 @@ sniplite richtet sich nach der Sprache von Windows. Für eine andere öffnen Sie
 
 **Wie aktualisiere ich es?**
 
-Einmal am Tag fragt sniplite bei GitHub nach einer neueren Version. Gibt es eine, erscheint unten rechts ein Hinweis, und ein Klick aktualisiert. Geprüft wird nur die Versionsnummer, hochgeladen wird nichts; in den Einstellungen lässt sich das abschalten.
+Einmal am Tag fragt sniplite bei GitHub nach einer neueren Version. Gibt es eine, erscheint unten rechts ein Hinweis, und ein Klick aktualisiert. Geprüft wird nur die Versionsnummer, hochgeladen wird nichts; in den Einstellungen lässt sich das abschalten. Die portablen Versionen suchen nicht nach Updates: Die neue Version gibt es unter [Releases](https://github.com/MrTangLuyao/sniplite/releases/latest).
 
 **Wie deinstalliere ich es?**
 
@@ -133,8 +141,9 @@ Ja. `sniplite help` zeigt alle Befehle.
 
 ## Open Source von Dritten
 
-sniplite selbst nutzt nur die Systembibliotheken von Windows. Das optionale Texterkennungsmodul ist die Arbeit anderer und wird unverändert mit deren Lizenzen weitergegeben (im Ordner `ocr` des Moduls und auf der [Seite des Moduls](https://github.com/MrTangLuyao/sniplite/releases/tag/ocr-1)):
+sniplite selbst nutzt nur die Systembibliotheken von Windows. Das optionale Texterkennungsmodul ist die Arbeit anderer und wird unverändert mit deren Lizenzen oder Links darauf weitergegeben (im Ordner `ocr` des Moduls und auf der [Seite des Moduls](https://github.com/MrTangLuyao/sniplite/releases/tag/ocr-2)):
 
 - [ONNX Runtime](https://github.com/microsoft/onnxruntime) 1.26.0, Copyright (c) Microsoft Corporation, MIT-Lizenz
+- Die von ONNX Runtime benötigten Laufzeitbibliotheken von [Microsoft Visual C++](https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files) 14.51.36247 (`msvcp140.dll`, `msvcp140_1.dll`, `vcruntime140.dll`, `vcruntime140_1.dll`), Copyright (c) Microsoft Corporation, nicht Open Source: weitergegeben unter den [Lizenzbedingungen](https://visualstudio.microsoft.com/license-terms/) von Microsoft
 - Die PP-OCRv6-Modelle von [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR), Copyright (c) PaddlePaddle Authors, Apache-Lizenz 2.0
 - Ihre ONNX-Fassung stammt von [RapidOCR](https://github.com/RapidAI/RapidOCR), Apache-Lizenz 2.0

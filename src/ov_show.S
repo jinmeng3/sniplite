@@ -100,6 +100,15 @@
 97:
 .endm
 
+
+/* ZF = the tool in r is the mosaic or the magnifier */
+.macro MOSAIC_OR_LENS r
+        cmp \r, T_MOSAIC
+        je 95f
+        cmp \r, T_LENS
+95:
+.endm
+
 /* ---- showing / ending ---------------------------------------------------------------- */
 
 /* void force_foreground(HWND h) */
@@ -856,6 +865,10 @@ FUNC ov_begin
         movsd xmm0, qword ptr OV(OV_T_VISIBLE)
         subsd xmm0, qword ptr [rsp + BG_T0]
         movsd qword ptr OV(OV_T + OVT_TOTAL), xmm0
+        cmp byte ptr OV(OV_DETECT), DETECT_ELEMENTS
+        jne 4f
+        call snap_begin                 /* its thread starts now, not on the way to visible */
+4:
         cmp byte ptr OV(OV_PIXELS), 0
         jne .Lbg_true
         /* visible already; now wait for the pixels (magnifier, output) */
@@ -1048,7 +1061,10 @@ FUNC finish
         API ShowWindow
         mov ecx, 1
         call text_end
-        call end_grab                   /* e.g. Ctrl+C mid-drag: keep what is shown */
+        cmp dword ptr OV(OV_DRAG), DR_DRAW      /* e.g. Ctrl+C mid-drag: keep what is shown */
+        jne 1f
+        call end_draw
+1:      call end_grab
         call pick_clear                 /* so the canvas holds every annotation */
         lea rcx, [rsp + FI_OUT]
         call output_image
@@ -1067,9 +1083,14 @@ FUNC finish
         mov r8d, dword ptr [rsp + FI_OUT + IMG_W]
         mov r9d, r8d
         call clip_put_image
+        call ov_cancel                  /* the capture is over before its file is thought of */
+        mov rcx, qword ptr [rsp + FI_OUT + IMG_PX]
+        mov edx, dword ptr [rsp + FI_OUT + IMG_W]
+        mov r8d, dword ptr [rsp + FI_OUT + IMG_H]
+        call also_save                  /* into a file too, while the settings say so (main.c) */
         lea rcx, [rsp + FI_OUT]
         call img_destroy
-        jmp .Lfi_cancel
+        jmp .Lfi_ret
 .Lfi_notcopy:
         cmp ebx, ACT_PIN
         jne .Lfi_save
@@ -1079,6 +1100,9 @@ FUNC finish
         mov r8d, edi
         xor r9d, r9d
         call pin_add
+        test al, al
+        jz .Lfi_ret
+        call pin_also_save              /* into a file too, while the settings say so (pin.c) */
         jmp .Lfi_ret
 .Lfi_save:
         lea rcx, [rsp + FI_PATH]
@@ -1235,15 +1259,18 @@ FUNC back_to_select
         mov edx, TIMER_TIP
         API KillTimer
         call update_scale
-        call update_chain
+        cmp byte ptr OV(OV_DETECT), DETECT_ELEMENTS
+        jne 1f
+        call snap_begin
+1:      call update_chain
         add rsp, 40
         jmp refresh
 ENDF
 
 /* void sel_changed(void): the selection moved or changed size. Annotations stay
- * where they are on the screen and the canvas already covers them; only a mosaic
- * drawn live (picked, or above the pick) reads from the canvas, which must cover
- * its part that is now visible. */
+ * where they are on the screen and the canvas already covers them; but a dim layer
+ * reaches as far as the selection, and a mosaic or a magnifier drawn live (picked, or
+ * above the pick) reads from the canvas, which must cover its part that is now visible. */
 FUNC sel_changed
         PUSHREG rbx
         PUSHREG rsi
@@ -1256,8 +1283,12 @@ FUNC sel_changed
         cmp byte ptr OV(OV_HAS_ACT), 0
         jne 1f
         call canvas_free                /* only the mosaic tool's copy of the old selection */
-1:
-        mov ebx, dword ptr OV(OV_PICK)
+1:      call spot_top
+        test eax, eax
+        js 2f
+        mov ecx, 2                      /* a dim layer: the canvas reaches past the selection */
+        call canvas_cover_sel
+2:      mov ebx, dword ptr OV(OV_PICK)
         test ebx, ebx
         jns .Lsc_loop
         mov ebx, dword ptr OV(OV_NANN)
@@ -1267,7 +1298,8 @@ FUNC sel_changed
         movsxd rsi, ebx
         imul rsi, rsi, AN_BYTES
         add rsi, qword ptr OV(OV_ANN)
-        cmp dword ptr [rsi + AN_TOOL], T_MOSAIC
+        mov eax, dword ptr [rsi + AN_TOOL]
+        MOSAIC_OR_LENS eax
         jne .Lsc_next
         cmp byte ptr OV(OV_CANVAS_OK), 0
         je .Lsc_build
@@ -1573,31 +1605,60 @@ FUNC edge_cursor
         ret
 ENDF
 
-/* int grab_target(POINT p): which annotation a click at p grabs. Pens keep
- * drawing over annotations; the text tool edits text instead (see text_at). */
+/* int grab_target(POINT p): which annotation a press at p grabs. With no tool the one
+ * under p. With a tool only the picked one, by its outline: the tool draws over the rest. */
+#define GT_A 32                         /* Anno */
 FUNC grab_target
         PUSHREG rbx
-        ALLOC 32
+        ALLOC 80
         ENDPROLOG
-        mov eax, dword ptr OV(OV_TOOL)
-        sub eax, T_PEN
-        cmp eax, T_MARKER - T_PEN
-        jbe .Lgt_none
         mov rbx, rcx
+        cmp dword ptr OV(OV_TOOL), T_NONE
+        jne .Lgt_tool
         call anno_at
         test eax, eax
         jns .Lgt_ret
         mov rcx, rbx
         call pick_body_has
+        jmp .Lgt_pick
+.Lgt_tool:
+        mov eax, -1
+        movsxd rcx, dword ptr OV(OV_PICK)
+        test ecx, ecx
+        js .Lgt_ret
+        cmp ebx, dword ptr OV(OV_SEL + RC_L)    /* only the part in the selection shows */
+        jl .Lgt_ret
+        cmp ebx, dword ptr OV(OV_SEL + RC_R)
+        jge .Lgt_ret
+        mov rdx, rbx
+        shr rdx, 32
+        cmp edx, dword ptr OV(OV_SEL + RC_T)
+        jl .Lgt_ret
+        cmp edx, dword ptr OV(OV_SEL + RC_B)
+        jge .Lgt_ret
+        imul rcx, rcx, AN_BYTES
+        add rcx, qword ptr OV(OV_ANN)
+        mov eax, dword ptr [rcx + AN_TOOL]
+        MOSAIC_OR_LENS eax
+        jne 1f
+        movups xmm0, xmmword ptr [rcx]          /* solid: held by its frame, like a */
+        movups xmm1, xmmword ptr [rcx + 16]     /* rectangle of width 0 */
+        movups xmm2, xmmword ptr [rcx + 32]
+        lea rcx, [rsp + GT_A]
+        movups xmmword ptr [rcx], xmm0
+        movups xmmword ptr [rcx + 16], xmm1
+        movups xmmword ptr [rcx + 32], xmm2
+        mov dword ptr [rcx + AN_TOOL], T_RECT
+        mov dword ptr [rcx + AN_SIZE], 0
+1:      mov rdx, rbx
+        call anno_hit
+.Lgt_pick:                              /* al: p grabs the pick */
         mov ecx, eax
         mov eax, -1
         test cl, cl
         cmovnz eax, dword ptr OV(OV_PICK)
-        jmp .Lgt_ret
-.Lgt_none:
-        mov eax, -1
 .Lgt_ret:
-        add rsp, 32
+        add rsp, 80
         pop rbx
         ret
 ENDF
@@ -1637,10 +1698,9 @@ FUNC cursor_for
         mov eax, dword ptr OV(OV_TOOL)
         cmp eax, T_TEXT
         je .Lcf_text
-        sub eax, T_PEN                  /* grab_target(p) >= 0: never for pens */
-        cmp eax, T_MARKER - T_PEN
-        jbe .Lcf_tool
-        mov rcx, rbx
+        test eax, eax
+        jnz .Lcf_tool
+        mov rcx, rbx                    /* no tool: grab_target(p) >= 0, without the call */
         call anno_at
         test eax, eax
         jns .Lcf_move
@@ -1648,9 +1708,6 @@ FUNC cursor_for
         call pick_body_has
         test al, al
         jnz .Lcf_move
-.Lcf_tool:
-        cmp dword ptr OV(OV_TOOL), T_NONE
-        jne .Lcf_cross
         mov rax, qword ptr OV(OV_C_MOVE)
         jmp .Lcf_in
 .Lcf_text:
@@ -1667,6 +1724,15 @@ FUNC cursor_for
         cmp ebx, dword ptr OV(OV_SEL + RC_B)
         jge .Lcf_arrow
         jmp .Lcf_ret
+.Lcf_tool:                              /* with a tool only the pick can be taken; */
+        cmp dword ptr OV(OV_PICK), 0    /* typing, a press only ends the text */
+        jl .Lcf_cross
+        cmp byte ptr OV(OV_TE_ON), 0
+        jne .Lcf_cross
+        mov rcx, rbx
+        call grab_target
+        test eax, eax
+        js .Lcf_cross
 .Lcf_move:
         mov rax, qword ptr OV(OV_C_MOVE)
         jmp .Lcf_ret
@@ -1776,12 +1842,22 @@ ENDF
 /* void begin_draw(POINT p) */
 FUNC begin_draw
         PUSHREG rbx
-        ALLOC 32
+        PUSHREG rsi
+        ALLOC 40
         ENDPROLOG
         mov rbx, rcx
-        cmp dword ptr OV(OV_TOOL), T_MOSAIC
+        mov eax, dword ptr OV(OV_TOOL)
+        cmp eax, T_SPOT
+        jne 0f
+        call spot_top                   /* a dim layer in the canvas: rebuilt below; */
+        mov esi, eax                    /* none: the canvas, painted again, must cover */
+        test eax, eax                   /* the selection */
+        jns 1f
+        jmp 2f
+0:      MOSAIC_OR_LENS eax
         jne 1f
-        call canvas_cover_sel           /* the mosaic reads the pixels under it from the canvas */
+2:      mov ecx, 1                      /* the mosaic and the magnifier read the pixels under */
+        call canvas_cover_sel           /* them from the canvas */
 1:
         lea rcx, OV(OV_ACT)
         call anno_free
@@ -1808,7 +1884,16 @@ FUNC begin_draw
         mov byte ptr OV(OV_HAS_ACT), 1
         mov dword ptr OV(OV_DRAG), DR_DRAW
         inc dword ptr OV(OV_ACT_VER)
-        add rsp, 32
+        cmp dword ptr OV(OV_TOOL), T_SPOT
+        jne 3f
+        test esi, esi
+        js 4f
+        mov ecx, 1                      /* the dim layer is drawn with this one now, not in the canvas */
+        call canvas_build
+        jmp 3f
+4:      inc dword ptr OV(OV_CANVAS_VER)
+3:      add rsp, 40
+        pop rsi
         pop rbx
         ret
 ENDF
@@ -1838,6 +1923,8 @@ FUNC end_draw
         je .Led_box
         cmp eax, T_MOSAIC
         je .Led_box
+        cmp eax, T_SPOT                 /* and the magnifier */
+        jae .Led_box
         cmp eax, T_LINE
         je .Led_seg
         cmp eax, T_ARROW
@@ -1899,14 +1986,38 @@ FUNC end_draw
         pop rbx
         jmp commit_anno
 .Led_drop:
-        lea rcx, OV(OV_ACT)
         add rsp, 40
         pop rsi
         pop rbx
-        jmp anno_free
+        jmp act_drop
 .Led_ret:
         add rsp, 40
         pop rsi
+        pop rbx
+        ret
+ENDF
+
+/* void act_drop(void): the annotation being drawn is given up. A spotlight drew the
+ * dim layer live (begin_draw): the layer of the others goes back into the canvas, or
+ * the canvas is painted again without one. */
+FUNC act_drop
+        PUSHREG rbx
+        ALLOC 32
+        ENDPROLOG
+        mov ebx, dword ptr OV(OV_ACT + AN_TOOL)
+        lea rcx, OV(OV_ACT)
+        call anno_free
+        mov byte ptr OV(OV_HAS_ACT), 0
+        cmp ebx, T_SPOT
+        jne 1f
+        call spot_top
+        test eax, eax
+        js 2f
+        add rsp, 32
+        pop rbx
+        jmp canvas_rebuild
+2:      inc dword ptr OV(OV_CANVAS_VER)
+1:      add rsp, 32
         pop rbx
         ret
 ENDF
@@ -1934,8 +2045,10 @@ FUNC begin_grab
         movsxd rax, dword ptr OV(OV_PICK)
         imul rax, rax, AN_BYTES
         add rax, qword ptr OV(OV_ANN)
-        cmp dword ptr [rax + AN_TOOL], T_MOSAIC
+        mov eax, dword ptr [rax + AN_TOOL]
+        MOSAIC_OR_LENS eax
         jne 1f
+        mov ecx, 1
         call canvas_cover_sel
 1:
         xor eax, eax
@@ -2125,6 +2238,7 @@ FUNC end_grab
         mov edx, dword ptr OV(OV_PICK)
         lea r8, OV(OV_ORIG)
         call op_push
+        call canvas_cover_pick
         jmp .Leg_ver
 .Leg_free:
         lea rcx, OV(OV_ORIG)
@@ -2210,7 +2324,7 @@ FUNC on_button
         mov ecx, 1
         call text_end
         lea eax, [rbx - T_RECT]
-        cmp eax, T_NUMBER - T_RECT
+        cmp eax, T_LAST - T_RECT
         ja 1f
         mov ecx, ebx
         call set_tool
@@ -2244,6 +2358,14 @@ FUNC on_button
         call redo
         jmp .Lob_refresh
 5:
+        cmp ebx, B_FRONT
+        jb .Lob_formula
+        cmp ebx, B_BACK
+        ja .Lob_formula
+        lea ecx, [rbx - B_FRONT]        /* B_BACK: to the back */
+        call pick_order
+        jmp .Lob_refresh
+.Lob_formula:
         cmp ebx, B_FORMULA
         jne .Lob_formula_preview
         call formula_scan
@@ -2268,6 +2390,11 @@ FUNC on_button
         call ocr_panel                  /* the text panel beside the selection (ocr_ui.c) */
         jmp .Lob_refresh
 6:
+        cmp ebx, B_OCR
+        jne 7f
+        call ocr_panel                  /* the text panel beside the selection (ocr_ui.c) */
+        jmp .Lob_refresh
+7:
         mov ecx, ACT_OCR
         cmp ebx, B_OCRCOPY
         je .Lob_finish

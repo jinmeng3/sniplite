@@ -22,6 +22,7 @@
 #define K_ALPHA_IGNORE 3                /* DXGI_ALPHA_MODE_IGNORE */
 #define K_DIM_PIXEL 0x70000000          /* alpha 112: 56% of the screen shows through */
 #define K_FRAME_PIXEL 0xFF1A8CFF        /* ACCENT, opaque */
+#define K_LOAD_LIBRARY_SEARCH_SYSTEM32 0x800
 #define BOX_LEFT 0                      /* D3D11_BOX */
 #define BOX_TOP 4
 #define BOX_FRONT 8
@@ -384,8 +385,10 @@ FUNC pr_setup
         call release_all
         cmp qword ptr [rip + g_pr + P_CREATE], 0
         jne .Lps_have_create
-        lea rcx, [rip + w_dcomp]
-        API LoadLibraryW
+        lea rcx, [rip + w_dcomp]        /* from System32: by name alone the program's folder is searched first */
+        xor edx, edx
+        mov r8d, K_LOAD_LIBRARY_SEARCH_SYSTEM32
+        API LoadLibraryExW
         test rax, rax
         jz .Lps_false
         mov rcx, rax

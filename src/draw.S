@@ -7,7 +7,7 @@
  *
  * What makes it fast: the rows of an arrow or polygon visit only the span its
  * edges allow, not the whole bounding box; a stroke's mask skips empty runs eight
- * bytes at a time; the hot loops run eight pixels per step with AVX2. */
+ * bytes at a time, 64 with AVX2; the hot loops run eight pixels per step with AVX2. */
 #include "asm.inc"
 
         .section .rdata,"dr"
@@ -54,6 +54,8 @@
                 .byte 0, 1, 0, 1, 0, 1, 0, 1, 4, 5, 4, 5, 4, 5, 4, 5
 .Lv_whi:        .byte 8, 9, 8, 9, 8, 9, 8, 9, 12, 13, 12, 13, 12, 13, 12, 13
                 .byte 8, 9, 8, 9, 8, 9, 8, 9, 12, 13, 12, 13, 12, 13, 12, 13
+/* vpshufb: four pixels by channel, B B B B G G G G R R R R A A A A */
+.Lk_planes:     .byte 0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15
 .Lk_7f:         .long 0x7F7F7F, 0x7F7F7F, 0x7F7F7F, 0x7F7F7F
 .Lk_0f:         .long 0x0F0F0F, 0x0F0F0F, 0x0F0F0F, 0x0F0F0F
 .Lk_b:          .long 0x0000FF, 0x0000FF, 0x0000FF, 0x0000FF
@@ -82,6 +84,8 @@
 .Lf_0_7:        .long 0x3F333333    /* 0.7f */
 .Lf_0_6:        .long 0x3F19999A    /* 0.6f */
 .Lf_0_2:        .long 0x3E4CCCCD    /* 0.2f */
+.Lw_127:        .short 127
+.Lw_8081:       .short 0x8081       /* x / 255 = (x * this) >> 23 for x < 65536 */
 
         .bss
         .balign 8
@@ -238,7 +242,8 @@ ENDF
 .endm
 
 /* ---- void d_dim_row(uint32_t *d, const uint32_t *s, int n) -------------------------
- * d[i] = ((s[i] & 0xFEFEFE) >> 1) + ((s[i] & 0xF0F0F0) >> 4): 56% brightness. */
+ * d[i] = ((s[i] & 0xFEFEFE) >> 1) + ((s[i] & 0xF0F0F0) >> 4): 56% brightness. d may
+ * be s. */
 
 FUNC d_dim_row
         ENDPROLOG
@@ -251,6 +256,9 @@ FUNC d_dim_row
         jb .Ldr_sse
         vpbroadcastd ymm4, dword ptr [rip + .Lk_7f]
         vpbroadcastd ymm5, dword ptr [rip + .Lk_0f]
+        movsxd r9, r8d
+        vmovdqu ymm3, ymmword ptr [rdx + r9*4 - 32]     /* the last 8, read before the loop */
+        lea r9, [rcx + r9*4 - 32]                       /* may dim some of them in place */
         mov eax, r8d
         shr eax, 4                      /* 16 pixels per round */
         jz .Ldr_a8
@@ -259,14 +267,14 @@ FUNC d_dim_row
         vmovdqu ymm1, ymmword ptr [rdx + 32]
         vpsrld ymm2, ymm0, 1
         vpsrld ymm0, ymm0, 4
-        vpsrld ymm3, ymm1, 1
-        vpsrld ymm1, ymm1, 4
         vpand ymm2, ymm2, ymm4
         vpand ymm0, ymm0, ymm5
-        vpand ymm3, ymm3, ymm4
-        vpand ymm1, ymm1, ymm5
         vpaddd ymm0, ymm0, ymm2
-        vpaddd ymm1, ymm1, ymm3
+        vpsrld ymm2, ymm1, 1
+        vpsrld ymm1, ymm1, 4
+        vpand ymm2, ymm2, ymm4
+        vpand ymm1, ymm1, ymm5
+        vpaddd ymm1, ymm1, ymm2
         vmovdqu ymmword ptr [rcx], ymm0
         vmovdqu ymmword ptr [rcx + 32], ymm1
         add rdx, 64
@@ -283,19 +291,15 @@ FUNC d_dim_row
         vpand ymm0, ymm0, ymm5
         vpaddd ymm0, ymm0, ymm2
         vmovdqu ymmword ptr [rcx], ymm0
-        add rdx, 32
-        add rcx, 32
 .Ldr_at:
-        and r8d, 7
+        test r8d, 7                     /* the last 1..7 pixels: the final 8 again */
         jz .Ldr_avx_done
-        /* the last 1..7 pixels: redo the final 8 (source and destination never overlap) */
-        vmovdqu ymm0, ymmword ptr [rdx + r8*4 - 32]
-        vpsrld ymm2, ymm0, 1
-        vpsrld ymm0, ymm0, 4
+        vpsrld ymm2, ymm3, 1
+        vpsrld ymm3, ymm3, 4
         vpand ymm2, ymm2, ymm4
-        vpand ymm0, ymm0, ymm5
-        vpaddd ymm0, ymm0, ymm2
-        vmovdqu ymmword ptr [rcx + r8*4 - 32], ymm0
+        vpand ymm3, ymm3, ymm5
+        vpaddd ymm3, ymm3, ymm2
+        vmovdqu ymmword ptr [r9], ymm3
 .Ldr_avx_done:
         vzeroupper
         ret
@@ -767,6 +771,14 @@ ENDF
 #define MO_AB 0x3C
 #define MO_BX0 0x40
 #define MO_CNT 0x44
+#define MO_SL 0x48              /* AVX2: what the averages read = r, clipped to the source */
+#define MO_ST 0x4C
+#define MO_SR 0x50
+#define MO_SB 0x54
+#define MO_SRC 0x58             /* pixel (0, 0) of the source */
+#define MO_DST 0x60             /* and of the destination */
+#define MO_INV 0x68             /* 2^32 / (b * b), rounded up */
+#define MO_FULL 0x70            /* b * b, the pixels of a whole block; 0 when b > 64 */
 
 .macro MOS_ACC                  /* add the B, G and R bytes of xmm0 to xmm2, xmm3, xmm4 */
         movdqa xmm1, xmm0
@@ -782,6 +794,29 @@ ENDF
         paddq xmm4, xmm0
 .endm
 
+/* The same for the eight pixels of ymm0 (AVX2): the B, G, R, A sums are dwords in each
+ * half of ymm4. ymm2 = .Lk_planes, ymm5 = bytes of 1, ymm3 = words of 1. */
+.macro MOS_ACC8
+        vpshufb ymm0, ymm0, ymm2
+        vpmaddubsw ymm0, ymm0, ymm5             /* pairs of a channel */
+        vpmaddwd ymm0, ymm0, ymm3               /* four of a channel */
+        vpaddd ymm4, ymm4, ymm0
+.endm
+
+/* [rsp + slot] = where pixel (0, 0) of the surface s would lie, stride = its bytes per row */
+.macro MOS_ORIGIN s, stride, slot
+        movsxd \stride, dword ptr [\s + SURF_STRIDE]
+        movsxd rax, dword ptr [\s + SURF_OY]
+        imul rax, \stride
+        movsxd rcx, dword ptr [\s + SURF_OX]
+        add rax, rcx
+        shl rax, 2
+        neg rax
+        add rax, qword ptr [\s + SURF_PX]
+        mov qword ptr [rsp + \slot], rax
+        shl \stride, 2
+.endm
+
 FUNC d_mosaic
         PUSHREG rbx
         PUSHREG rbp
@@ -791,7 +826,7 @@ FUNC d_mosaic
         PUSHREG r13
         PUSHREG r14
         PUSHREG r15
-        ALLOC 0x58
+        ALLOC 0x78
         ENDPROLOG
         mov r12, rcx                    /* dst */
         mov r13, rdx                    /* src */
@@ -842,6 +877,9 @@ FUNC d_mosaic
         imul eax, r15d
         add eax, dword ptr [r14 + RC_T]
         mov ebp, eax                    /* by */
+        CPU_LEVEL
+        cmp eax, 2
+        je .Lma_begin
         pxor xmm5, xmm5
 .Lmo_by:
         cmp ebp, dword ptr [rsp + MO_AB]
@@ -973,8 +1011,594 @@ FUNC d_mosaic
 .Lmo_by_next:
         add ebp, r15d
         jmp .Lmo_by
+
+        /* ---- AVX2: eight source pixels per step ----
+         * The same blocks in the same order as above, the fill inline. ebx = bx, ebp = by,
+         * r15d = b, r8 / r9 = bytes per row of the source / the destination; for a row of
+         * blocks rsi / rdi = pixel (0, first row) to read / to fill, r10d / r11d = rows. */
+.Lma_begin:
+        mov eax, dword ptr [r14 + RC_L]
+        cmp eax, dword ptr [r13 + SURF_CL]
+        cmovl eax, dword ptr [r13 + SURF_CL]
+        mov dword ptr [rsp + MO_SL], eax
+        mov eax, dword ptr [r14 + RC_T]
+        cmp eax, dword ptr [r13 + SURF_CT]
+        cmovl eax, dword ptr [r13 + SURF_CT]
+        mov dword ptr [rsp + MO_ST], eax
+        mov eax, dword ptr [r14 + RC_R]
+        cmp eax, dword ptr [r13 + SURF_CR]
+        cmovg eax, dword ptr [r13 + SURF_CR]
+        mov dword ptr [rsp + MO_SR], eax
+        mov eax, dword ptr [r14 + RC_B]
+        cmp eax, dword ptr [r13 + SURF_CB]
+        cmovg eax, dword ptr [r13 + SURF_CB]
+        mov dword ptr [rsp + MO_SB], eax
+        MOS_ORIGIN r13, r8, MO_SRC
+        MOS_ORIGIN r12, r9, MO_DST
+        /* x / (b * b) = (x * inv) >> 32 for every x a whole block can sum up to, while b <= 64 */
+        mov ecx, r15d
+        imul ecx, r15d
+        xor eax, eax
+        cmp r15d, 64
+        ja 1f
+        mov eax, 0xFFFFFFFF
+        xor edx, edx
+        div ecx
+        inc eax
+        mov qword ptr [rsp + MO_INV], rax
+        mov eax, ecx
+1:      mov dword ptr [rsp + MO_FULL], eax
+        vbroadcasti128 ymm2, xmmword ptr [rip + .Lk_planes]
+        vpcmpeqd ymm3, ymm3, ymm3
+        vpabsb ymm5, ymm3                       /* bytes of 1 */
+        vpsrlw ymm3, ymm3, 15                   /* words of 1 */
+.Lma_by:
+        cmp ebp, dword ptr [rsp + MO_AB]
+        jge .Lma_done
+        mov eax, ebp
+        cmp eax, dword ptr [rsp + MO_ST]
+        cmovl eax, dword ptr [rsp + MO_ST]
+        lea r10d, [rbp + r15]
+        cmp r10d, dword ptr [rsp + MO_SB]
+        cmovg r10d, dword ptr [rsp + MO_SB]
+        sub r10d, eax                           /* source rows */
+        jle .Lma_by_next
+        cdqe
+        imul rax, r8
+        add rax, qword ptr [rsp + MO_SRC]
+        mov rsi, rax
+        mov eax, ebp
+        cmp eax, dword ptr [rsp + MO_AT]
+        cmovl eax, dword ptr [rsp + MO_AT]
+        lea r11d, [rbp + r15]
+        cmp r11d, dword ptr [rsp + MO_AB]
+        cmovg r11d, dword ptr [rsp + MO_AB]
+        sub r11d, eax                           /* rows to fill */
+        jle .Lma_by_next
+        cdqe
+        imul rax, r9
+        add rax, qword ptr [rsp + MO_DST]
+        mov rdi, rax
+        mov ebx, dword ptr [rsp + MO_BX0]       /* bx */
+.Lma_bx:
+        cmp ebx, dword ptr [rsp + MO_AR]
+        jge .Lma_by_next
+        mov eax, ebx
+        cmp eax, dword ptr [rsp + MO_SL]
+        cmovl eax, dword ptr [rsp + MO_SL]
+        lea r12d, [rbx + r15]
+        cmp r12d, dword ptr [rsp + MO_SR]
+        cmovg r12d, dword ptr [rsp + MO_SR]
+        sub r12d, eax                           /* source width */
+        jle .Lma_next
+        cdqe
+        lea r13, [rsi + rax*4]                  /* first source pixel */
+        lea eax, [r12 - 1]
+        mov r14d, eax
+        shr r14d, 3
+        shl r14, 5                              /* bytes of a row before its last vector */
+        add r13, r14
+        neg r14
+        and eax, 7
+        inc eax
+        vmovd xmm1, eax
+        vpbroadcastd ymm1, xmm1
+        vpcmpgtd ymm1, ymm1, ymmword ptr [rip + .Lv_iota]       /* the lanes of that vector */
+        vpxor xmm4, xmm4, xmm4
+        mov ecx, r10d
+        test r14, r14
+        jz .Lma_row1
+.Lma_row:
+        mov rdx, r14
+1:      vmovdqu ymm0, ymmword ptr [r13 + rdx]
+        MOS_ACC8
+        add rdx, 32
+        jnz 1b
+        vpmaskmovd ymm0, ymm1, ymmword ptr [r13]
+        MOS_ACC8
+        add r13, r8
+        dec ecx
+        jnz .Lma_row
+        jmp .Lma_avg
+.Lma_row1:                                      /* up to eight pixels wide: that vector alone */
+        vpmaskmovd ymm0, ymm1, ymmword ptr [r13]
+        MOS_ACC8
+        add r13, r8
+        dec ecx
+        jnz .Lma_row1
+.Lma_avg:
+        vextracti128 xmm0, ymm4, 1
+        vpaddd xmm0, xmm0, xmm4
+        vmovd r13d, xmm0                        /* blue */
+        vpextrd r14d, xmm0, 1                   /* green */
+        vpextrd eax, xmm0, 2                    /* red */
+        mov ecx, r12d
+        imul ecx, r10d                          /* pixels */
+        mov edx, ecx
+        shr edx, 1                              /* round to nearest */
+        add r13d, edx
+        add r14d, edx
+        add eax, edx
+        cmp ecx, dword ptr [rsp + MO_FULL]
+        jne 2f
+        mov rdx, qword ptr [rsp + MO_INV]       /* a whole block: by the reciprocal */
+        imul rax, rdx
+        imul r14, rdx
+        imul r13, rdx
+        shr rax, 32
+        shr r14, 32
+        shr r13, 32
+        shl eax, 16
+        shl r14d, 8
+        or eax, r14d
+        or eax, r13d
+        jmp 3f
+2:      xor edx, edx
+        div ecx
+        shl eax, 16
+        mov r12d, eax
+        mov eax, r14d
+        xor edx, edx
+        div ecx
+        shl eax, 8
+        or r12d, eax
+        mov eax, r13d
+        xor edx, edx
+        div ecx
+        or eax, r12d
+3:      or eax, 0xFF000000                      /* the average color */
+        vmovd xmm0, eax
+        vpbroadcastd ymm0, xmm0
+        /* fill the block's part of the area */
+        mov edx, ebx
+        cmp edx, dword ptr [rsp + MO_AL]
+        cmovl edx, dword ptr [rsp + MO_AL]
+        lea r12d, [rbx + r15]
+        cmp r12d, dword ptr [rsp + MO_AR]
+        cmovg r12d, dword ptr [rsp + MO_AR]
+        sub r12d, edx                           /* width */
+        jle .Lma_next
+        movsxd rdx, edx
+        lea r13, [rdi + rdx*4]
+        mov ecx, r11d
+        cmp r12d, 8
+        jb .Lma_fill4
+        /* r14 = where a row's last, possibly overlapping, store goes */
+        lea r14, [r12*4 - 32]
+.Lma_fill8:
+        xor edx, edx
+        jmp 5f
+4:      vmovdqu ymmword ptr [r13 + rdx], ymm0
+        add rdx, 32
+5:      cmp rdx, r14
+        jb 4b
+        vmovdqu ymmword ptr [r13 + r14], ymm0
+        add r13, r9
+        dec ecx
+        jnz .Lma_fill8
+        jmp .Lma_next
+.Lma_fill4:
+        cmp r12d, 4
+        jb .Lma_fill1
+6:      vmovdqu xmmword ptr [r13], xmm0         /* 4 to 7 pixels: two stores that may overlap */
+        vmovdqu xmmword ptr [r13 + r12*4 - 16], xmm0
+        add r13, r9
+        dec ecx
+        jnz 6b
+        jmp .Lma_next
+.Lma_fill1:                                     /* 1 to 3 pixels */
+        mov rdx, r13
+        mov r14d, r12d
+7:      mov dword ptr [rdx], eax
+        add rdx, 4
+        dec r14d
+        jnz 7b
+        add r13, r9
+        dec ecx
+        jnz .Lma_fill1
+.Lma_next:
+        add ebx, r15d
+        jmp .Lma_bx
+.Lma_by_next:
+        add ebp, r15d
+        jmp .Lma_by
+.Lma_done:
+        vzeroupper
 .Lmo_ret:
-        add rsp, 0x58
+        add rsp, 0x78
+        pop r15
+        pop r14
+        pop r13
+        pop r12
+        pop rdi
+        pop rsi
+        pop rbp
+        pop rbx
+        ret
+ENDF
+
+/* ---- void d_spot(const Surf *s, const RECT *h, int n) ---------------------------------
+ * Everything inside the clip is dimmed like d_dim_row, except the n rectangles at h.
+ * Row by row: the run from x to the nearest rectangle's left edge ahead is dimmed, a
+ * rectangle that holds x is skipped. */
+
+FUNC d_spot
+        PUSHREG rbx
+        PUSHREG rbp
+        PUSHREG rsi
+        PUSHREG rdi
+        PUSHREG r12
+        PUSHREG r13
+        PUSHREG r14
+        PUSHREG r15
+        ALLOC 0x28
+        ENDPROLOG
+        mov rbx, rcx                    /* s */
+        mov rsi, rdx                    /* h */
+        mov edi, r8d                    /* n */
+        mov r12d, dword ptr [rbx + SURF_CT]     /* y */
+        mov r15d, dword ptr [rbx + SURF_CR]
+        cmp r15d, dword ptr [rbx + SURF_CL]
+        jle .Lsp_ret
+        mov eax, r12d                   /* r13 = the pixel at (0, y), as if the row began at x = 0 */
+        sub eax, dword ptr [rbx + SURF_OY]
+        cdqe
+        movsxd rbp, dword ptr [rbx + SURF_STRIDE]
+        imul rax, rbp
+        movsxd rcx, dword ptr [rbx + SURF_OX]
+        sub rax, rcx
+        mov r13, qword ptr [rbx + SURF_PX]
+        lea r13, [r13 + rax*4]
+        shl rbp, 2                      /* bytes per row */
+.Lsp_row:
+        cmp r12d, dword ptr [rbx + SURF_CB]
+        jge .Lsp_ret
+        mov r14d, dword ptr [rbx + SURF_CL]     /* x */
+.Lsp_run:                               /* r8d = where the run from x ends */
+        mov r8d, r15d
+        mov rdx, rsi
+        mov ecx, edi
+.Lsp_hole:
+        dec ecx
+        js .Lsp_dim
+        cmp r12d, dword ptr [rdx + RC_T]
+        jl .Lsp_next
+        cmp r12d, dword ptr [rdx + RC_B]
+        jge .Lsp_next
+        mov eax, dword ptr [rdx + RC_L]
+        cmp r14d, eax
+        jl .Lsp_ahead
+        cmp r14d, dword ptr [rdx + RC_R]
+        jge .Lsp_next
+        mov r14d, dword ptr [rdx + RC_R]        /* x is in this one: on from its right edge */
+        cmp r14d, r15d
+        jl .Lsp_run
+        jmp .Lsp_row_next
+.Lsp_ahead:
+        cmp eax, r8d
+        cmovl r8d, eax
+.Lsp_next:
+        add rdx, RC_SIZE
+        jmp .Lsp_hole
+.Lsp_dim:
+        movsxd rax, r14d
+        lea rcx, [r13 + rax*4]
+        mov rdx, rcx
+        mov r14d, r8d                   /* x = the run's end */
+        sub r8d, eax
+        call d_dim_row
+        cmp r14d, r15d
+        jl .Lsp_run
+.Lsp_row_next:
+        add r13, rbp
+        inc r12d
+        jmp .Lsp_row
+.Lsp_ret:
+        add rsp, 0x28
+        pop r15
+        pop r14
+        pop r13
+        pop r12
+        pop rdi
+        pop rsi
+        pop rbp
+        pop rbx
+        ret
+ENDF
+
+/* ---- void d_lens(const Surf *dst, const Surf *src, RECT r, int z) -------------------------
+ * r shows its own middle z times larger: the pixel at (x, y) of r becomes src's pixel
+ * at (sl + (x - r.left) / z, st + (y - r.top) / z), where (sl, st) is the corner of the
+ * middle part, (w + z - 1) / z by (h + z - 1) / z pixels, centered in r. Pixels whose
+ * source is outside src's clip stay as they are. r is left as it is. src may be dst
+ * (the canvas). Each source row is copied, z times wider, into the coverage mask, which
+ * is left zeroed. */
+
+#define LN_XA 0x20              /* the part of r that is drawn */
+#define LN_XB 0x24
+#define LN_YA 0x28
+#define LN_YB 0x2C
+#define LN_SL 0x30
+#define LN_ST 0x34
+#define LN_JA 0x38              /* the first source column, counted from sl */
+#define LN_N 0x3C               /* source pixels per row */
+#define LN_OFF 0x40             /* where xa is in the copied row (bytes) */
+#define LN_ROWB 0x44            /* bytes per destination row */
+#define LN_TMP 0x48             /* the copied row */
+#define LN_END 0x50             /* the source row index the pass ends before */
+#define LN_KA 0x54              /* the first source row index */
+#define LN_STEP 0x58
+
+/* One axis: \lo, \hi = r's edges, \clo, \chi = the clip edges' offsets, \s, \a, \b =
+ * where the middle part's start and the drawn range go. Jumps to .Lln_ret when
+ * nothing is drawn. Clobbers rax, rcx, rdx, r8, r9, rbx. */
+.macro LN_AXIS lo, hi, clo, chi, s, a, b
+        mov ebx, dword ptr [r14 + \hi]
+        sub ebx, dword ptr [r14 + \lo]  /* the size */
+        jle .Lln_ret
+        lea eax, [rbx + r15 - 1]
+        cdq
+        idiv r15d
+        mov ecx, eax                    /* the middle part's size */
+        mov eax, ebx
+        sub eax, ecx
+        shr eax, 1
+        add eax, dword ptr [r14 + \lo]
+        mov dword ptr [rsp + \s], eax
+        mov r8d, dword ptr [r14 + \lo]
+        cmp r8d, dword ptr [r12 + \clo]
+        cmovl r8d, dword ptr [r12 + \clo]
+        mov r9d, dword ptr [r14 + \hi]
+        cmp r9d, dword ptr [r12 + \chi]
+        cmovg r9d, dword ptr [r12 + \chi]
+        mov edx, dword ptr [r13 + \clo] /* the source clip cuts the middle part: */
+        sub edx, eax                    /* the first source pixel inside it */
+        jle 1f
+        cmp edx, ecx
+        jge .Lln_ret
+        imul edx, r15d
+        add edx, dword ptr [r14 + \lo]
+        cmp r8d, edx
+        cmovl r8d, edx
+1:      mov edx, dword ptr [r13 + \chi]
+        sub edx, eax                    /* the source pixels before its end */
+        jle .Lln_ret
+        cmp edx, ecx
+        jge 2f
+        imul edx, r15d
+        add edx, dword ptr [r14 + \lo]
+        cmp r9d, edx
+        cmovg r9d, edx
+2:      cmp r9d, r8d
+        jle .Lln_ret
+        mov dword ptr [rsp + \a], r8d
+        mov dword ptr [rsp + \b], r9d
+.endm
+
+FUNC d_lens
+        PUSHREG rbx
+        PUSHREG rbp
+        PUSHREG rsi
+        PUSHREG rdi
+        PUSHREG r12
+        PUSHREG r13
+        PUSHREG r14
+        PUSHREG r15
+        ALLOC 0x68
+        ENDPROLOG
+        mov r12, rcx                    /* dst */
+        mov r13, rdx                    /* src */
+        mov r14, r8                     /* &r */
+        mov r15d, r9d                   /* z */
+        cmp r15d, 2
+        jl .Lln_ret
+        LN_AXIS RC_L, RC_R, SURF_CL, SURF_CR, LN_SL, LN_XA, LN_XB
+        LN_AXIS RC_T, RC_B, SURF_CT, SURF_CB, LN_ST, LN_YA, LN_YB
+        /* the source columns ja..jb, and where xa is among their copies */
+        mov eax, dword ptr [rsp + LN_XA]
+        sub eax, dword ptr [r14 + RC_L]
+        cdq
+        idiv r15d
+        mov dword ptr [rsp + LN_JA], eax
+        shl edx, 2
+        mov dword ptr [rsp + LN_OFF], edx
+        mov ecx, eax
+        mov eax, dword ptr [rsp + LN_XB]
+        dec eax
+        sub eax, dword ptr [r14 + RC_L]
+        cdq
+        idiv r15d
+        sub eax, ecx
+        inc eax
+        mov dword ptr [rsp + LN_N], eax
+        imul eax, r15d
+        shl eax, 2
+        movsxd rcx, eax
+        mov eax, dword ptr [rsp + LN_XB]
+        sub eax, dword ptr [rsp + LN_XA]
+        shl eax, 2
+        mov dword ptr [rsp + LN_ROWB], eax
+        call mask_get
+        test rax, rax
+        jz .Lln_ret
+        mov qword ptr [rsp + LN_TMP], rax
+        /* source rows ka..kb (ebp counts them). Source row kc lies among the z rows it
+         * fills; a later one lies above the rows it fills, an earlier one below them.
+         * So kb..kc + 1 are done first, last to first, then ka..kc: a row that is a
+         * source is always read before it is written. */
+        mov eax, dword ptr [rsp + LN_YA]
+        sub eax, dword ptr [r14 + RC_T]
+        cdq
+        idiv r15d
+        mov dword ptr [rsp + LN_KA], eax
+        mov eax, dword ptr [rsp + LN_YB]
+        dec eax
+        sub eax, dword ptr [r14 + RC_T]
+        cdq
+        idiv r15d
+        mov ebp, eax                    /* kb */
+        mov eax, dword ptr [rsp + LN_ST]
+        sub eax, dword ptr [r14 + RC_T]
+        cdq
+        lea ecx, [r15 - 1]
+        idiv ecx                        /* kc */
+        mov ecx, dword ptr [rsp + LN_KA]
+        dec ecx
+        cmp eax, ecx
+        cmovl eax, ecx
+        cmp eax, ebp
+        cmovg eax, ebp                  /* kept within ka - 1 .. kb */
+        mov dword ptr [rsp + LN_END], eax
+        mov dword ptr [rsp + LN_STEP], -1
+.Lln_group:
+        cmp ebp, dword ptr [rsp + LN_END]
+        je .Lln_turn
+        /* the source row, z times wider, into the copy */
+        mov eax, dword ptr [rsp + LN_ST]
+        add eax, ebp
+        sub eax, dword ptr [r13 + SURF_OY]
+        cdqe
+        movsxd rcx, dword ptr [r13 + SURF_STRIDE]
+        imul rax, rcx
+        mov ecx, dword ptr [rsp + LN_SL]
+        add ecx, dword ptr [rsp + LN_JA]
+        sub ecx, dword ptr [r13 + SURF_OX]
+        movsxd rcx, ecx
+        add rax, rcx
+        mov rsi, qword ptr [r13 + SURF_PX]
+        lea rsi, [rsi + rax*4]
+        mov rdi, qword ptr [rsp + LN_TMP]
+        mov ecx, dword ptr [rsp + LN_N]
+        cmp r15d, 2
+        je .Lln_x2
+        cmp r15d, 3
+        je .Lln_x3
+        cmp r15d, 4
+        jne .Lln_x1
+.Lln_x4:
+        cmp ecx, 4
+        jb .Lln_x1
+        movdqu xmm0, xmmword ptr [rsi]
+        pshufd xmm1, xmm0, 0x00
+        pshufd xmm2, xmm0, 0x55
+        pshufd xmm3, xmm0, 0xAA
+        pshufd xmm0, xmm0, 0xFF
+        movdqu xmmword ptr [rdi], xmm1
+        movdqu xmmword ptr [rdi + 16], xmm2
+        movdqu xmmword ptr [rdi + 32], xmm3
+        movdqu xmmword ptr [rdi + 48], xmm0
+        add rsi, 16
+        add rdi, 64
+        sub ecx, 4
+        jmp .Lln_x4
+.Lln_x3:
+        cmp ecx, 4
+        jb .Lln_x1
+        movdqu xmm0, xmmword ptr [rsi]
+        pshufd xmm1, xmm0, 0x40         /* a a a b */
+        pshufd xmm2, xmm0, 0xA5         /* b b c c */
+        pshufd xmm0, xmm0, 0xFE         /* c d d d */
+        movdqu xmmword ptr [rdi], xmm1
+        movdqu xmmword ptr [rdi + 16], xmm2
+        movdqu xmmword ptr [rdi + 32], xmm0
+        add rsi, 16
+        add rdi, 48
+        sub ecx, 4
+        jmp .Lln_x3
+.Lln_x2:
+        cmp ecx, 4
+        jb .Lln_x1
+        movdqu xmm0, xmmword ptr [rsi]
+        movdqa xmm1, xmm0
+        punpckldq xmm0, xmm0            /* a a b b */
+        punpckhdq xmm1, xmm1            /* c c d d */
+        movdqu xmmword ptr [rdi], xmm0
+        movdqu xmmword ptr [rdi + 16], xmm1
+        add rsi, 16
+        add rdi, 32
+        sub ecx, 4
+        jmp .Lln_x2
+.Lln_x1:                                /* the last pixels, and any other z: one at a time */
+        test ecx, ecx
+        jz .Lln_rows
+1:      mov eax, dword ptr [rsi]
+        add rsi, 4
+        mov edx, r15d
+2:      mov dword ptr [rdi], eax
+        add rdi, 4
+        dec edx
+        jnz 2b
+        dec ecx
+        jnz 1b
+.Lln_rows:                              /* into the rows it fills, as far as they are drawn */
+        mov eax, ebp
+        imul eax, r15d
+        add eax, dword ptr [r14 + RC_T]
+        lea ebx, [rax + r15]
+        cmp eax, dword ptr [rsp + LN_YA]
+        cmovl eax, dword ptr [rsp + LN_YA]
+        cmp ebx, dword ptr [rsp + LN_YB]
+        cmovg ebx, dword ptr [rsp + LN_YB]
+        sub ebx, eax                    /* rows */
+        sub eax, dword ptr [r12 + SURF_OY]
+        cdqe
+        movsxd rdx, dword ptr [r12 + SURF_STRIDE]
+        imul rax, rdx
+        mov ecx, dword ptr [rsp + LN_XA]
+        sub ecx, dword ptr [r12 + SURF_OX]
+        movsxd rcx, ecx
+        add rax, rcx
+        mov r8, qword ptr [r12 + SURF_PX]
+        lea r8, [r8 + rax*4]
+        shl rdx, 2
+        mov r9d, dword ptr [rsp + LN_OFF]
+        add r9, qword ptr [rsp + LN_TMP]
+        mov r10d, dword ptr [rsp + LN_ROWB]
+3:      mov rdi, r8
+        mov rsi, r9
+        mov ecx, r10d
+        rep movsb
+        add r8, rdx
+        dec ebx
+        jnz 3b
+        add ebp, dword ptr [rsp + LN_STEP]
+        jmp .Lln_group
+.Lln_turn:                              /* kb..kc + 1 are done: now ka..kc; after those, the end */
+        cmp dword ptr [rsp + LN_STEP], 1
+        je .Lln_clear
+        mov dword ptr [rsp + LN_STEP], 1
+        inc dword ptr [rsp + LN_END]    /* kc + 1 */
+        mov ebp, dword ptr [rsp + LN_KA]
+        jmp .Lln_group
+.Lln_clear:
+        mov rdi, qword ptr [rsp + LN_TMP]
+        mov ecx, dword ptr [rsp + LN_N]
+        imul ecx, r15d
+        shl ecx, 2
+        xor eax, eax
+        rep stosb
+.Lln_ret:
+        add rsp, 0x68
         pop r15
         pop r14
         pop r13
@@ -1000,17 +1624,18 @@ FUNC draw_release
         ret
 ENDF
 
-/* rax = zeroed buffer of rcx bytes (plus 8 spare, so 8-byte steps may run past the
- * end), or NULL. The buffer is reused between calls. */
+/* rax = zeroed buffer of rcx bytes (plus 64 spare, so steps of up to 64 bytes may
+ * run past the end), or NULL. The buffer is reused between calls: whoever writes
+ * into it leaves it zeroed. */
 SFUNC mask_get
-        PUSHREG rdi
         PUSHREG rsi
-        ALLOC 0x28
+        ALLOC 0x20
         ENDPROLOG
-        lea rsi, [rcx + 8]
+        lea rsi, [rcx + 64]
+        mov rax, qword ptr [rip + g_mask]
         cmp rsi, qword ptr [rip + g_mask_cap]
         jbe 1f
-        mov rcx, qword ptr [rip + g_mask]
+        mov rcx, rax
         call mem_free
         mov rcx, rsi
         call mem_alloc                  /* returns zeroed memory */
@@ -1019,15 +1644,8 @@ SFUNC mask_get
         test rax, rax
         cmovnz rcx, rsi
         mov qword ptr [rip + g_mask_cap], rcx
-        jmp 2f
-1:      mov rdi, qword ptr [rip + g_mask]
-        mov rcx, rsi
-        xor eax, eax
-        rep stosb
-        mov rax, qword ptr [rip + g_mask]
-2:      add rsp, 0x28
+1:      add rsp, 0x20
         pop rsi
-        pop rdi
         ret
 ENDF
 
@@ -1062,7 +1680,9 @@ ENDF
 #define PL_SB_R 0x78
 #define PL_SB_B 0x7C
 #define PL_XMM 0x80             /* xmm6-15 */
-#define PL_FRAME 0x128
+#define PL_BOXF_LT 0x120        /* AVX2: the stroke's box as floats, (left, top) four times */
+#define PL_BOXF_RB 0x140        /* and (right, bottom) */
+#define PL_FRAME 0x168
 #define PL_C (PL_FRAME + 64 + 40)
 #define PL_A (PL_FRAME + 64 + 48)
 #define PL_MULT (PL_FRAME + 64 + 56)
@@ -1191,22 +1811,48 @@ FUNC d_polyline
         xorps xmm5, xmm5
 1:
         movss dword ptr [rsp + PL_IN2], xmm5
-        /* bounding box of all points */
-        movss xmm0, dword ptr [rsi]     /* min x */
-        movaps xmm2, xmm0               /* max x */
-        movss xmm4, dword ptr [rsi + 4] /* min y */
-        movaps xmm5, xmm4               /* max y */
+        /* bounding box of all points: (x, y, x, y) minima and maxima, each kept twice
+         * so that four points go in per step */
+        movss xmm0, dword ptr [rsi]     /* x and y apart, as callers have just stored them */
+        movss xmm6, dword ptr [rsi + 4]
+        unpcklps xmm0, xmm6
+        movlhps xmm0, xmm0              /* min */
+        movaps xmm2, xmm0               /* max */
+        movaps xmm4, xmm0
+        movaps xmm5, xmm0
         mov eax, 1
-.Lpl_bb:
+.Lpl_bb4:
+        lea ecx, [rax + 4]
+        cmp ecx, r15d
+        jg .Lpl_bb1
+        movups xmm3, xmmword ptr [rsi + rax*8]
+        minps xmm0, xmm3
+        maxps xmm2, xmm3
+        movups xmm3, xmmword ptr [rsi + rax*8 + 16]
+        minps xmm4, xmm3
+        maxps xmm5, xmm3
+        mov eax, ecx
+        jmp .Lpl_bb4
+.Lpl_bb1:
         cmp eax, r15d
         jge .Lpl_bb_done
-        minss xmm0, dword ptr [rsi + rax*8]
-        maxss xmm2, dword ptr [rsi + rax*8]
-        minss xmm4, dword ptr [rsi + rax*8 + 4]
-        maxss xmm5, dword ptr [rsi + rax*8 + 4]
+        movss xmm3, dword ptr [rsi + rax*8]
+        movss xmm6, dword ptr [rsi + rax*8 + 4]
+        unpcklps xmm3, xmm6
+        movlhps xmm3, xmm3
+        minps xmm0, xmm3
+        maxps xmm2, xmm3
         inc eax
-        jmp .Lpl_bb
+        jmp .Lpl_bb1
 .Lpl_bb_done:
+        minps xmm0, xmm4
+        maxps xmm2, xmm5
+        movhlps xmm4, xmm0
+        minps xmm0, xmm4                /* min x, min y */
+        movhlps xmm5, xmm2
+        maxps xmm2, xmm5                /* max x, max y */
+        pshufd xmm4, xmm0, 0x55         /* min y */
+        pshufd xmm5, xmm2, 0x55         /* max y */
         subss xmm0, xmm1
         subss xmm4, xmm1
         addss xmm2, xmm1
@@ -1331,6 +1977,7 @@ FUNC d_polyline
         movaps xmm2, xmm1
         subss xmm2, dword ptr [rsp + PL_HALFW]
         subss xmm2, dword ptr [rip + .Lv_half]
+        xorps xmm3, xmm3                /* FLOORI's tmp: no dependency on the last pixel */
         FLOORI eax, xmm2, xmm3
         addss xmm1, dword ptr [rsp + PL_HALFW]
         addss xmm1, dword ptr [rip + .Lv_half]
@@ -1350,6 +1997,8 @@ FUNC d_polyline
         cdqe
         lea rdi, [r14 + rax]
 .Lps_px:
+        cmp byte ptr [rdi], 255         /* full already */
+        je .Lps_px_next
         xorps xmm2, xmm2
         cvtsi2ss xmm2, r8d
         addss xmm2, dword ptr [rip + .Lv_half]  /* px */
@@ -1414,7 +2063,36 @@ FUNC d_polyline
         vbroadcastss ymm14, dword ptr [rsp + PL_LIM]
         vbroadcastss ymm13, dword ptr [rsp + PL_LIM2]
         vbroadcastss ymm12, dword ptr [rsp + PL_IN2]
+        vpbroadcastq ymm0, qword ptr [rsp + PL_BOX_L]
+        vcvtdq2ps ymm0, ymm0
+        vmovups ymmword ptr [rsp + PL_BOXF_LT], ymm0
+        vpbroadcastq ymm0, qword ptr [rsp + PL_BOX_R]
+        vcvtdq2ps ymm0, ymm0
+        vmovups ymmword ptr [rsp + PL_BOXF_RB], ymm0
 .Lpa_seg:
+        /* every fourth segment: are the next four all out of reach, as the test below
+         * would find for each of them? */
+        test r12d, 3
+        jnz .Lpa_one
+        lea eax, [r12 + 4]
+        cmp eax, r13d
+        jg .Lpa_one
+        vmovups ymm0, ymmword ptr [rsi + r12*8]         /* a of the four */
+        vmovups ymm1, ymmword ptr [rsi + r12*8 + 8]     /* b */
+        vminps ymm2, ymm1, ymm0
+        vmaxps ymm0, ymm1, ymm0
+        vsubps ymm2, ymm2, ymm14
+        vaddps ymm0, ymm0, ymm14
+        /* reaches past the box's left and top, and starts before its right and bottom */
+        vcmpnleps ymm0, ymm0, ymmword ptr [rsp + PL_BOXF_LT]
+        vcmpngeps ymm2, ymm2, ymmword ptr [rsp + PL_BOXF_RB]
+        vandps ymm0, ymm0, ymm2
+        vpermilps ymm1, ymm0, 0xB1
+        vtestps ymm1, ymm0                              /* in x and in y, for one of the four? */
+        jnz .Lpa_one
+        add r12d, 3
+        jmp .Lpa_seg_next
+.Lpa_one:
         vmovss xmm0, dword ptr [rsi + r12*8]            /* ax */
         vmovss xmm1, dword ptr [rsi + r12*8 + 4]        /* ay */
         vmovaps xmm2, xmm0
@@ -1505,27 +2183,54 @@ FUNC d_polyline
         vsubss xmm1, xmm0, xmm10
         vmulss xmm1, xmm1, xmm8
         vbroadcastss ymm6, xmm1                 /* (py - ay) * dy */
-        vmovd xmm4, r8d
-        vpbroadcastd ymm4, xmm4
-        vpaddd ymm4, ymm4, ymmword ptr [rip + .Lv_iota]
         mov eax, r8d
         sub eax, dword ptr [rsp + PL_BOX_L]
         cdqe
         lea rdi, [r14 + rax]
+.Lpa_x:
+        vmovd xmm4, r8d
+        vpbroadcastd ymm4, xmm4
+        vpaddd ymm4, ymm4, ymmword ptr [rip + .Lv_iota]
 .Lpa_vec:
         cmp ecx, 8
         jb .Lpa_tail
+        cmp qword ptr [rdi], -1
+        je .Lpa_full
         PIX8 0
         vpaddd ymm4, ymm4, ymmword ptr [rip + .Lv_eight]
         add rdi, 8
         sub ecx, 8
         jmp .Lpa_vec
+        /* on to the first byte that is not full, 32 at a time */
+.Lpa_full:
+        vpcmpeqd ymm1, ymm1, ymm1
+1:      vpcmpeqb ymm0, ymm1, ymmword ptr [rdi]
+        vpmovmskb eax, ymm0                     /* a bit per full byte */
+        inc eax
+        jnz 2f
+        add rdi, 32
+        sub ecx, 32
+        jg 1b
+        jmp .Lpa_row_next
+2:      bsf eax, eax
+        add rdi, rax
+        sub ecx, eax
+        jle .Lpa_row_next
+        mov r8d, r9d
+        sub r8d, ecx
+        jmp .Lpa_x
 .Lpa_tail:
         test ecx, ecx
         jz .Lpa_row_next
-        lea rdx, [rip + .Lv_lanes]
         mov eax, ecx
         shl eax, 5
+        mov rdx, qword ptr [rdi]
+        not rdx
+        neg ecx
+        shl ecx, 3
+        shl rdx, cl                             /* the bytes of the row, moved up */
+        jz .Lpa_row_next                        /* all full already */
+        lea rdx, [rip + .Lv_lanes]
         PIX8 1
 .Lpa_row_next:
         movsxd rax, dword ptr [rsp + PL_BW]
@@ -1559,6 +2264,136 @@ FUNC d_polyline
         mov edi, dword ptr [rsp + PL_A]
         movzx r11d, byte ptr [rsp + PL_MULT]
         mov r10d, 0x80808081                    /* x / 255 = (x * this) >> 39 */
+        cmp dword ptr [rip + draw_cpu], 2
+        jne .Lpl_crow
+        cmp edi, 255                            /* v * a + 127 must fit a word */
+        ja .Lpl_crow
+        cmp ebp, 8                              /* a row must hold a vector */
+        jb .Lpl_crow
+        /* r8 = the eight mask bytes that are a plain store: all full for an opaque pen,
+         * else 0, which no group has (each starts at a covered byte) */
+        xor r8d, r8d
+        cmp edi, 255
+        jne .Lpa_comp
+        test r11d, r11d
+        jnz .Lpa_comp
+        /* an opaque pen's narrower rows: their last vector would mostly reload pixels
+         * just stored, which costs some CPUs more than it saves */
+        cmp ebp, 12
+        jb .Lpl_crow
+        dec r8
+
+        /* ---- AVX2: eight pixels per step ----
+         * The arithmetic of the loop below on 16-bit channels. Both divisions by 255 are
+         * ((x + 127) * 0x8081) >> 23: coverage times alpha, and the marker's product, where
+         * it equals (x + 128 + ((x + 128) >> 8)) >> 8. The blend (c * w + d * (256 - w)) >> 8
+         * gives c for w = 256 and leaves d for w = 0. */
+.Lpa_comp:
+        vpxor xmm15, xmm15, xmm15
+        vmovd xmm14, edi
+        vpbroadcastw ymm14, xmm14               /* a */
+        vmovd xmm13, esi
+        vpbroadcastd ymm13, xmm13
+        vpor ymm12, ymm13, ymmword ptr [rip + .Lv_alpha]        /* the color, opaque */
+        vpunpcklbw ymm13, ymm13, ymm15          /* its channels as words */
+        vmovdqu ymm11, ymmword ptr [rip + .Lv_256w]
+        vpbroadcastw ymm10, word ptr [rip + .Lw_127]
+        vpbroadcastw ymm9, word ptr [rip + .Lw_8081]
+.Lpa_crow:
+        xor ecx, ecx
+        /* to the next covered pixel: 64 bytes at a time, then the half and the byte it is in */
+.Lpa_cskip:
+        vmovdqu ymm0, ymmword ptr [r13 + rcx]
+        vpor ymm0, ymm0, ymmword ptr [r13 + rcx + 32]
+        vptest ymm0, ymm0
+        jnz 1f
+        add rcx, 64
+.Lpa_cmore:
+        cmp rcx, rbp
+        jb .Lpa_cskip
+        jmp .Lpa_crow_next
+1:      vpcmpeqb ymm0, ymm15, ymmword ptr [r13 + rcx]
+        vpmovmskb eax, ymm0                     /* a bit per empty byte */
+        inc eax
+        jnz 2f
+        add rcx, 32
+        jmp 1b
+2:      bsf eax, eax
+        add rcx, rax
+.Lpa_cg:
+        mov rdx, rbp
+        sub rdx, rcx                            /* pixels left in the row */
+        jle .Lpa_crow_next
+        mov rax, qword ptr [r13 + rcx]
+        cmp rdx, 8
+        jae .Lpa_c8
+        /* fewer than eight: the row's last eight pixels, their bytes moved up so that
+         * the pixels done before get 0 and stay as they are */
+        lea ecx, [rdx*8]
+        neg ecx
+        shl rax, cl
+        lea rcx, [rbp - 8]
+.Lpa_c8:
+        mov qword ptr [r13 + rcx], 0            /* the mask is left zeroed */
+        cmp rax, r8
+        je .Lpa_cfull
+        vmovq xmm0, rax
+        vpmovzxbw xmm0, xmm0                    /* v */
+        vpmullw xmm0, xmm0, xmm14
+        vpaddw xmm0, xmm0, xmm10
+        vpmulhuw xmm0, xmm0, xmm9
+        vpsrlw xmm0, xmm0, 7                    /* coverage times alpha */
+        vpsrlw xmm1, xmm0, 7
+        vpaddw xmm0, xmm0, xmm1                 /* w, 0..256 */
+        vpmovzxwd ymm0, xmm0
+        vpcmpgtd ymm1, ymm0, ymm15
+        vpslld ymm1, ymm1, 24                   /* alpha 255, except where w = 0 */
+        vpshufb ymm2, ymm0, ymmword ptr [rip + .Lv_wlo]
+        vpshufb ymm0, ymm0, ymmword ptr [rip + .Lv_whi]
+        vmovdqu ymm3, ymmword ptr [r14 + rcx*4] /* destination */
+        vpunpcklbw ymm4, ymm3, ymm15
+        vpunpckhbw ymm5, ymm3, ymm15
+        vmovdqa ymm6, ymm13                     /* color to lay down */
+        vmovdqa ymm7, ymm13
+        test r11d, r11d
+        jz 3f
+        vpmullw ymm6, ymm4, ymm13               /* marker: the destination times the color */
+        vpmullw ymm7, ymm5, ymm13
+        vpaddw ymm6, ymm6, ymm10
+        vpaddw ymm7, ymm7, ymm10
+        vpmulhuw ymm6, ymm6, ymm9
+        vpmulhuw ymm7, ymm7, ymm9
+        vpsrlw ymm6, ymm6, 7
+        vpsrlw ymm7, ymm7, 7
+3:      vpsubw ymm3, ymm11, ymm2                /* 256 - w */
+        vpsubw ymm8, ymm11, ymm0
+        vpmullw ymm4, ymm4, ymm3
+        vpmullw ymm5, ymm5, ymm8
+        vpmullw ymm6, ymm6, ymm2
+        vpmullw ymm7, ymm7, ymm0
+        vpaddw ymm4, ymm4, ymm6
+        vpaddw ymm5, ymm5, ymm7
+        vpsrlw ymm4, ymm4, 8
+        vpsrlw ymm5, ymm5, 8
+        vpackuswb ymm4, ymm4, ymm5
+        vpor ymm4, ymm4, ymm1
+        vmovdqu ymmword ptr [r14 + rcx*4], ymm4
+.Lpa_cnext:
+        add rcx, 8
+        cmp byte ptr [r13 + rcx], 0
+        jne .Lpa_cg
+        jmp .Lpa_cmore
+.Lpa_cfull:
+        vmovdqu ymmword ptr [r14 + rcx*4], ymm12
+        jmp .Lpa_cnext
+.Lpa_crow_next:
+        add r13, rbp
+        add r14, r15
+        dec dword ptr [rsp + PL_BH]
+        jnz .Lpa_crow
+        vzeroupper
+        jmp .Lpl_done
+
 .Lpl_crow:
         xor ecx, ecx
 .Lpl_cx:
@@ -1662,6 +2497,11 @@ FUNC d_polyline
         add r14, r15
         dec dword ptr [rsp + PL_BH]
         jnz .Lpl_crow
+        mov rdi, qword ptr [rsp + PL_MASK]
+        mov rcx, r13
+        sub rcx, rdi
+        xor eax, eax
+        rep stosb                               /* the mask is left zeroed */
 .Lpl_done:
         movaps xmm6, xmmword ptr [rsp + PL_XMM + 0x00]
         movaps xmm7, xmmword ptr [rsp + PL_XMM + 0x10]
@@ -1879,6 +2719,7 @@ FUNC d_ellipse
         mov eax, r15d
         COLOR_WORDS EL_CW
 .Lel_row:
+        xorps xmm0, xmm0                        /* no dependency on the last pixel */
         cvtsi2ss xmm0, r12d
         addss xmm0, xmm12
         subss xmm0, dword ptr [rsp + EL_CY]     /* fy */
@@ -1941,6 +2782,7 @@ FUNC d_ellipse
 .Lel_span:
         movss xmm4, dword ptr [rbp]
         subss xmm4, xmm12
+        xorps xmm5, xmm5                        /* FLOORI's tmp: no dependency on the last pixel */
         FLOORI r13d, xmm4, xmm5
         cmp r13d, dword ptr [rsp + EL_BL]
         cmovl r13d, dword ptr [rsp + EL_BL]
@@ -2889,7 +3731,7 @@ ENDF
 #define IC_XMM 0xC0
 
 FUNC d_icon
-        cmp edx, 20                  /* IC_FORMULA_PREVIEW is the last icon */
+        cmp edx, 24                  /* IC_FORMULA_PREVIEW is the last icon */
         ja .Lic_ret0
         PUSHREG rbx
         PUSHREG rsi
@@ -3055,6 +3897,7 @@ ENDF
         .balign 8
 .Lic_table:                             /* by icon id (draw.h); the mosaic is special */
         .quad .Lic_rect, .Lic_ellipse, .Lic_line, .Lic_arrow, .Lic_pen, .Lic_marker, 0
-        .quad .Lic_text, .Lic_number, .Lic_undo, .Lic_redo, .Lic_pin, .Lic_save, .Lic_close, .Lic_ok
-        .quad .Lic_ocr, .Lic_ocrcopy, .Lic_long, .Lic_qr, .Lic_formula, .Lic_formula_preview
+        .quad .Lic_text, .Lic_number, .Lic_spot, .Lic_lens, .Lic_undo, .Lic_redo, .Lic_pin, .Lic_save
+        .quad .Lic_close, .Lic_ok, .Lic_ocr, .Lic_ocrcopy, .Lic_long, .Lic_front, .Lic_back, .Lic_qr, .Lic_formula, .Lic_formula_preview
+        .balign 4
 #include "draw_icons.inc"

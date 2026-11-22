@@ -164,7 +164,7 @@ static bool dict_read(void)
     OrtModelMetadata *meta = NULL;
     if (!ok(G.o.SessionGetModelMetadata(G.rec.s, &meta)))
         return false;
-    bool got = ok(G.o.ModelMetadataLookupCustomMetadataMap(meta, G.alloc, "character", &G.dict));
+    bool got = G.dict || ok(G.o.ModelMetadataLookupCustomMetadataMap(meta, G.alloc, "character", &G.dict));
     G.o.ReleaseModelMetadata(meta);
     if (!got || !G.dict)
         return fail(L"the recognition model carries no character list");
@@ -198,16 +198,21 @@ bool ocr_load(const WCHAR *dir, int threads)
     if (!G.dll) {
         if (!find_file(dir, L"onnxruntime.dll", path, COUNTOF(path)))
             return fail(L"the text recognition module is not installed");
-        /* by full path: Windows keeps an older onnxruntime.dll of its own in System32 */
-        G.dll = LoadLibraryExW(path, NULL, LOAD_WITH_ALTERED_SEARCH_PATH);
-        if (!G.dll)
-            return fail(L"onnxruntime.dll could not be loaded (it needs the Visual C++ runtime)");
+        /* By full path: Windows keeps an older onnxruntime.dll of its own in System32. The Visual
+         * C++ runtime it needs is looked for beside it, where the module has its own, then in
+         * System32, and nowhere else. */
+        G.dll = LoadLibraryExW(path, NULL, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32);
+        if (!G.dll) {
+            wsprintfW(G.err, L"onnxruntime.dll could not be loaded (error %lu)", GetLastError());
+            return false;
+        }
         const OrtApiBase *(*base)(void) = (const OrtApiBase *(*)(void))(void *)GetProcAddress(G.dll, "OrtGetApiBase");
         const void *api = base ? base()->GetApi(ORT_API_WANTED) : NULL;
-        if (!api)
-            return fail(L"onnxruntime.dll is too old");
-        ort_bind(&G.o, api);
+        if (api)
+            ort_bind(&G.o, api);
     }
+    if (!G.o.CreateEnv)
+        return fail(L"onnxruntime.dll is too old");
     /* Measured on 14 cores, for one line, a table and a full window of text: the
      * detector is fastest with 6 threads of its own; the recognizer with 4 of its own
      * and 6 callers at once. More of either only get in each other's way. */
@@ -773,6 +778,8 @@ static bool read_lines(const uint32_t *px, int stride, const Box *box, int nbox,
         *o = *ln;
         o->text = out->chars.n;
         str_addn(&out->chars, j->scratch[ln->row].chars.p + ln->text, ln->len);
+        if (out->chars.n != o->text + o->len)
+            j->good = fail(L"out of memory");
     }
     bool good = j->good;
     for (int i = 0; i < REC_WORKERS; i++) {
@@ -797,16 +804,17 @@ static void sort_by(int *idx, int n, const float *key)
 }
 
 /* Reading order: top to bottom; lines that overlap by half their height are one row
- * and go left to right. */
-static void arrange(OcrOut *o)
+ * and go left to right. Without the memory for it, false and the lines freed: their
+ * rows would still be the reading threads'. */
+static bool arrange(OcrOut *o)
 {
     int n = o->n;
     if (n < 2)
-        return;
-    int *idx = mem_alloc((size_t)n * sizeof(int));
-    float *key = mem_alloc((size_t)n * sizeof(float));
-    OcrLine *sorted = mem_alloc((size_t)n * sizeof(OcrLine));
-    if (idx && key && sorted) {
+        return true;
+    OcrLine *sorted = mem_alloc((size_t)n * (sizeof(OcrLine) + sizeof(int) + sizeof(float)));
+    if (sorted) {
+        int *idx = (int *)(sorted + n);
+        float *key = (float *)(idx + n);
         for (int i = 0; i < n; i++) {
             idx[i] = i;
             key[i] = (float)(o->line[i].rc.top + o->line[i].rc.bottom);
@@ -833,17 +841,32 @@ static void arrange(OcrOut *o)
             i = j;
         }
         memcpy(o->line, sorted, (size_t)n * sizeof(OcrLine));
+        mem_free(sorted);
+        return true;
     }
-    mem_free(idx);
-    mem_free(key);
-    mem_free(sorted);
+    ocr_free(o);
+    return fail(L"out of memory");
+}
+
+/* The module, loaded. One whose DLL does not load for want of its runtime files (error 126:
+ * the computer has none either, 1114: an old one) is completed and loaded again: once, and
+ * here, not in ocr_load, which the helper also calls before there is anything to read. */
+static bool ready(void)
+{
+    static bool mended;
+    if (ocr_load(NULL, 0))
+        return true;
+    if (G.dll || mended)
+        return false;
+    mended = true;
+    return ocr_mend() && ocr_load(NULL, 0);
 }
 
 /* one picture, looked at as a whole; its lines as they were found, not yet in reading order */
 static bool run_band(const uint32_t *px, int stride, int w, int h, float screen, OcrOut *out)
 {
     memset(out, 0, sizeof *out);
-    if (!G.rec.s && !ocr_load(NULL, 0))
+    if (!ready())
         return false;
     if (w < 4 || h < 4)
         return true;
@@ -887,12 +910,8 @@ static bool run_band(const uint32_t *px, int stride, int w, int h, float screen,
 bool ocr_run(const uint32_t *px, int stride, int w, int h, float screen, OcrOut *out)
 {
     int band = CLAMPI(BAND_AREA / MAXI(w, 1), 512, 2400);
-    if (h <= band + BAND_LAP) {
-        bool good = run_band(px, stride, w, h, screen, out);
-        if (good)
-            arrange(out);
-        return good;
-    }
+    if (h <= band + BAND_LAP)
+        return run_band(px, stride, w, h, screen, out) && arrange(out);
     memset(out, 0, sizeof *out);
     int cap = 0;
     for (int y0 = 0;; y0 += band - BAND_LAP) {
@@ -909,18 +928,20 @@ bool ocr_run(const uint32_t *px, int stride, int w, int h, float screen, OcrOut 
             int mid = y0 + (ln.rc.top + ln.rc.bottom) / 2;
             if (mid < from || mid >= to)
                 continue;
-            if (out->n == cap) {
-                OcrLine *more = mem_grow(out->line, (size_t)(cap = cap ? cap * 2 : 256) * sizeof(OcrLine));
-                if (!more) {
-                    ocr_free(&part);
-                    ocr_free(out);
-                    return false;
-                }
-                out->line = more;
-            }
             ln.rc.top += y0, ln.rc.bottom += y0;
             ln.text = out->chars.n;
             str_addn(&out->chars, part.chars.p + part.line[i].text, ln.len);
+            OcrLine *more = out->line;
+            if (out->chars.n != ln.text + ln.len)
+                more = NULL;
+            else if (out->n == cap)
+                more = mem_grow(out->line, (size_t)(cap = cap ? cap * 2 : 256) * sizeof(OcrLine));
+            if (!more) {
+                ocr_free(&part);
+                ocr_free(out);
+                return fail(L"out of memory");
+            }
+            out->line = more;
             out->line[out->n++] = ln;
         }
         out->ms_find += part.ms_find, out->ms_read += part.ms_read;
@@ -928,8 +949,7 @@ bool ocr_run(const uint32_t *px, int stride, int w, int h, float screen, OcrOut 
         if (last)
             break;
     }
-    arrange(out);
-    return true;
+    return arrange(out);
 }
 
 void ocr_text(const OcrOut *o, WCHAR between, Str *s)

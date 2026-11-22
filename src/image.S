@@ -39,7 +39,6 @@
 #define K_DT_CALCRECT 0x400
 #define K_TEXT_COLOR 0x1E1E1E           /* RGB(30, 30, 30) */
 #define K_MAX_PATH 260
-#define K_HANDLE_FLAG_INHERIT 1
 #define K_STARTF_USESTDHANDLES 0x100
 #define K_ASFW_ANY -1
 #define K_INFINITE -1
@@ -47,7 +46,6 @@
 #define K_WAIT_OBJECT_0 0
 #define K_PM_REMOVE 1
 #define K_WM_QUIT 0x12
-#define K_CSIDL_MYPICTURES 0x27
 #define K_OFN_FLAGS 0x88080E            /* EXPLORER OVERWRITEPROMPT PATHMUSTEXIST NOCHANGEDIR ENABLESIZING HIDEREADONLY */
 #define K_STD_OUTPUT_HANDLE -11
 
@@ -66,19 +64,11 @@
 #define DF_BYTES 20
 #define MI_RCWORK 20                    /* MONITORINFO */
 #define MI_BYTES 40
-#define ST_YEAR 0                       /* SYSTEMTIME */
-#define ST_MONTH 2
-#define ST_DAY 6
-#define ST_HOUR 8
-#define ST_MINUTE 10
-#define ST_SECOND 12
-#define ST_BYTES 16
 #define SA_LENGTH 0                     /* SECURITY_ATTRIBUTES */
 #define SA_DESCRIPTOR 8
 #define SA_INHERIT 16
 #define SA_BYTES 24
-#define SI_CB 0                         /* STARTUPINFOW */
-#define SI_FLAGS 60
+#define SI_FLAGS 60                     /* STARTUPINFOW */
 #define SI_STDOUTPUT 88
 #define SI_BYTES 104
 #define PI_PROCESS 0                    /* PROCESS_INFORMATION */
@@ -92,7 +82,6 @@
 #define OFN_FILTERINDEX 44
 #define OFN_FILE 48
 #define OFN_MAXFILE 56
-#define OFN_INITIALDIR 80
 #define OFN_TITLE 88
 #define OFN_FLAGS 96
 #define OFN_DEFEXT 104
@@ -140,7 +129,6 @@ k_10:           .long 0x41200000            /* 10.f */
 a_CoInitializeEx:       .asciz "CoInitializeEx"
 a_CoCreateInstance:     .asciz "CoCreateInstance"
 a_GetSaveFileNameW:     .asciz "GetSaveFileNameW"
-a_SHGetFolderPathW:     .asciz "SHGetFolderPathW"
 
         .balign 2
         /* L"ole32.dll" */
@@ -155,33 +143,14 @@ w_jpeg:
         /* L".bmp" */
 w_bmp:
         .short 0x002E, 0x0062, 0x006D, 0x0070, 0x0000
-        /* L"sniplite_%04d-%02d-%02d_%02d-%02d-%02d.png" */
-w_namefmt:
-        .short 0x0073, 0x006E, 0x0069, 0x0070, 0x006C, 0x0069, 0x0074, 0x0065, 0x005F, 0x0025, 0x0030, 0x0034
-        .short 0x0064, 0x002D, 0x0025, 0x0030, 0x0032, 0x0064, 0x002D, 0x0025, 0x0030, 0x0032, 0x0064, 0x005F
-        .short 0x0025, 0x0030, 0x0032, 0x0064, 0x002D, 0x0025, 0x0030, 0x0032, 0x0064, 0x002D, 0x0025, 0x0030
-        .short 0x0032, 0x0064, 0x002E, 0x0070, 0x006E, 0x0067, 0x0000
         /* L" --save-dialog " */
 w_arg:
         .short 0x0020, 0x002D, 0x002D, 0x0073, 0x0061, 0x0076, 0x0065, 0x002D, 0x0064, 0x0069, 0x0061, 0x006C
         .short 0x006F, 0x0067, 0x0020, 0x0000
-        /* L" " */
-w_space:
-        .short 0x0020, 0x0000
-        /* L"sniplite.png" */
-w_defname:
-        .short 0x0073, 0x006E, 0x0069, 0x0070, 0x006C, 0x0069, 0x0074, 0x0065, 0x002E, 0x0070, 0x006E, 0x0067
-        .short 0x0000
-        /* L"" */
-w_empty:
-        .short 0x0000
         /* L"comdlg32.dll" */
 w_comdlg32:
         .short 0x0063, 0x006F, 0x006D, 0x0064, 0x006C, 0x0067, 0x0033, 0x0032, 0x002E, 0x0064, 0x006C, 0x006C
         .short 0x0000
-        /* L"shell32.dll" */
-w_shell32:
-        .short 0x0073, 0x0068, 0x0065, 0x006C, 0x006C, 0x0033, 0x0032, 0x002E, 0x0064, 0x006C, 0x006C, 0x0000
         /* L"png" */
 w_png:
         .short 0x0070, 0x006E, 0x0067, 0x0000
@@ -190,8 +159,6 @@ w_png:
         .balign 8
 co_create:      .space 8                /* CoCreateInstance, once com_init succeeded */
 com_state:      .space 4                /* 0 untried, 1 ok, -1 failed */
-        .balign 2
-g_last_dir:     .space 2 * K_MAX_PATH   /* folder of the last saved file */
 
 /* ---- COM / WIC ------------------------------------------------------------------- */
 
@@ -1410,7 +1377,8 @@ SFUNC hdrop_first
         ret
         ENDF
 
-/* int clip_get_image(HWND owner, Img *out) */
+/* int clip_get_image(HWND owner, Img *out, bool text) */
+#define GI_TEXT 112                     /* the caller's slot of the third argument */
 FUNC clip_get_image
         PUSHREG rbx
         PUSHREG rsi
@@ -1422,6 +1390,7 @@ FUNC clip_get_image
         ENDPROLOG
         mov rbx, rcx
         mov rsi, rdx
+        mov byte ptr [rsp + GI_TEXT], r8b
         xorps xmm0, xmm0
         movups xmmword ptr [rsi], xmm0
         movups xmmword ptr [rsi + 16], xmm0
@@ -1475,6 +1444,8 @@ FUNC clip_get_image
         mov r12, rax
         jmp .Lgi_close
 .Lgi_text:
+        cmp byte ptr [rsp + GI_TEXT], 0
+        je .Lgi_close
         mov ecx, K_CF_UNICODETEXT
         API IsClipboardFormatAvailable
         test eax, eax
@@ -1745,25 +1716,22 @@ FUNC text_image_at
 
 /* bool save_dialog(WCHAR *path, int cap) */
 #define SD_EXE 112                      /* WCHAR[MAX_PATH] */
-#define SD_NAME 632                     /* WCHAR[64] */
-#define SD_T 760                        /* SYSTEMTIME */
-#define SD_CMD 776                      /* Str */
-#define SD_SA 792
-#define SD_RD 816
-#define SD_WR 824
-#define SD_SI 832
-#define SD_PI 936
-#define SD_MSG 960
-#define SD_CODE 1008
-#define SD_N 1012
-#define SD_BUF 1024                     /* WCHAR[MAX_PATH * 2 + 1] */
+#define SD_CMD 632                      /* Str */
+#define SD_SA 648
+#define SD_RD 672
+#define SD_WR 680
+#define SD_SI 688
+#define SD_PI 792
+#define SD_MSG 816
+#define SD_CODE 864
+#define SD_N 868
+#define SD_BUF 872                      /* WCHAR[MAX_PATH * 2 + 1] */
 #define SD_BUFBYTES 1042
 FUNC save_dialog
         PUSHREG rbx
         PUSHREG rsi
         PUSHREG rdi
-        PUSHREG r12
-        ALLOC 2072
+        ALLOC 1920
         ENDPROLOG
         mov rbx, rcx                    /* path */
         mov esi, edx                    /* cap */
@@ -1773,21 +1741,6 @@ FUNC save_dialog
         API GetModuleFileNameW
         test eax, eax
         jz .Lsd_false
-        lea rcx, [rsp + SD_T]
-        API GetLocalTime
-        lea rcx, [rsp + SD_NAME]
-        lea rdx, [rip + w_namefmt]
-        movzx r8d, word ptr [rsp + SD_T + ST_YEAR]
-        movzx r9d, word ptr [rsp + SD_T + ST_MONTH]
-        movzx eax, word ptr [rsp + SD_T + ST_DAY]
-        mov qword ptr [rsp + 32], rax
-        movzx eax, word ptr [rsp + SD_T + ST_HOUR]
-        mov qword ptr [rsp + 40], rax
-        movzx eax, word ptr [rsp + SD_T + ST_MINUTE]
-        mov qword ptr [rsp + 48], rax
-        movzx eax, word ptr [rsp + SD_T + ST_SECOND]
-        mov qword ptr [rsp + 56], rax
-        API wsprintfW
         xorps xmm0, xmm0
         movups xmmword ptr [rsp + SD_CMD], xmm0
         lea rcx, [rsp + SD_CMD]
@@ -1797,14 +1750,7 @@ FUNC save_dialog
         lea rdx, [rip + w_arg]
         call str_add
         lea rcx, [rsp + SD_CMD]
-        lea rdx, [rsp + SD_NAME]
-        call str_add_quoted
-        lea rcx, [rsp + SD_CMD]
-        lea rdx, [rip + w_space]
-        call str_add
-        lea rcx, [rsp + SD_CMD]
-        lea rdx, [rip + g_last_dir]
-        call str_add_quoted
+        call save_dialog_args           /* the name and the folders (main.c) */
         cmp qword ptr [rsp + SD_CMD + STR_P], 0
         je .Lsd_false
         mov qword ptr [rsp + SD_SA + SA_LENGTH], SA_BYTES
@@ -1820,15 +1766,10 @@ FUNC save_dialog
         lea rcx, [rsp + SD_CMD]
         call str_free
         jmp .Lsd_false
-1:      mov rcx, qword ptr [rsp + SD_RD]
-        mov edx, K_HANDLE_FLAG_INHERIT
-        xor r8d, r8d
-        API SetHandleInformation
-        lea rdi, [rsp + SD_SI]
+1:      lea rdi, [rsp + SD_SI]
         xor eax, eax
         mov ecx, SI_BYTES / 8
         rep stosq
-        mov dword ptr [rsp + SD_SI + SI_CB], SI_BYTES
         mov dword ptr [rsp + SD_SI + SI_FLAGS], K_STARTF_USESTDHANDLES
         mov rax, qword ptr [rsp + SD_WR]
         mov qword ptr [rsp + SD_SI + SI_STDOUTPUT], rax
@@ -1836,18 +1777,13 @@ FUNC save_dialog
         API AllowSetForegroundWindow
         lea rcx, [rsp + SD_EXE]
         mov rdx, qword ptr [rsp + SD_CMD + STR_P]
-        xor r8d, r8d
-        xor r9d, r9d
-        mov qword ptr [rsp + 32], 1     /* inherit handles */
-        mov qword ptr [rsp + 40], 0
-        mov qword ptr [rsp + 48], 0
-        mov qword ptr [rsp + 56], 0
-        lea rax, [rsp + SD_SI]
-        mov qword ptr [rsp + 64], rax
+        lea r8, [rsp + SD_SI]
+        lea r9, [rsp + SD_WR]           /* the helper inherits the pipe's write end and no other handle */
+        mov qword ptr [rsp + 32], 1
         lea rax, [rsp + SD_PI]
-        mov qword ptr [rsp + 72], rax
-        API CreateProcessW
-        mov edi, eax                    /* started */
+        mov qword ptr [rsp + 40], rax
+        call spawn_inheriting           /* (util.c) */
+        movzx edi, al                   /* started */
         mov rcx, qword ptr [rsp + SD_WR]
         API CloseHandle
         lea rcx, [rsp + SD_CMD]
@@ -1931,37 +1867,14 @@ FUNC save_dialog
         lea rdx, [rsp + SD_BUF]
         mov r8d, esi
         API lstrcpynW
-        lea rcx, [rip + g_last_dir]
-        lea rdx, [rsp + SD_BUF]
-        mov r8d, K_MAX_PATH
-        API lstrcpynW
-        lea rcx, [rip + g_last_dir]
-        xor eax, eax                    /* last backslash */
-        mov rdx, rcx
-.Lsd_slash:
-        movzx r8d, word ptr [rdx]
-        test r8d, r8d
-        jz .Lsd_slash_done
-        cmp r8d, 0x5C
-        cmove rax, rdx
-        add rdx, 2
-        jmp .Lsd_slash
-.Lsd_slash_done:
-        test rax, rax
-        jz .Lsd_true
-        sub rcx, rax
-        cmp rcx, -4                     /* "C:\": keep the backslash of a drive root */
-        jne 1f
-        add rax, 2
-1:      mov word ptr [rax], 0
-.Lsd_true:
+        lea rcx, [rsp + SD_BUF]
+        call save_dialog_done           /* the next one opens in its folder (main.c) */
         mov eax, 1
         jmp .Lsd_ret
 .Lsd_false:
         xor eax, eax
 .Lsd_ret:
-        add rsp, 2072
-        pop r12
+        add rsp, 1920
         pop rdi
         pop rsi
         pop rbx
@@ -1971,23 +1884,16 @@ FUNC save_dialog
 /* int save_dialog_helper(int argc, WCHAR **argv): body of `sniplite.exe --save-dialog` */
 #define SH_OFN 48
 #define SH_N 200
-#define SH_INIT 208                     /* WCHAR[MAX_PATH] */
-#define SH_FILE 728                     /* WCHAR[MAX_PATH * 2] */
+#define SH_FILE 208                     /* WCHAR[MAX_PATH * 2] */
 FUNC save_dialog_helper
         PUSHREG rbx
         PUSHREG rsi
         PUSHREG rdi
-        ALLOC 1776
+        ALLOC 1248
         ENDPROLOG
-        lea rbx, [rip + w_defname]      /* name */
-        lea rsi, [rip + w_empty]        /* dir */
-        cmp ecx, 2
-        jle 1f
-        mov rbx, qword ptr [rdx + 16]
-1:      cmp ecx, 3
-        jle 1f
-        mov rsi, qword ptr [rdx + 24]
-1:      call com_init                   /* the Explorer-style dialog needs an STA */
+        mov ebx, ecx                    /* argc */
+        mov rsi, rdx                    /* argv */
+        call com_init                   /* the Explorer-style dialog needs an STA */
         lea rcx, [rip + w_comdlg32]
         API LoadLibraryW
         test rax, rax
@@ -1998,37 +1904,10 @@ FUNC save_dialog_helper
         test rax, rax
         jz .Lsh_2
         mov rdi, rax
-        lea rcx, [rsp + SH_INIT]
+        mov ecx, ebx
         mov rdx, rsi
-        mov r8d, K_MAX_PATH
-        API lstrcpynW
-        cmp word ptr [rsp + SH_INIT], 0
-        jne .Lsh_have_dir
-        lea rcx, [rip + w_shell32]
-        API LoadLibraryW
-        test rax, rax
-        jz .Lsh_no_dir
-        mov rcx, rax
-        lea rdx, [rip + a_SHGetFolderPathW]
-        API GetProcAddress
-        test rax, rax
-        jz .Lsh_no_dir
-        xor ecx, ecx
-        mov edx, K_CSIDL_MYPICTURES
-        xor r8d, r8d
-        xor r9d, r9d
-        lea r10, [rsp + SH_INIT]
-        mov qword ptr [rsp + 32], r10
-        call rax
-        test eax, eax
-        jns .Lsh_have_dir
-.Lsh_no_dir:
-        mov word ptr [rsp + SH_INIT], 0
-.Lsh_have_dir:
-        lea rcx, [rsp + SH_FILE]
-        mov rdx, rbx
-        mov r8d, 2 * K_MAX_PATH
-        API lstrcpynW
+        lea r8, [rsp + SH_FILE]
+        call save_dialog_file           /* in the first of the folders that is there (main.c) */
         mov rsi, rdi                    /* GetSaveFileNameW */
         lea rdi, [rsp + SH_OFN]
         xor eax, eax
@@ -2041,11 +1920,6 @@ FUNC save_dialog_helper
         lea rax, [rsp + SH_FILE]
         mov qword ptr [rsp + SH_OFN + OFN_FILE], rax
         mov dword ptr [rsp + SH_OFN + OFN_MAXFILE], 2 * K_MAX_PATH
-        xor eax, eax
-        lea rdx, [rsp + SH_INIT]
-        cmp word ptr [rdx], 0
-        cmovne rax, rdx
-        mov qword ptr [rsp + SH_OFN + OFN_INITIALDIR], rax
         TR rax, SAVE_TITLE
         mov qword ptr [rsp + SH_OFN + OFN_TITLE], rax
         mov dword ptr [rsp + SH_OFN + OFN_FLAGS], K_OFN_FLAGS
@@ -2074,7 +1948,7 @@ FUNC save_dialog_helper
 .Lsh_2:
         mov eax, 2
 .Lsh_ret:
-        add rsp, 1776
+        add rsp, 1248
         pop rdi
         pop rsi
         pop rbx

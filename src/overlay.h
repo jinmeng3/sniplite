@@ -20,6 +20,9 @@ bool ov_last_timing(OvTiming *t); /* false before the first capture */
 /* main.c: the user leaves (Esc, a close button). A capture that holds something may ask first. */
 void ov_leave(void);        /* the capture itself: asks when a selection is made */
 bool leave_ok(HWND owner);  /* the question alone, above owner; true: leave */
+/* main.c: a capture was copied or pinned and is off the screen. While the settings say "also save",
+ * its picture goes into a file too. */
+void also_save(const uint32_t *px, int w, int h);
 
 /* scroll.c: the long screenshot. long_begin is called by the capture, which closes
  * right after: its selection becomes the region that grows as the user scrolls. */

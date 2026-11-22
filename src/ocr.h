@@ -34,8 +34,12 @@ bool ocr_remove(void); /* false when a file is in use */
  * it into that folder, checked the same way; ocr_load does this when the folder is missing. */
 bool ocr_packed(void);
 bool ocr_unpack(void);
+/* A module without the Visual C++ runtime files of its own gets them: out of the program's
+ * own file, or downloaded when this is an installed copy. False when they are there or
+ * cannot be had. Blocking. */
+bool ocr_mend(void);
 int ocr_size_mb(void);
-/* dir: the module's folder, NULL for the "ocr" folder next to the program.
+/* dir: the module's folder as a full path, NULL for the "ocr" folder next to the program.
  * threads: 0 lets the module choose. Loading again is free. */
 bool ocr_load(const WCHAR *dir, int threads);
 /* screen: the scaling of the screen the picture was taken from (1 = 100%, 2 = 200%);
@@ -63,13 +67,14 @@ void ocr_hide(void);   /* the capture ends or does something else */
 void ocr_copy(void);   /* the selection's text to the clipboard */
 /* The text of any picture. beside: where on the screen what it shows is. With an owner
  * window the text comes in the panel, beside that place and above the owner; without,
- * it goes to the clipboard. False when the module is missing (the preferences open). */
+ * it goes to the clipboard. False when the module is missing (the preferences open) or the
+ * picture could not be handed over. */
 bool ocr_picture(const uint32_t *px, int w, int h, RECT beside, HWND owner);
-bool ocr_picture_shown(void); /* false once that panel was closed from its own side */
+bool ocr_picture_shown(void); /* false once that panel was closed from its own side, or its helper left before showing it */
 void ocr_picture_hide(void);
 int ocr_helper(int argc, WCHAR **argv); /* body of `sniplite.exe --ocr` and `--ocr-file` */
-/* For the helper of a quick capture: the notice in the lower right corner of the monitor
- * with that point, and the wait until it has faded. */
+/* For the helper of a quick capture, and for "also save" when no helper started: the notice in
+ * the lower right corner of the monitor with that point, and the wait until it has faded. */
 void notice_corner(const WCHAR *line, const WCHAR *path, POINT on_monitor, int stay_ms);
 void notice_wait(void);
 /* The text: rows separated by CR LF; lines of one row by `between` (a space, or a

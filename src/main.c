@@ -21,9 +21,11 @@
 
 #define WM_APP_TRAY (WM_APP + 2)
 #define WM_APP_SETTINGS_DONE (WM_APP + 3)
+#define WM_APP_ALSO_FAILED (WM_APP + 6)
 #define TIMER_MENU_CAPTURE 1
 #define TIMER_UPDATE 2
 #define TIMER_THEME 3 /* a theme that changed during a capture waits for its end */
+#define TIMER_FRONT 4 /* the window in front, looked at again (front_check) */
 #define UPDATE_FIRST_MS (60 * 1000)           /* first check a minute after start */
 #define UPDATE_EVERY_MS (24 * 60 * 60 * 1000) /* then once a day */
 
@@ -55,6 +57,9 @@ static struct {
     bool update_timer;   /* the daily update check is scheduled */
     WCHAR update_tag[32]; /* newer release already announced in a balloon */
     bool asking;         /* the question before a capture is left is on the screen */
+    HWINEVENTHOOK watch[2]; /* the window in front changed (watch_apply) */
+    HWND front;          /* that window, as last seen */
+    int aside;           /* the hotkeys are released for it: 1 its program is listed, 2 it fills its screen */
 } D;
 
 extern uint8_t O[];                          /* the capture's state, laid out as ov_layout.inc says */
@@ -70,9 +75,10 @@ static void hotkey_apply(int id, UINT mod, UINT vk)
     k->mod = mod;
     k->vk = vk;
     hotkey_format(mod, vk, k->text);
-    /* the two for text only while there is a module to read it: without one they would take keys for nothing */
+    /* the two for text only while there is a module to read it: without one they would take keys for nothing.
+     * None while they step aside for the program in front: its own keys reach it. */
     bool wanted = vk && (id < HK_OCR || ocr_there);
-    k->ok = !wanted || RegisterHotKey(D.hwnd, id, mod | MOD_NOREPEAT, vk);
+    k->ok = !wanted || D.aside || RegisterHotKey(D.hwnd, id, mod | MOD_NOREPEAT, vk);
 }
 
 static bool hotkeys_ok(void)
@@ -81,6 +87,108 @@ static bool hotkeys_ok(void)
         if (!D.hk[i].ok)
             return false;
     return true;
+}
+
+static bool app_listed(DWORD pid)
+{
+    WCHAR path[MAX_PATH];
+    DWORD n = MAX_PATH;
+    HANDLE p = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    bool known = p && QueryFullProcessImageNameW(p, 0, path, &n);
+    if (p)
+        CloseHandle(p);
+    if (!known)
+        return false;
+    const WCHAR *name = wcsrchr(path, L'\\');
+    name = name ? name + 1 : path;
+    for (const WCHAR *s = D.cfg.block_apps, *e; *s; s = *e ? e + 1 : e) {
+        while (*s == L' ')
+            s++;
+        for (e = s; *e && *e != L'|'; e++) {
+        }
+        int len = (int)(e - s);
+        while (len && s[len - 1] == L' ')
+            len--;
+        if (CompareStringOrdinal(s, len, name, -1, TRUE) == CSTR_EQUAL)
+            return true;
+    }
+    return false;
+}
+
+/* Does the inside of w cover its whole screen, as a game's does? Not a maximized window with a title
+ * bar: its inside is the work area, which is the whole screen where there is no taskbar. Not a tool
+ * window (the overlay of a program like this one), nor what is part of Windows: the desktop, Alt+Tab,
+ * the panels that are core windows. */
+static bool fills_screen(HWND w, DWORD pid)
+{
+    RECT r;
+    MONITORINFO mi = {sizeof mi};
+    WCHAR cls[32];
+    DWORD shell = 0;
+    GetWindowThreadProcessId(GetShellWindow(), &shell);
+    if (pid == shell || (GetWindowLongW(w, GWL_STYLE) & (WS_MAXIMIZE | WS_CAPTION)) == (WS_MAXIMIZE | WS_CAPTION) ||
+        (GetWindowLongW(w, GWL_EXSTYLE) & WS_EX_TOOLWINDOW) || !GetClassNameW(w, cls, COUNTOF(cls)) ||
+        !lstrcmpW(cls, L"Windows.UI.Core.CoreWindow") || !GetClientRect(w, &r) ||
+        !GetMonitorInfoW(MonitorFromWindow(w, MONITOR_DEFAULTTONEAREST), &mi))
+        return false;
+    MapWindowPoints(w, NULL, (POINT *)&r, 2);
+    return r.left <= mi.rcMonitor.left && r.top <= mi.rcMonitor.top && r.right >= mi.rcMonitor.right &&
+           r.bottom >= mi.rcMonitor.bottom;
+}
+
+/* Release the hotkeys, or take them back, by the window in front: w when Windows names none this
+ * moment, else the one last seen (between two windows, or while the lock screen has the keyboard).
+ * The list goes first: a listed program needs no look each second. */
+static void front_look(HWND w)
+{
+    HWND f = GetForegroundWindow();
+    DWORD pid = 0;
+    int aside = 0;
+    if (f || w)
+        D.front = f ? f : w;
+    if (GetWindowThreadProcessId(D.front, &pid) && pid != GetCurrentProcessId())
+        aside = D.cfg.block_apps[0] && app_listed(pid)                 ? 1
+                : D.cfg.block_fullscreen && fills_screen(D.front, pid) ? 2
+                                                                       : 0;
+    bool flip = !aside != !D.aside;
+    D.aside = aside;
+    for (int id = 1; flip && id < HK_COUNT; id++)
+        hotkey_apply(id, D.hk[id].mod, D.hk[id].vk);
+}
+
+/* With the switch for full-screen programs, one more look a second later, then each second for as
+ * long as it fills its screen and is not listed (WM_TIMER): a game takes its screen a moment after it
+ * comes to front, and nothing tells when a window leaves full screen. */
+static void front_check(HWND w)
+{
+    front_look(w);
+    if (D.cfg.block_fullscreen && !ov_active()) /* in front is the capture itself: nothing to wait for */
+        SetTimer(D.hwnd, TIMER_FRONT, 1000, NULL);
+}
+
+static void CALLBACK front_event(HWINEVENTHOOK hook, DWORD event, HWND w, LONG object, LONG child, DWORD thread, DWORD time)
+{
+    front_check(w);
+}
+
+/* The window in front is watched only while the settings name something to step aside for. The
+ * second event: a window back from the taskbar is in front before it has its size. */
+static void watch_apply(void)
+{
+    static const DWORD events[2] = {EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_MINIMIZEEND};
+    bool want = D.cfg.block_fullscreen || D.cfg.block_apps[0];
+    if (D.watch[0] && !D.cfg.block_fullscreen) /* without the switch, no look a second later nor each second */
+        KillTimer(D.hwnd, TIMER_FRONT);
+    for (int i = 0; i < 2; i++) {
+        if (want && !D.watch[i]) {
+            D.watch[i] = SetWinEventHook(events[i], events[i], NULL, front_event, 0, 0, WINEVENT_OUTOFCONTEXT);
+        } else if (!want && D.watch[i]) {
+            UnhookWinEvent(D.watch[i]);
+            D.watch[i] = NULL;
+        }
+    }
+    if (want || D.aside)
+        front_check(NULL);
 }
 
 /* ---- command helpers ---------------------------------------------------------------- */
@@ -153,28 +261,39 @@ static bool parse_ints(const WCHAR *s, int *v, int n)
     return *s == 0;
 }
 
-static void resolve_path(const WCHAR *cwd, const WCHAR *p, WCHAR *out, int cap)
+/* The caller's file as a full path. False when it cannot be told or does not fit: out is then the file as
+ * given, for the message. */
+static bool resolve_path(const WCHAR *cwd, const WCHAR *file, WCHAR *out, int cap)
 {
     WCHAR tmp[1025]; /* the 1024 characters wsprintfW can write, and the 0 */
-    bool abs = (p[0] && p[1] == L':') || (p[0] == L'\\' && p[1] == L'\\');
-    if (abs || !cwd[0])
-        lstrcpynW(tmp, p, MAX_PATH * 2);
-    else if (p[0] == L'\\' || p[0] == L'/') /* root of the caller's drive */
-        wsprintfW(tmp, L"%c:%s", cwd[0], p);
+    const WCHAR *p = file;
+    bool drive = cwd[0] && cwd[1] == L':';
+    int n;
+    if (drive && p[0] && p[1] == L':' && p[2] != L'\\' && p[2] != L'/' && (p[0] | 32) == (cwd[0] | 32))
+        p += 2; /* "C:a.png" on the caller's drive: in the caller's folder */
+    if ((p[0] && p[1] == L':') || (p[0] == L'\\' && p[1] == L'\\') || !cwd[0])
+        n = wsprintfW(tmp, L"%s", p);
+    else if (p[0] == L'\\' || p[0] == L'/') /* root of the caller's drive; that of a share is not looked for */
+        n = drive ? wsprintfW(tmp, L"%c:%s", cwd[0], p) : 0;
     else
-        wsprintfW(tmp, L"%s\\%s", cwd, p);
-    DWORD n = GetFullPathNameW(tmp, (DWORD)cap, out, NULL);
-    if (!n || n >= (DWORD)cap) /* failed, or out is too small */
-        lstrcpynW(out, tmp, cap);
+        n = wsprintfW(tmp, L"%s\\%s", cwd, p);
+    DWORD m = n > 0 && n < 1024 ? GetFullPathNameW(tmp, (DWORD)cap, out, NULL) : 0; /* 1024: cut */
+    if (m && m < (DWORD)cap)
+        return true;
+    lstrcpynW(out, file, cap);
+    return false;
 }
+
+/* the options that set a hotkey, by HK_*, and the NULL that ends a list for args_valid */
+static const WCHAR *kHkOpts[HK_COUNT + 1] = {NULL,           L"--hotkey",        L"--quick-hotkey",
+                                             L"--pin-hotkey", L"--toggle-hotkey", L"--ocr-hotkey",
+                                             L"--ocr-copy-hotkey"};
 
 static bool start_opts_parse(int argc, WCHAR **argv, StartOpts *so, Str *err)
 {
-    static const WCHAR *names[HK_COUNT] = {NULL,                L"--hotkey",     L"--quick-hotkey",   L"--pin-hotkey",
-                                           L"--toggle-hotkey", L"--ocr-hotkey", L"--ocr-copy-hotkey"};
     memset(so, 0, sizeof *so);
     for (int id = 1; id < HK_COUNT; id++) {
-        const WCHAR *v = opt_val(argc, argv, names[id]);
+        const WCHAR *v = opt_val(argc, argv, kHkOpts[id]);
         if (!v)
             continue;
         if (!hotkey_parse(v, &so->mod[id], &so->vk[id])) {
@@ -245,7 +364,7 @@ static void status_json(Str *out)
     for (int id = 1; id < HK_COUNT; id++)
         str_addf(out, L"%s\"%s\":{\"key\":\"%s\",\"ok\":%s}", id > 1 ? L"," : L"", keys[id], D.hk[id].text,
                  D.hk[id].ok ? L"true" : L"false");
-    str_add(out, L"},\"last_capture\":");
+    str_addf(out, L"},\"hotkeys_released\":%s,\"last_capture\":", D.aside ? L"true" : L"false");
     OvTiming t;
     if (ov_last_timing(&t)) {
         const double v[] = {t.total, t.grab, t.windows, t.paint, t.focus};
@@ -324,6 +443,14 @@ static void tray_refresh_tip(void)
 /* The capture's bars, light or dark: as the settings say, or as Windows is set for apps
  * (where it keeps that; no other way is documented). Looked up when it can have changed,
  * never on the way to a capture. A capture that is open keeps its look to its end. */
+/* A function of kernelbase.dll, which every process has. advapi32.dll, where these are documented, only
+ * forwards to it, and would load two more modules. */
+static FARPROC kernelbase(const char *name)
+{
+    HMODULE k = GetModuleHandleW(L"kernelbase.dll");
+    return k ? GetProcAddress(k, name) : NULL;
+}
+
 static void theme_apply(void)
 {
     typedef LSTATUS(WINAPI *PFN_RegGetValueW)(HKEY, LPCWSTR, LPCWSTR, DWORD, LPDWORD, PVOID, LPDWORD);
@@ -335,10 +462,8 @@ static void theme_apply(void)
     KillTimer(D.hwnd, TIMER_THEME);
     bool dark = D.cfg.theme == THEME_DARK;
     if (D.cfg.theme == THEME_AUTO) {
-        if (!get) { /* advapi32 is in every process that has a window; named, it is not one more import */
-            HMODULE a = LoadLibraryW(L"advapi32.dll");
-            get = a ? (PFN_RegGetValueW)(void *)GetProcAddress(a, "RegGetValueW") : NULL;
-        }
+        if (!get)
+            get = (PFN_RegGetValueW)(void *)kernelbase("RegGetValueW");
         DWORD light = 1, n = sizeof light;
         if (get && get(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize", L"AppsUseLightTheme",
                        RRF_RT_REG_DWORD, NULL, &light, &n) == ERROR_SUCCESS)
@@ -350,6 +475,7 @@ static void theme_apply(void)
 /* Apply settings. force_keys re-registers every hotkey (after the preferences window). */
 static void apply_config(const Config *c, bool force_keys)
 {
+    O[OV_DETECT] = (uint8_t)c->detect;
     for (int id = 1; id < HK_COUNT; id++)
         if (force_keys || c->mod[id] != D.hk[id].mod || c->vk[id] != D.hk[id].vk || !D.hk[id].ok)
             hotkey_apply(id, c->mod[id], c->vk[id]);
@@ -363,8 +489,9 @@ static void apply_config(const Config *c, bool force_keys)
         tray_add();
     else
         tray_remove();
-    /* the result is shown as a tray balloon: without the icon there is no point checking */
-    bool check = c->auto_update && c->tray;
+    /* the result is shown as a tray balloon: without the icon there is no point checking,
+     * nor in a portable copy, which the installer does not update */
+    bool check = c->auto_update && c->tray && update_installed_copy();
     if (check && !D.update_timer) {
         D.update_timer = SetTimer(D.hwnd, TIMER_UPDATE, UPDATE_FIRST_MS, NULL) != 0;
     } else if (!check && D.update_timer) {
@@ -374,6 +501,7 @@ static void apply_config(const Config *c, bool force_keys)
     D.cfg = *c;
     tray_refresh_tip();
     theme_apply();
+    watch_apply();
 }
 
 /* A newer release was found by `--update-check`: say so once, in a balloon. */
@@ -506,9 +634,8 @@ static void settings_done(void)
 static int cmd_start(int argc, WCHAR **argv, bool json, Str *out)
 {
     static const WCHAR *flags[] = {L"--json", L"--gdi", L"--dxgi", NULL};
-    static const WCHAR *opts[] = {L"--hotkey", L"--pin-hotkey", L"--toggle-hotkey", NULL};
     StartOpts so;
-    if (!args_valid(argc, argv, flags, opts, 0, out) || !start_opts_parse(argc, argv, &so, out))
+    if (!args_valid(argc, argv, flags, kHkOpts + 1, 0, out) || !start_opts_parse(argc, argv, &so, out))
         return EXIT_USAGE;
     apply_start(&so);
     if (json)
@@ -614,8 +741,10 @@ static int cmd_capture(int argc, WCHAR **argv, const WCHAR *cwd, bool json, Str 
         SetRect(&sr, x, y, x + GetSystemMetrics(SM_CXVIRTUALSCREEN), y + GetSystemMetrics(SM_CYVIRTUALSCREEN));
     }
     WCHAR path[MAX_PATH * 2];
-    if (file)
-        resolve_path(cwd, file, path, COUNTOF(path));
+    if (file && !resolve_path(cwd, file, path, COUNTOF(path))) {
+        str_addf(out, T(SAVE_FAILED), path);
+        return EXIT_FAIL;
+    }
     if (!file && !pin)
         clip = true; /* the useful default */
     return capture_now(sr, file ? path : NULL, clip, pin, json, out);
@@ -635,14 +764,13 @@ static int cmd_pin(int argc, WCHAR **argv, const WCHAR *cwd, bool json, Str *out
     int rc;
     WCHAR path[MAX_PATH * 2];
     if (file) {
-        resolve_path(cwd, file, path, COUNTOF(path));
-        rc = image_load(path, &im) ? EXIT_OK : EXIT_FAIL;
+        rc = resolve_path(cwd, file, path, COUNTOF(path)) && image_load(path, &im) ? EXIT_OK : EXIT_FAIL;
         if (rc)
             str_addf(out, T(ERR_READ_IMAGE), path);
     } else {
-        rc = clip_get_image(D.hwnd, &im);
+        rc = clip_get_image(D.hwnd, &im, D.cfg.pin_text);
         if (rc == EXIT_NOTHING)
-            str_add(out, T(CLIP_EMPTY));
+            str_add(out, D.cfg.pin_text ? T(CLIP_EMPTY) : T(CLIP_NO_IMAGE));
         else if (rc)
             str_add(out, T(CLIP_FAILED));
     }
@@ -700,7 +828,7 @@ static int cmd_run(int argc, WCHAR **argv, const WCHAR *cwd, Str *out)
     if (arg_eq(c, L"_reload") || arg_eq(c, L"_hkstate")) {
         if (arg_eq(c, L"_reload"))
             reload();
-        for (int id = 1; id < HK_COUNT; id++) /* 1 registered, 0 failed, 2 none */
+        for (int id = 1; id < HK_COUNT; id++) /* 1 registered or stepping aside, 0 failed, 2 none */
             str_addf(out, L"%d ", !D.hk[id].vk || (id >= HK_OCR && !ocr_there) ? 2 : D.hk[id].ok ? 1 : 0);
         return EXIT_OK;
     }
@@ -714,18 +842,9 @@ static int cmd_run(int argc, WCHAR **argv, const WCHAR *cwd, Str *out)
         long_cancel();
         return EXIT_OK;
     }
-    if (arg_eq(c, L"_again")) { /* sniplite was started while it runs: a capture. With the tray icon hidden,
-                                   the preferences: they have no other door then */
-        static WCHAR *capture[1] = {L"capture"};
-        if (D.cfg.tray)
-            return cmd_capture(1, capture, cwd, json, out);
-        if (!settings_open(NULL)) {
-            str_add(out, T(ERR_SETTINGS));
-            return EXIT_FAIL;
-        }
-        return EXIT_OK;
-    }
-    if (arg_eq(c, L"settings")) { /* `settings update`, `settings ocr`, `settings about`: on that tab */
+    /* sniplite was started while it runs (_again), or `settings`; `settings update`, `settings ocr`,
+     * `settings about`: on that tab */
+    if (arg_eq(c, L"_again") || arg_eq(c, L"settings")) {
         static const WCHAR *pages[] = {L"update", L"ocr", L"about"};
         const WCHAR *page = NULL;
         for (int i = 0; argc > 1 && i < COUNTOF(pages); i++)
@@ -780,10 +899,77 @@ static LRESULT ipc_handle(HWND h, HWND reply, const COPYDATASTRUCT *cd)
 static void pin_clipboard(void)
 {
     Img im;
-    if (clip_get_image(D.hwnd, &im) == EXIT_OK)
+    if (clip_get_image(D.hwnd, &im, D.cfg.pin_text) == EXIT_OK)
         pin_add(&im, 0, 0, true);
     else
         MessageBeep(MB_ICONWARNING);
+}
+
+/* a file's name for this moment, as the settings say, without its ending; returns its length */
+static int file_name(WCHAR *out)
+{
+    SYSTEMTIME now;
+    GetLocalTime(&now);
+    return name_format(D.cfg.name, &now, out);
+}
+
+/* A folder of the user's (CSIDL_*), through shell32, which is loaded for it */
+static bool shell_folder(int csidl, WCHAR *dir)
+{
+    typedef HRESULT(WINAPI *PFN_SHGetFolderPathW)(HWND, int, HANDLE, DWORD, LPWSTR);
+    HMODULE sh = LoadLibraryW(L"shell32.dll");
+    PFN_SHGetFolderPathW get = sh ? (PFN_SHGetFolderPathW)(void *)GetProcAddress(sh, "SHGetFolderPathW") : NULL;
+    return get && SUCCEEDED(get(NULL, csidl, NULL, 0, dir));
+}
+
+/* ---- the save dialog, in a process of its own (image.S) ---- */
+
+/* What follows --save-dialog: the file it suggests, then the folders to open in, the one of the file last
+ * saved through it and the default save location. Which of them is there is for the helper to find out: a
+ * network folder that is gone can keep it waiting for seconds. */
+void save_dialog_args(Str *cmd)
+{
+    WCHAR name[NAME_CAP + 4];
+    lstrcpyW(name + file_name(name), L".png");
+    str_add_quoted(cmd, name);
+    str_add(cmd, L" ");
+    str_add_quoted(cmd, D.cfg.last_dir);
+    str_add(cmd, L" ");
+    str_add_quoted(cmd, D.cfg.save_dir);
+}
+
+/* path was chosen in the dialog: the next one opens in its folder, also after a restart. */
+void save_dialog_done(const WCHAR *path)
+{
+    const WCHAR *sl = wcsrchr(path, L'\\');
+    int n = !sl ? 0 : sl == path + 2 && path[1] == L':' ? 3 : (int)(sl - path); /* "C:\" keeps its backslash */
+    WCHAR dir[MAX_PATH];
+    if (!n || n >= MAX_PATH)
+        return;
+    lstrcpynW(dir, path, n + 1);
+    if (lstrcmpiW(dir, D.cfg.last_dir)) {
+        lstrcpyW(D.cfg.last_dir, dir);
+        config_set_last_dir(dir);
+    }
+}
+
+/* The helper: the file the dialog begins with (file: MAX_PATH * 2 characters), in the first of the folders
+ * that is there, else in Pictures. The folder is part of the name: given apart, Windows opens where the
+ * dialog was used last instead whenever it is the folder the dialog was first given. */
+void save_dialog_file(int argc, WCHAR **argv, WCHAR *file)
+{
+    int n = 0;
+    file[0] = 0;
+    for (int i = 3; i < argc && !file[0]; i++) {
+        DWORD a = GetFileAttributesW(argv[i]);
+        if (a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DIRECTORY))
+            lstrcpynW(file, argv[i], MAX_PATH);
+    }
+    if (file[0] || shell_folder(CSIDL_MYPICTURES, file))
+        n = lstrlenW(file);
+    if (n && file[n - 1] != L'\\')
+        file[n++] = L'\\';
+    lstrcpynW(file + n, argc > 2 ? argv[2] : L"sniplite.png", 2 * MAX_PATH - n);
 }
 
 /* ---- the quick capture: the screen the mouse is on, into a file, at once and without a window ---- */
@@ -791,29 +977,50 @@ static void pin_clipboard(void)
 /* What the helper is given: this at the start of a file mapping, the pixels a page further. */
 typedef struct {
     int32_t w, h;
-    POINT at;            /* the mouse: the notice goes to its monitor */
-    SYSTEMTIME when;     /* for the file's name */
-    WCHAR dir[MAX_PATH]; /* the folder from the settings, or empty: the desktop */
+    POINT at;             /* the mouse: the notice goes to its monitor */
+    int32_t quiet;        /* say nothing unless it failed */
+    WCHAR name[NAME_CAP]; /* the file's name, without its ending */
+    WCHAR dir[MAX_PATH];  /* the folder from the settings, or empty: the desktop */
 } Quick;
 #define QUICK_PX 4096
+
+/* The mapping for a picture w by h and the event "its pixels are in it", both for the helper to
+ * inherit. Returns the mapping's view with all but the pixels filled in; NULL: no memory. */
+static Quick *quick_open(int w, int h, POINT at, HANDLE give[2])
+{
+    uint64_t bytes = QUICK_PX + (uint64_t)w * h * 4;
+    SECURITY_ATTRIBUTES sa = {sizeof sa, NULL, TRUE};
+    give[0] = CreateFileMappingW(INVALID_HANDLE_VALUE, &sa, PAGE_READWRITE, (DWORD)(bytes >> 32), (DWORD)bytes, NULL);
+    give[1] = CreateEventW(&sa, TRUE, FALSE, NULL);
+    Quick *q = give[0] && give[1] ? MapViewOfFile(give[0], FILE_MAP_WRITE, 0, 0, 0) : NULL;
+    if (q) {
+        q->w = w, q->h = h, q->at = at;
+        file_name(q->name);
+        lstrcpynW(q->dir, D.cfg.save_dir, MAX_PATH);
+    }
+    return q;
+}
+
+static void quick_close(HANDLE give[2])
+{
+    for (int i = 0; i < 2; i++)
+        if (give[i])
+            CloseHandle(give[i]);
+}
 
 /* sniplite.exe --quick-save <mapping>,<event>, with those two handles inherited and no
  * other. A thread: it takes some milliseconds, and the pixels are copied meanwhile. */
 static DWORD WINAPI quick_helper(void *give)
 {
     WCHAR exe[MAX_PATH], cmd[MAX_PATH + 60];
-    SIZE_T list[16], n = sizeof list; /* room for a list of one attribute */
     HANDLE *h = give;
-    STARTUPINFOEXW si = {{sizeof si}};
+    STARTUPINFOW si = {sizeof si};
     PROCESS_INFORMATION pi;
-    if (!GetModuleFileNameW(NULL, exe, MAX_PATH) || !InitializeProcThreadAttributeList((void *)list, 1, 0, &n))
+    if (!GetModuleFileNameW(NULL, exe, MAX_PATH))
         return 0;
     wsprintfW(cmd, L"\"%s\" --quick-save %d,%d", exe, (int)(INT_PTR)h[0], (int)(INT_PTR)h[1]);
-    si.StartupInfo.dwFlags = STARTF_FORCEOFFFEEDBACK;
-    si.lpAttributeList = (void *)list;
-    BOOL ok = UpdateProcThreadAttribute(si.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, h, 2 * sizeof *h, NULL, NULL) &&
-              CreateProcessW(exe, cmd, NULL, NULL, TRUE, EXTENDED_STARTUPINFO_PRESENT, NULL, NULL, &si.StartupInfo, &pi);
-    DeleteProcThreadAttributeList(si.lpAttributeList);
+    si.dwFlags = STARTF_FORCEOFFFEEDBACK;
+    bool ok = spawn_inheriting(exe, cmd, &si, h, 2, &pi);
     if (ok) {
         CloseHandle(pi.hThread);
         CloseHandle(pi.hProcess);
@@ -825,7 +1032,7 @@ static DWORD WINAPI quick_helper(void *give)
  * longer, and a folder can be slow: all that, and the notice, is the helper's. */
 static void quick_capture(void)
 {
-    POINT at;
+    POINT at = {0, 0};
     MONITORINFO mi = {sizeof mi};
     Shot sh;
     if (ov_active() || D.asking)
@@ -839,19 +1046,9 @@ static void quick_capture(void)
     RECT r = rect_isect(mi.rcMonitor, vs);
     int w = r.right - r.left, h = r.bottom - r.top;
     HANDLE give[2] = {NULL, NULL}, th = NULL; /* the mapping, and an event: the pixels are in it */
-    Quick *q = NULL;
+    Quick *q = w > 0 && h > 0 ? quick_open(w, h, at, give) : NULL;
     DWORD started = 0;
-    if (w > 0 && h > 0) {
-        uint64_t bytes = QUICK_PX + (uint64_t)w * h * 4;
-        SECURITY_ATTRIBUTES sa = {sizeof sa, NULL, TRUE};
-        give[0] = CreateFileMappingW(INVALID_HANDLE_VALUE, &sa, PAGE_READWRITE, (DWORD)(bytes >> 32), (DWORD)bytes, NULL);
-        give[1] = CreateEventW(&sa, TRUE, FALSE, NULL);
-        q = give[0] && give[1] ? MapViewOfFile(give[0], FILE_MAP_WRITE, 0, 0, 0) : NULL;
-    }
     if (q && (th = CreateThread(NULL, 0, quick_helper, give, 0, NULL)) != NULL) {
-        q->w = w, q->h = h, q->at = at;
-        GetLocalTime(&q->when);
-        lstrcpynW(q->dir, D.cfg.quick_dir, MAX_PATH);
         OffsetRect(&r, -sh.vx, -sh.vy);
         shot_copy(&sh, r, (uint32_t *)((uint8_t *)q + QUICK_PX), w);
         SetEvent(give[1]);
@@ -864,18 +1061,60 @@ static void quick_capture(void)
         GetExitCodeThread(th, &started);
         CloseHandle(th);
     }
-    if (give[0])
-        CloseHandle(give[0]);
-    if (give[1])
-        CloseHandle(give[1]);
+    quick_close(give);
     if (!started)
         MessageBeep(MB_ICONWARNING);
 }
 
-/* The helper: name the file, write it, and say so in the corner. */
+/* ---- also save: a capture that was copied or pinned goes into a file as well ---- */
+
+/* nothing was written, and no helper is there to say so */
+static void also_failed(void)
+{
+    POINT at = {0, 0};
+    GetCursorPos(&at);
+    notice_corner(T(OV_SAVE_FAILED), D.cfg.save_dir, at, 4000);
+}
+
+/* the helper is started: the two handles are done with */
+static DWORD WINAPI also_helper(void *give)
+{
+    if (!quick_helper(give))
+        PostMessageW(D.hwnd, WM_APP_ALSO_FAILED, 0, 0);
+    quick_close(give);
+    mem_free(give);
+    return 0;
+}
+
+/* Called when the copy or the pin is done and the capture is gone, so nothing here delays them.
+ * The file is written like a quick capture's, by the same helper, which speaks only when that failed. */
+void also_save(const uint32_t *px, int w, int h)
+{
+    HANDLE *give = D.cfg.also_save ? mem_alloc(2 * sizeof *give) : NULL, th = NULL;
+    if (!give)
+        return;
+    POINT at = {0, 0};
+    GetCursorPos(&at);
+    Quick *q = quick_open(w, h, at, give);
+    if (q) {
+        q->quiet = 1;
+        memcpy((uint8_t *)q + QUICK_PX, px, (size_t)w * h * 4);
+        UnmapViewOfFile(q);
+        SetEvent(give[1]);
+        th = CreateThread(NULL, 0, also_helper, give, 0, NULL); /* starting a process takes some milliseconds */
+    }
+    if (th) {
+        CloseHandle(th);
+        return;
+    }
+    quick_close(give);
+    mem_free(give);
+    also_failed();
+}
+
+/* The helper: write the file under its name, and say so in the corner (when quiet, only a failure). */
 static int quick_save(const WCHAR *arg)
 {
-    typedef HRESULT(WINAPI *PFN_SHGetFolderPathW)(HWND, int, HANDLE, DWORD, LPWSTR);
     int v[2];
     if (!parse_ints(arg, v, 2))
         return EXIT_USAGE;
@@ -885,17 +1124,10 @@ static int quick_save(const WCHAR *arg)
         return EXIT_FAIL;
     WCHAR dir[MAX_PATH], path[MAX_PATH + 80] = L"";
     lstrcpynW(dir, q->dir, MAX_PATH);
-    bool ok = dir[0] != 0;
-    if (!ok) {
-        HMODULE sh = LoadLibraryW(L"shell32.dll");
-        PFN_SHGetFolderPathW folder = sh ? (PFN_SHGetFolderPathW)(void *)GetProcAddress(sh, "SHGetFolderPathW") : NULL;
-        ok = folder && SUCCEEDED(folder(NULL, CSIDL_DESKTOPDIRECTORY, NULL, 0, dir));
-    }
+    bool ok = dir[0] || shell_folder(CSIDL_DESKTOPDIRECTORY, dir);
     if (ok) {
         CreateDirectoryW(dir, NULL); /* a chosen folder that is gone comes back */
-        const SYSTEMTIME *t = &q->when;
-        int n = wsprintfW(path, L"%s\\sniplite_%04d-%02d-%02d_%02d-%02d-%02d", dir, t->wYear, t->wMonth, t->wDay, t->wHour,
-                          t->wMinute, t->wSecond);
+        int n = wsprintfW(path, L"%s\\%s", dir, q->name);
         lstrcpyW(path + n, L".png"); /* named like one saved by hand; a second one in the same second gets a number */
         HANDLE f = INVALID_HANDLE_VALUE;
         for (int k = 2; k < 100; k++) { /* CREATE_NEW: two helpers at once never take the same name */
@@ -912,7 +1144,8 @@ static int quick_save(const WCHAR *arg)
                 DeleteFileW(path);
         }
     }
-    notice_corner(ok ? T(QUICK_SAVED) : T(OV_SAVE_FAILED), path, q->at, ok ? 2000 : 4000);
+    if (!ok || !q->quiet)
+        notice_corner(ok ? T(QUICK_SAVED) : T(OV_SAVE_FAILED), path, q->at, ok ? 2000 : 4000);
     UnmapViewOfFile(q);
     CloseHandle(map);
     notice_wait();
@@ -1075,6 +1308,10 @@ static LRESULT CALLBACK daemon_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
                 run_helper(L" --update-check", true);
         } else if (wp == TIMER_THEME) {
             theme_apply();
+        } else if (wp == TIMER_FRONT) {
+            front_look(NULL);
+            if (D.aside != 2)
+                KillTimer(h, TIMER_FRONT);
         }
         return 0;
     case WM_SETTINGCHANGE: /* Windows went dark or light */
@@ -1083,6 +1320,9 @@ static LRESULT CALLBACK daemon_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
         return 0;
     case WM_APP_SETTINGS_DONE:
         settings_done();
+        return 0;
+    case WM_APP_ALSO_FAILED:
+        also_failed();
         return 0;
     case WM_HOTKEY:
         if (wp == HK_CAPTURE) {
@@ -1112,10 +1352,14 @@ static LRESULT CALLBACK daemon_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
         return 0;
     case WM_DISPLAYCHANGE:
         gpu_display_changed();
+        if (D.cfg.block_fullscreen) /* a game that takes its screen often changes the display mode */
+            front_check(NULL);
         return 0;
     case WM_CLOSE:
         ov_cancel();
         pin_close_all();
+        ipc_close(ipc_find_dialog(SHORTCUTS_MARK)); /* its windows go with it */
+        ipc_close(ipc_find_dialog(SETTINGS_MARK));
         tray_remove();
         for (int id = 1; id < HK_COUNT; id++)
             UnregisterHotKey(h, id);
@@ -1127,6 +1371,16 @@ static LRESULT CALLBACK daemon_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
         return 0;
     }
     return DefWindowProcW(h, m, wp, lp);
+}
+
+/* Started with the rights of an administrator, more than the user's programs have? */
+static bool elevated(void)
+{
+    typedef BOOL(WINAPI *PFN_GetTokenInformation)(HANDLE, TOKEN_INFORMATION_CLASS, void *, DWORD, DWORD *);
+    PFN_GetTokenInformation get = (PFN_GetTokenInformation)(void *)kernelbase("GetTokenInformation");
+    TOKEN_ELEVATION e = {0};
+    DWORD n;
+    return get && get(GetCurrentProcessToken(), TokenElevation, &e, sizeof e, &n) && e.TokenIsElevated;
 }
 
 static int daemon_main(HINSTANCE inst, int argc, WCHAR **argv, bool from_cli)
@@ -1144,6 +1398,9 @@ static int daemon_main(HINSTANCE inst, int argc, WCHAR **argv, bool from_cli)
                                          PROCESS_POWER_THROTTLING_EXECUTION_SPEED, 0};
     SetProcessInformation(GetCurrentProcess(), ProcessPowerThrottling, &pt, sizeof pt);
 #endif
+    /* A folder on a card reader without its card fails quietly instead of with Windows' "no disk" box,
+     * here and in the helpers, which take this over. */
+    SetErrorMode(SEM_FAILCRITICALERRORS);
     /* Do not keep the caller's directory locked. */
     WCHAR exe_dir[MAX_PATH];
     if (GetModuleFileNameW(NULL, exe_dir, MAX_PATH)) {
@@ -1173,7 +1430,10 @@ static int daemon_main(HINSTANCE inst, int argc, WCHAR **argv, bool from_cli)
     D.hwnd = CreateWindowExW(WS_EX_TOOLWINDOW, DAEMON_CLASS, L"sniplite", WS_POPUP, 0, 0, 0, 0, NULL, NULL, inst, NULL);
     if (!D.hwnd)
         return EXIT_FAIL;
-    ChangeWindowMessageFilterEx(D.hwnd, WM_COPYDATA, MSGFLT_ALLOW, NULL);
+    /* Commands from programs with fewer rights only when this one runs as administrator, so that the user's
+     * own programs, sniplite.com among them, still reach it. Else Windows keeps those programs out. */
+    if (elevated())
+        ChangeWindowMessageFilterEx(D.hwnd, WM_COPYDATA, MSGFLT_ALLOW, NULL);
     D.wm_taskbar = RegisterWindowMessageW(L"TaskbarCreated");
     ChangeWindowMessageFilterEx(D.hwnd, D.wm_taskbar, MSGFLT_ALLOW, NULL);
     ocr_refresh();
@@ -1267,8 +1527,10 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmdline, int show)
     }
 
     HANDLE mutex = CreateMutexW(NULL, FALSE, DAEMON_MUTEX);
-    if (mutex && GetLastError() == ERROR_ALREADY_EXISTS) {
-        /* Already running: act as a client. No arguments: what a second start does (cmd_run, "_again"). */
+    DWORD err = GetLastError();
+    if (err == ERROR_ALREADY_EXISTS || (!mutex && err == ERROR_ACCESS_DENIED)) {
+        /* Already running, maybe with more rights (its mutex is then not ours to open): act as a client.
+         * No arguments: what a second start does (cmd_run, "_again"). */
         if (from_cli)
             return EXIT_OK;
         HWND d = NULL;

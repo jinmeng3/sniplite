@@ -1,6 +1,7 @@
-/* Win32 and cached UIA candidates are immediate. A single MTA worker follows
- * the latest pointer without requiring it to stop, and prefetches siblings.
- * Neither capture, mouse input nor cancellation waits for a provider. */
+/* DETECT_ELEMENTS combines child-window candidates with UI Automation results.
+ * The overlay thread follows the pointer; a persistent worker searches the latest
+ * request asynchronously and caches sibling elements. Cancellation and capture
+ * never wait for a provider call. */
 #include "snap.h"
 #include "shot.h"
 #include "ov_layout.inc"
@@ -404,16 +405,16 @@ void snap_end(void)
     if (W.wake) SetEvent(W.wake);
 }
 
-void snap_begin(HWND overlay)
+void snap_begin(void)
 {
     snap_end();
-    U.overlay = overlay;
+    U.overlay = STATE(HWND, OV_HWND);
     A.enabled = TRUE;
     SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, &A.enabled, 0);
     AcquireSRWLockExclusive(&W.lock);
     W.active = true;
     ReleaseSRWLockExclusive(&W.lock);
-    if (!W.wake) {
+    if (!W.wake && STATE(int, OV_PHASE) == PH_SELECT && STATE(int, OV_DETECT) == DETECT_ELEMENTS) {
         W.wake = CreateEventW(NULL, FALSE, FALSE, NULL);
         HANDLE thread = W.wake ? CreateThread(NULL, 0, snap_worker, NULL, 0, NULL) : NULL;
         if (thread) CloseHandle(thread);
@@ -427,7 +428,8 @@ void snap_begin(HWND overlay)
 void snap_request(HWND target, const RECT *bounds, POINT screen)
 {
     DWORD pid = 0;
-    if (target) GetWindowThreadProcessId(target, &pid);
+    if (target && GetWindowThreadProcessId(target, &pid) && pid == GetCurrentProcessId())
+        target = NULL; /* UI Automation should not search windows owned by this process. */
     AcquireSRWLockExclusive(&W.lock);
     Request *r = &W.request;
     bool new_target = r->version != W.version || r->target != target || r->pid != pid ||

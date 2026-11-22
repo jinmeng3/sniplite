@@ -471,6 +471,11 @@ X(CLIP_EMPTY,
   "クリップボードに画像もテキストもありません\n", "클립보드에 이미지나 텍스트가 없습니다\n",
   "Ni image ni texte dans le presse-papiers\n", "Kein Bild oder Text in der Zwischenablage\n",
   "No hay imagen ni texto en el portapapeles\n")
+/* the same while text is not pinned (G_PIN_TEXT off) */
+X(CLIP_NO_IMAGE,
+  "剪贴板里没有图片\n", "剪貼簿裡沒有圖片\n", "No image in the clipboard\n", "クリップボードに画像がありません\n",
+  "클립보드에 이미지가 없습니다\n", "Aucune image dans le presse-papiers\n", "Kein Bild in der Zwischenablage\n",
+  "No hay ninguna imagen en el portapapeles\n")
 X(CLIP_FAILED,
   "读取剪贴板失败\n", "讀取剪貼簿失敗\n", "Cannot read the clipboard\n", "クリップボードを読み取れません\n",
   "클립보드를 읽을 수 없습니다\n", "Presse-papiers illisible\n", "Zwischenablage nicht lesbar\n",
@@ -570,17 +575,23 @@ X(G_TRAY_HIDDEN,
 X(G_PIN_TOP,
   "贴图置顶", "貼圖置頂", "Keep pins on top", "ピンを常に手前に表示", "고정 이미지를 항상 위에",
   "Épingles toujours au premier plan", "Pins immer im Vordergrund", "Imágenes fijadas siempre visibles")
+X(G_PIN_TEXT,
+  "剪贴板文字贴图", "剪貼簿文字貼圖", "Pin clipboard text", "クリップボードのテキストをピン留めする",
+  "클립보드의 텍스트 고정", "Épingler le texte du presse-papiers", "Text aus der Zwischenablage anheften",
+  "Fijar el texto del portapapeles")
 X(G_LANG, "语言:", "語言:", "Language:", "言語:", "언어:", "Langue :", "Sprache:", "Idioma:")
 X(G_LANG_AUTO, "自动（%s）", "自動（%s）", "Auto (%s)", "自動（%s）", "자동 (%s)", "Auto (%s)", "Automatisch (%s)",
   "Automático (%s)")
+X(G_THEME, "工具栏主题:", "工具列主題:", "Toolbar theme:", "ツールバーのテーマ:", "도구 모음 테마:", "Thème de la barre :",
+  "Design der Leiste:", "Tema de la barra:")
+X(G_THEME_AUTO, "跟随系统", "跟隨系統", "Same as Windows", "Windows に合わせる", "Windows 설정 따름", "Comme Windows",
+  "Wie Windows", "Como Windows")
+X(G_THEME_LIGHT, "浅色", "淺色", "Light", "ライト", "밝게", "Clair", "Hell", "Claro")
+X(G_THEME_DARK, "深色", "深色", "Dark", "ダーク", "어둡게", "Sombre", "Dunkel", "Oscuro")
 X(G_INI_GROUP,
   "配置文件存储位置", "設定檔位置", "Settings file", "設定ファイルの場所", "설정 파일 위치",
   "Fichier de réglages", "Einstellungsdatei", "Archivo de ajustes")
 X(G_PATH, "路径:", "路徑:", "Path:", "パス:", "경로:", "Chemin :", "Pfad:", "Ruta:")
-X(G_QUICK_DIR,
-  "快速截屏保存位置", "快速截圖儲存位置", "Quick captures are saved in", "クイック撮影の保存先", "빠른 캡처 저장 위치",
-  "Dossier des captures rapides", "Ordner für Schnellaufnahmen", "Carpeta de las capturas rápidas")
-X(G_CHANGE, "更改…", "變更…", "Change…", "変更…", "변경…", "Changer…", "Ändern…", "Cambiar…")
 X(G_OPEN_DIR,
   "打开所在文件夹", "開啟資料夾", "Open folder", "フォルダーを開く", "폴더 열기", "Ouvrir le dossier",
   "Ordner öffnen", "Abrir carpeta")
@@ -592,31 +603,47 @@ X(C_DXGI, "极速（DXGI）", "極速（DXGI）", "Fast (DXGI)", "高速（DXGI�
   "Schnell (DXGI)", "Rápido (DXGI)")
 X(C_GDI, "省内存（GDI）", "省記憶體（GDI）", "Low memory (GDI)", "省メモリ（GDI）", "메모리 절약 (GDI)",
   "Économe (GDI)", "Sparsam (GDI)", "Ligero (GDI)")
-X(C_HINT,
-  "极速：直接读取显卡画面，常驻约 50 MB 驱动内存。\n省内存：不占额外内存，多屏高分辨率时会慢几倍。",
-  "極速：直接讀取顯示卡畫面，驅動程式約佔 50 MB 記憶體。\n省記憶體：不佔額外記憶體，多螢幕高解析度時會慢幾倍。",
-  "Fast: reads the screen from the GPU and keeps about 50 MB of driver memory.\n"
-  "Low memory: keeps none, but is several times slower on big screens.",
-  "高速：GPU から画面を直接取得します。ドライバーが常時約 50 MB を使います。\n"
-  "省メモリ：追加メモリは使いませんが、高解像度のマルチモニターでは数倍遅くなります。",
-  "고속: GPU에서 화면을 직접 읽으며 드라이버가 약 50MB를 계속 씁니다.\n"
-  "메모리 절약: 추가 메모리는 없지만 고해상도 다중 모니터에서는 몇 배 느립니다.",
-  "Rapide : lit l'écran depuis le GPU, le pilote occupe environ 50 Mo.\n"
-  "Économe : aucune mémoire en plus, mais plusieurs fois plus lent sur de grands écrans.",
-  "Schnell: liest das Bild von der GPU und belegt dauerhaft etwa 50 MB Treiberspeicher.\n"
-  "Sparsam: kein zusätzlicher Speicher, aber auf großen Bildschirmen mehrfach langsamer.",
-  "Rápido: lee la pantalla desde la GPU y ocupa unos 50 MB de memoria del controlador.\n"
-  "Ligero: sin memoria extra, pero varias veces más lento en pantallas grandes.")
-X(C_THEME, "工具栏主题:", "工具列主題:", "Toolbar theme:", "ツールバーのテーマ:", "도구 모음 테마:", "Thème de la barre :",
-  "Design der Leiste:", "Tema de la barra:")
-X(C_THEME_AUTO, "跟随系统", "跟隨系統", "Same as Windows", "Windows に合わせる", "Windows 설정 따름", "Comme Windows",
-  "Wie Windows", "Como Windows")
-X(C_THEME_LIGHT, "浅色", "淺色", "Light", "ライト", "밝게", "Clair", "Hell", "Claro")
-X(C_THEME_DARK, "深色", "深色", "Dark", "ダーク", "어둡게", "Sombre", "Dunkel", "Oscuro")
+/* the tooltips of the two ways to capture */
+X(C_DXGI_TIP,
+  "直接读取显卡画面，常驻约 50 MB 驱动内存。", "直接讀取顯示卡畫面，驅動程式約佔 50 MB 記憶體。",
+  "Reads the screen from the GPU and keeps about 50 MB of driver memory.",
+  "GPU から画面を直接取得します。ドライバーが常時約 50 MB を使います。",
+  "GPU에서 화면을 직접 읽으며 드라이버가 약 50MB를 계속 씁니다.",
+  "Lit l'écran depuis le GPU, le pilote occupe environ 50 Mo.",
+  "Liest das Bild von der GPU und belegt dauerhaft etwa 50 MB Treiberspeicher.",
+  "Lee la pantalla desde la GPU y ocupa unos 50 MB de memoria del controlador.")
+X(C_GDI_TIP,
+  "不占额外内存，多屏高分辨率时会慢一些。", "不佔額外記憶體，多螢幕高解析度時會慢一些。",
+  "Keeps no extra memory, but is a little slower on big screens.",
+  "追加メモリは使いませんが、高解像度のマルチモニターでは少し遅くなります。",
+  "추가 메모리는 없지만 고해상도 다중 모니터에서는 조금 느립니다.",
+  "Aucune mémoire en plus, mais un peu plus lent sur de grands écrans.",
+  "Kein zusätzlicher Speicher, aber auf großen Bildschirmen etwas langsamer.",
+  "Sin memoria extra, pero algo más lento en pantallas grandes.")
+/* what a capture offers under the mouse, in the order of DETECT_* */
+X(C_DETECT, "自动识别:", "自動辨識:", "Detect:", "自動検出:", "자동 감지:", "Détection :", "Erkennung:", "Detección:")
+X(C_DETECT_CONTROLS,
+  "窗口和控件", "視窗和控制項", "Windows and controls", "ウィンドウとコントロール", "창과 컨트롤",
+  "Fenêtres et contrôles", "Fenster und Steuerelemente", "Ventanas y controles")
+X(C_DETECT_WINDOWS, "仅窗口", "僅視窗", "Windows only", "ウィンドウのみ", "창만", "Fenêtres seulement", "Nur Fenster",
+  "Solo ventanas")
+X(C_DETECT_ELEMENTS,
+  "窗口和界面元素", "視窗和介面元素", "Windows and UI elements", "ウィンドウと UI 要素", "창과 UI 요소",
+  "Fenêtres et éléments d'interface", "Fenster und Oberflächenelemente", "Ventanas y elementos de interfaz")
 X(C_EXIT_ASK,
   "退出截屏时提示", "結束截圖時提示", "Ask before leaving a capture", "キャプチャ終了時に確認する", "캡처를 종료할 때 확인",
   "Demander avant de quitter une capture", "Vor dem Verlassen einer Aufnahme fragen",
   "Preguntar antes de salir de una captura")
+X(C_SAVE_DIR,
+  "默认保存位置", "預設儲存位置", "Default save location", "既定の保存先", "기본 저장 위치",
+  "Dossier d'enregistrement par défaut", "Standardspeicherort", "Carpeta de guardado predeterminada")
+X(C_CHANGE, "更改…", "變更…", "Change…", "変更…", "변경…", "Changer…", "Ändern…", "Cambiar…")
+X(C_NAME, "文件名格式:", "檔案名稱格式:", "File name format:", "ファイル名の形式:", "파일 이름 형식:", "Format du nom :",
+  "Dateinamenformat:", "Formato del nombre:")
+X(C_ALSO_SAVE,
+  "截图时同时保存文件", "截圖時同時儲存檔案", "Also save each capture as a file", "キャプチャ時にファイルにも保存する",
+  "캡처할 때 파일로도 저장", "Enregistrer aussi chaque capture dans un fichier",
+  "Aufnahmen zusätzlich als Datei speichern", "Guardar también cada captura en un archivo")
 /* the question itself (main.c): its text, its box, its button */
 X(LEAVE_ASK,
   "确认退出本次截屏？", "確定要結束這次截圖嗎？", "Leave this capture?", "このキャプチャを終了しますか？", "이 캡처를 종료할까요?",
@@ -642,6 +669,33 @@ X(H_HINT,
   "Cliquez sur un champ, puis tapez le raccourci. Retour arrière l'efface.",
   "Feld anklicken, dann die neuen Tasten drücken. Die Rücktaste löscht.",
   "Haz clic en un campo y pulsa las teclas. Retroceso lo borra.")
+X(H_FULLSCREEN,
+  "全屏程序（如游戏）在前台时让出快捷键", "全螢幕程式（如遊戲）在前景時讓出快速鍵", "Leave the hotkeys to full-screen apps (like games)",
+  "全画面のアプリ（ゲームなど）にホットキーを譲る", "전체 화면 앱(게임 등)에 단축키 양보",
+  "Laisser les raccourcis aux applis plein écran (jeux…)", "Vollbild-Apps (z. B. Spielen) die Tastenkürzel überlassen",
+  "Ceder los atajos en pantalla completa (juegos, etc.)")
+X(H_APPS,
+  "让出快捷键的程序:", "讓出快速鍵的程式:", "Leave the hotkeys to:", "ホットキーを譲るアプリ:", "단축키를 양보할 앱:",
+  "Laisser les raccourcis à :", "Tastenkürzel überlassen:", "Ceder los atajos a:")
+X(H_APPS_BTN, "管理", "管理", "Manage", "管理", "관리", "Gérer", "Verwalten", "Gestionar")
+/* the window that lists them, and the one that takes them as text */
+X(APPS_TITLE,
+  "让出快捷键的程序", "讓出快速鍵的程式", "Apps the hotkeys are left to", "ホットキーを譲るアプリ",
+  "단축키를 양보할 앱", "Applis auxquelles laisser les raccourcis", "Apps, denen die Tastenkürzel überlassen werden",
+  "Apps a las que ceder los atajos")
+X(APPS_NEW, "新建(&N)", "新增(&N)", "&New", "新規(&N)", "새로 만들기(&N)", "&Nouveau", "&Neu", "&Nuevo")
+X(APPS_EDIT, "编辑(&E)", "編輯(&E)", "&Edit", "編集(&E)", "편집(&E)", "&Modifier", "&Bearbeiten", "&Editar")
+X(APPS_BROWSE, "浏览(&B)…", "瀏覽(&B)…", "&Browse…", "参照(&B)…", "찾아보기(&B)…", "Pa&rcourir…", "Durc&hsuchen…",
+  "E&xaminar…")
+X(APPS_DELETE, "删除(&D)", "刪除(&D)", "&Delete", "削除(&D)", "삭제(&D)", "&Supprimer", "&Löschen", "E&liminar")
+X(APPS_TEXT, "编辑文本(&T)…", "編輯文字(&T)…", "Edit &text…", "テキストを編集(&T)…", "텍스트 편집(&T)…",
+  "Modifier le &texte…", "&Text bearbeiten…", "Editar &texto…")
+X(APPS_TEXT_LABEL,
+  "程序的文件名，用 | 隔开:", "程式的檔案名稱，以 | 隔開:", "File names of the apps, with | between them:",
+  "アプリのファイル名（| で区切る）:", "앱 파일 이름 (|로 구분):", "Noms de fichier des applis, séparés par | :",
+  "Dateinamen der Apps, getrennt durch |:", "Nombres de archivo de las apps, separados por |:")
+X(APPS_FILTER, "程序 (*.exe)", "程式 (*.exe)", "Programs (*.exe)", "プログラム (*.exe)", "프로그램 (*.exe)",
+  "Programmes (*.exe)", "Programme (*.exe)", "Programas (*.exe)")
 X(H_BUILTIN, "内置快捷键", "內建快速鍵", "Shortcuts", "ショートカット", "단축키 목록", "Aide-mémoire",
   "Tastenkürzel", "Ver atajos")
 X(OK_BTN, "确定", "確定", "OK", "OK", "확인", "OK", "OK", "Aceptar")
@@ -840,7 +894,7 @@ X(INI_3,
   "; capture: dxgi es el más rápido, gdi el que menos memoria usa\r\n")
 
 /* ---- the capture overlay (ov_*.S) ---- */
-/* tool bar tooltips: the nine tools in the order of the buttons */
+/* tool bar tooltips: the tools in the order of the buttons */
 X(TIP_TOOL1, "矩形  Ctrl+1", "矩形  Ctrl+1", "Rectangle  Ctrl+1", "四角形  Ctrl+1", "사각형  Ctrl+1",
   "Rectangle  Ctrl+1", "Rechteck  Ctrl+1", "Rectángulo  Ctrl+1")
 X(TIP_TOOL2, "椭圆  Ctrl+2", "橢圓  Ctrl+2", "Ellipse  Ctrl+2", "楕円  Ctrl+2", "타원  Ctrl+2", "Ellipse  Ctrl+2",
@@ -859,6 +913,8 @@ X(TIP_TOOL8, "文字  Ctrl+8", "文字  Ctrl+8", "Text  Ctrl+8", "テキスト  
   "Text  Ctrl+8", "Texto  Ctrl+8")
 X(TIP_TOOL9, "序号  Ctrl+9", "序號  Ctrl+9", "Number  Ctrl+9", "番号  Ctrl+9", "번호  Ctrl+9", "Numéro  Ctrl+9",
   "Nummer  Ctrl+9", "Número  Ctrl+9")
+X(TIP_TOOL10, "聚光灯", "聚光燈", "Spotlight", "スポットライト", "스포트라이트", "Projecteur", "Spotlight", "Foco")
+X(TIP_TOOL11, "放大镜", "放大鏡", "Magnifier", "拡大鏡", "돋보기", "Loupe", "Lupe", "Lupa")
 X(TIP_UNDO, "撤销  Ctrl+Z", "復原  Ctrl+Z", "Undo  Ctrl+Z", "元に戻す  Ctrl+Z", "실행 취소  Ctrl+Z",
   "Annuler  Ctrl+Z", "Rückgängig  Ctrl+Z", "Deshacer  Ctrl+Z")
 X(TIP_REDO, "重做  Ctrl+Y", "重做  Ctrl+Y", "Redo  Ctrl+Y", "やり直し  Ctrl+Y", "다시 실행  Ctrl+Y",
@@ -903,6 +959,11 @@ X(QR_OPEN_FAILED, "无法启动默认浏览器。", "無法啟動預設瀏覽器
   "既定のブラウザーを起動できませんでした。", "기본 브라우저를 실행할 수 없습니다.",
   "Impossible de démarrer le navigateur par défaut.", "Der Standardbrowser konnte nicht gestartet werden.",
   "No se pudo iniciar el navegador predeterminado.")
+/* in the property bar, but two of the commands (B_FRONT and B_BACK follow B_LONG) */
+X(TIP_FRONT, "置于顶层", "移到最上層", "Bring to front", "最前面へ移動", "맨 앞으로 가져오기", "Mettre au premier plan",
+  "In den Vordergrund", "Traer al frente")
+X(TIP_BACK, "置于底层", "移到最下層", "Send to back", "最背面へ移動", "맨 뒤로 보내기", "Mettre à l'arrière-plan",
+  "In den Hintergrund", "Enviar al fondo")
 /* the three sizes */
 X(TIP_SIZE0, "细  (滚轮调节)", "細  (滾輪調整)", "Thin  (wheel to change)", "細い  (ホイールで調整)",
   "가늘게  (휠로 조절)", "Fin  (molette pour changer)", "Dünn  (Mausrad zum Ändern)", "Fino  (rueda para cambiar)")
@@ -912,6 +973,10 @@ X(TIP_SIZE1, "中  (滚轮调节)", "中  (滾輪調整)", "Medium  (wheel to ch
 X(TIP_SIZE2, "粗  (滚轮调节)", "粗  (滾輪調整)", "Thick  (wheel to change)", "太い  (ホイールで調整)",
   "굵게  (휠로 조절)", "Épais  (molette pour changer)", "Dick  (Mausrad zum Ändern)",
   "Grueso  (rueda para cambiar)")
+/* the magnifier's three sizes: its factors, the same in every language */
+X(TIP_ZOOM2, "×2", "×2", "×2", "×2", "×2", "×2", "×2", "×2")
+X(TIP_ZOOM3, "×3", "×3", "×3", "×3", "×3", "×3", "×3", "×3")
+X(TIP_ZOOM4, "×4", "×4", "×4", "×4", "×4", "×4", "×4", "×4")
 /* the eight colors in the order of the swatches */
 X(COLOR_RED, "红色", "紅色", "Red", "赤", "빨강", "Rouge", "Rot", "Rojo")
 X(COLOR_ORANGE, "橙色", "橙色", "Orange", "オレンジ", "주황", "Orange", "Orange", "Naranja")
@@ -1036,14 +1101,14 @@ X(O_WRITE_FAILED, "无法写入程序所在的文件夹。", "無法寫入程式
   "프로그램 폴더에 쓸 수 없습니다.", "Impossible d'écrire dans le dossier du programme.",
   "In den Programmordner kann nicht geschrieben werden.", "No se puede escribir en la carpeta del programa.")
 X(O_HINT,
-  "可选模块，下载约 12 MB，装好后占 22 MB。用来识别截图里的文字和表格，全部在本机完成，不联网。\n模型是 PaddleOCR PP-OCRv6，运行库是 ONNX Runtime，从 sniplite 的 GitHub 发布页下载，附带它们的许可证。",
-  "選用模組，下載約 12 MB，安裝後佔 22 MB。用來辨識截圖裡的文字和表格，全部在本機完成，不連網。\n模型是 PaddleOCR PP-OCRv6，執行庫是 ONNX Runtime，從 sniplite 的 GitHub 發布頁下載，附帶它們的授權條款。",
-  "Optional: a 12 MB download, 22 MB installed. It reads the text and tables in a capture, entirely on this computer.\nModels: PaddleOCR PP-OCRv6. Runtime: ONNX Runtime. Downloaded from sniplite's releases on GitHub, with their licenses.",
-  "オプション: ダウンロード約 12 MB、導入後 22 MB。キャプチャ内の文字と表を、このパソコンだけで読み取ります。\nモデルは PaddleOCR PP-OCRv6、ランタイムは ONNX Runtime。sniplite の GitHub リリースから、ライセンスとともに取得します。",
-  "선택 모듈: 다운로드 약 12 MB, 설치 후 22 MB. 캡처의 글자와 표를 이 컴퓨터에서만 읽습니다.\n모델은 PaddleOCR PP-OCRv6, 런타임은 ONNX Runtime이며 sniplite의 GitHub 릴리스에서 라이선스와 함께 받습니다.",
-  "Facultatif : 12 Mo à télécharger, 22 Mo installés. Lit le texte et les tableaux d'une capture, entièrement sur cet ordinateur.\nModèles : PaddleOCR PP-OCRv6. Moteur : ONNX Runtime. Source : la page GitHub de sniplite, avec leurs licences.",
-  "Optional: 12 MB Download, 22 MB installiert. Liest Text und Tabellen einer Aufnahme, vollständig auf diesem Computer.\nModelle: PaddleOCR PP-OCRv6. Laufzeit: ONNX Runtime. Geladen von der GitHub-Seite von sniplite, samt Lizenzen.",
-  "Opcional: 12 MB de descarga, 22 MB instalado. Lee el texto y las tablas de una captura, todo en este equipo.\nModelos: PaddleOCR PP-OCRv6. Motor: ONNX Runtime. Se descargan de la página de sniplite en GitHub, con sus licencias.")
+  "可选模块，下载约 12 MB，装好后占 23 MB。用来识别截图里的文字和表格，全部在本机完成，不联网。\n模型是 PaddleOCR PP-OCRv6，运行库是 ONNX Runtime，从 sniplite 的 GitHub 发布页下载，附带它们的许可证。",
+  "選用模組，下載約 12 MB，安裝後佔 23 MB。用來辨識截圖裡的文字和表格，全部在本機完成，不連網。\n模型是 PaddleOCR PP-OCRv6，執行庫是 ONNX Runtime，從 sniplite 的 GitHub 發布頁下載，附帶它們的授權條款。",
+  "Optional: a 12 MB download, 23 MB installed. It reads the text and tables in a capture, entirely on this computer.\nModels: PaddleOCR PP-OCRv6. Runtime: ONNX Runtime. Downloaded from sniplite's releases on GitHub, with their licenses.",
+  "オプション: ダウンロード約 12 MB、導入後 23 MB。キャプチャ内の文字と表を、このパソコンだけで読み取ります。\nモデルは PaddleOCR PP-OCRv6、ランタイムは ONNX Runtime。sniplite の GitHub リリースから、ライセンスとともに取得します。",
+  "선택 모듈: 다운로드 약 12 MB, 설치 후 23 MB. 캡처의 글자와 표를 이 컴퓨터에서만 읽습니다.\n모델은 PaddleOCR PP-OCRv6, 런타임은 ONNX Runtime이며 sniplite의 GitHub 릴리스에서 라이선스와 함께 받습니다.",
+  "Facultatif : 12 Mo à télécharger, 23 Mo installés. Lit le texte et les tableaux d'une capture, entièrement sur cet ordinateur.\nModèles : PaddleOCR PP-OCRv6. Moteur : ONNX Runtime. Source : la page GitHub de sniplite, avec leurs licences.",
+  "Optional: 12 MB Download, 23 MB installiert. Liest Text und Tabellen einer Aufnahme, vollständig auf diesem Computer.\nModelle: PaddleOCR PP-OCRv6. Laufzeit: ONNX Runtime. Geladen von der GitHub-Seite von sniplite, samt Lizenzen.",
+  "Opcional: 12 MB de descarga, 23 MB instalado. Lee el texto y las tablas de una captura, todo en este equipo.\nModelos: PaddleOCR PP-OCRv6. Motor: ONNX Runtime. Se descargan de la página de sniplite en GitHub, con sus licencias.")
 
 /* ---- the save dialog (image.S); | stands for the separator between filter parts ---- */
 X(SAVE_FILTER,
