@@ -34,8 +34,12 @@ xcopy /e /i /y build\formula "%STAGE%\formula" >nul || exit /b 1
 if exist "%ZIP%" del /q "%ZIP%"
 "%SystemRoot%\System32\tar.exe" -a -c -f "%ZIP%" -C "%STAGE%" sniplite.exe sniplite-cli.com sniplite_qr.exe LICENSE-ZXing.txt LICENSE-WebView2.txt NOTICE-WebView2.txt ocr formula || exit /b 1
 if exist "%OLD%" rmdir /s /q "%OLD%"
-if exist "%D%" move "%D%" "%OLD%" >nul 2>nul
+if exist "%D%" (
+  move "%D%" "%OLD%" >nul 2>nul
+  if exist "%D%" echo Existing package directory could not be replaced; leaving it unchanged. The ZIP is current.
+)
 if not exist "%D%" move "%STAGE%" "%D%" >nul
 if exist "%STAGE%" rmdir /s /q "%STAGE%"
 if exist "%OLD%" rmdir /s /q "%OLD%"
 for %%f in ("%ZIP%") do echo %%~nxf  %%~zf bytes
+exit /b 0

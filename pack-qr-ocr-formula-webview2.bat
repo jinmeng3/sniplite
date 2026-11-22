@@ -11,12 +11,13 @@ call pack-qr-ocr-formula.bat || exit /b 1
 for /f "tokens=3" %%v in ('findstr /C:"#define SNIPLITE_VERSION" src\common.h') do set V=%%v
 set V=%V:L"=%
 set V=%V:"=%
-set BASE=build\dist\sniplite_%V%_portable_QR_OCR_FormulaNet_x64
+set BASE_ZIP=build\dist\sniplite_%V%_portable_QR_OCR_FormulaNet_x64.zip
 set STAGE=build\dist\sniplite_%V%_portable_QR_OCR_FormulaNet_WebView2_stage
 set ZIP=build\dist\sniplite_%V%_portable_QR_OCR_FormulaNet_WebView2_x64.zip
-if not exist "%BASE%\sniplite.exe" (echo the FormulaNet portable package is missing & exit /b 1)
+if not exist "%BASE_ZIP%" (echo the FormulaNet portable ZIP is missing & exit /b 1)
 if exist "%STAGE%" rmdir /s /q "%STAGE%"
-xcopy /e /i /h /y "%BASE%" "%STAGE%" >nul || exit /b 1
+mkdir "%STAGE%" || exit /b 1
+"%SystemRoot%\System32\tar.exe" -xf "%BASE_ZIP%" -C "%STAGE%" || exit /b 1
 xcopy /e /i /h /y "build\webview2-runtime" "%STAGE%\webview2-runtime" >nul || exit /b 1
 copy /y start-sniplite-webview2.bat "%STAGE%\start-sniplite.bat" >nul || exit /b 1
 if exist "%ZIP%" del /q "%ZIP%"

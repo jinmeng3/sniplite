@@ -33,13 +33,13 @@
 
 ## Download
 
-Get the current version from [GitHub Releases](https://github.com/jinmeng3/sniplite/releases). Version 1.5.1.3 provides these packages:
+Get the current version from [GitHub Releases](https://github.com/jinmeng3/sniplite/releases). Version 1.5.1.4 provides these packages:
 
-- [Windows installer](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.3/sniplite_win_setup_amd64.exe)
-- [QR portable package](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.3/sniplite_1.5.1.3_portable_QR_x64.zip): the app, QR helper, and its license.
-- [QR + OCR portable package](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.3/sniplite_1.5.1.3_portable_QR_OCR_x64.zip)
-- [QR + OCR + FormulaNet portable package](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.3/sniplite_1.5.1.3_portable_QR_OCR_FormulaNet_x64.zip)
-- [Portable package without a preinstalled WebView2 Runtime](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.3/sniplite_1.5.1.3_portable_QR_OCR_FormulaNet_WebView2_x64.zip): includes Fixed Version Runtime 158.0.4370.33.
+- [Windows installer](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.4/sniplite_win_setup_amd64.exe)
+- [QR portable package](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.4/sniplite_1.5.1.4_portable_QR_x64.zip): the app, QR helper, and its license.
+- [QR + OCR portable package](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.4/sniplite_1.5.1.4_portable_QR_OCR_x64.zip)
+- [QR + OCR + FormulaNet portable package](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.4/sniplite_1.5.1.4_portable_QR_OCR_FormulaNet_x64.zip)
+- [Portable package without a preinstalled WebView2 Runtime](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.4/sniplite_1.5.1.4_portable_QR_OCR_FormulaNet_WebView2_x64.zip): includes Fixed Version Runtime 158.0.4370.33.
 
 Extract the ZIP and run `sniplite.exe`. The `sniplite-cli.com` companion provides command-line features; it is included in the QR ZIPs and is a separate download for single-file portable builds. Keep it beside the app. Portable builds can download or remove OCR from the OCR tab in Preferences. After checking for updates in the Update tab, portable builds can download and replace existing program files locally; optional OCR, FormulaNet, and WebView2 Runtime folders are preserved. The QR helper can also be installed or removed from the QR tab. Portable builds can enable “Start with Windows” in Preferences. The shortcut points to the current program location, so do not move or rename its directory afterward. If you move it, turn the option off and on again to update the shortcut.
 

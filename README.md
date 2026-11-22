@@ -33,13 +33,13 @@
 
 ## 下载
 
-前往 [GitHub Releases](https://github.com/jinmeng3/sniplite/releases) 下载当前版本。v1.5.1.3 提供以下版本：
+前往 [GitHub Releases](https://github.com/jinmeng3/sniplite/releases) 下载当前版本。v1.5.1.4 提供以下版本：
 
-- [Windows 安装程序](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.3/sniplite_win_setup_amd64.exe)
-- [二维码便携版](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.3/sniplite_1.5.1.3_portable_QR_x64.zip)：主程序、二维码识别程序及其许可证。
-- [二维码 + OCR 便携版](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.3/sniplite_1.5.1.3_portable_QR_OCR_x64.zip)
-- [二维码 + OCR + FormulaNet 便携版](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.3/sniplite_1.5.1.3_portable_QR_OCR_FormulaNet_x64.zip)
-- [无需预装 WebView2 的便携版](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.3/sniplite_1.5.1.3_portable_QR_OCR_FormulaNet_WebView2_x64.zip)：附带 Fixed Version Runtime 158.0.4370.33。
+- [Windows 安装程序](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.4/sniplite_win_setup_amd64.exe)
+- [二维码便携版](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.4/sniplite_1.5.1.4_portable_QR_x64.zip)：主程序、二维码识别程序及其许可证。
+- [二维码 + OCR 便携版](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.4/sniplite_1.5.1.4_portable_QR_OCR_x64.zip)
+- [二维码 + OCR + FormulaNet 便携版](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.4/sniplite_1.5.1.4_portable_QR_OCR_FormulaNet_x64.zip)
+- [无需预装 WebView2 的便携版](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.4/sniplite_1.5.1.4_portable_QR_OCR_FormulaNet_WebView2_x64.zip)：附带 Fixed Version Runtime 158.0.4370.33。
 
 解压后运行 `sniplite.exe`。命令行功能由 `sniplite-cli.com` 提供；二维码 ZIP 已附带此文件，单文件便携版请从发布页另行下载，并与主程序放在同一目录。OCR 模块可在首选项的“OCR”页面下载安装或删除；便携版在更新页检查后可直接下载更新并原地替换已有程序文件，OCR、公式模型和 WebView2 Runtime 等目录会保留。二维码助手也可在首选项的“二维码”页面单独下载安装或删除。便携版可在首选项中开启“开机启动”；快捷方式会指向当前程序位置，因此开启后不要移动或重命名程序目录。若已移动目录，请重新关闭并开启此选项以更新快捷方式。
 
@@ -103,7 +103,7 @@ FormulaNet 公式识别模块也可在首选项的“公式识别”页面下载
 
 点击缩略图恢复贴图。按住卡片拖到另一张卡片上可调整顺序；右键卡片可恢复或关闭单张贴图。点击横栏空白处后，可用方向键选择、`Home`/`End` 跳转、`Enter` 恢复、`Delete` 关闭。拖动横栏标题可移动横栏；贴图较多时，用滚轮或 `<`、`>` 按钮翻阅。关闭横栏会恢复其中全部贴图，`Shift+F3` 会一起隐藏或显示横栏和未收纳的贴图。收纳只在当前运行期间有效，退出程序时释放全部图片。
 
-晾衣架使用圆角卡片，悬停时高亮；卡片下方显示原图尺寸，横栏右下角显示当前浏览范围。
+晾衣架采用紧凑横向托盘布局，默认尺寸为 480×224（随系统 DPI 缩放），一排显示四张缩略图。顶部显示收纳数量，底部集中显示操作提示、浏览范围与翻页按钮；卡片悬停或选中时高亮，下方显示原图尺寸。空状态提示拖入贴图暂存，点击缩略图即可恢复。
 
 ![晾衣架界面](pics/ui/pin-rack.png)
 

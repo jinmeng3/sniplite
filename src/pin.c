@@ -19,7 +19,7 @@
 #define TIMER_REST 2 /* the wheel has stopped zooming */
 #define WM_APP_OUTLINE (WM_APP + 7)
 enum { CM_COPY = 1, CM_SAVE, CM_OCR, CM_RESET, CM_TOP_ALL, CM_TOP, CM_CLOSE, CM_CLOSE_ALL, CM_SETTINGS, CM_RACK, CM_STORE };
-enum { RACK_PAD = 16, RACK_STEP = 104, RACK_CARD = 96, RACK_Y = 48, RACK_FOOT = 24 };
+enum { RACK_PAD = 16, RACK_STEP = 112, RACK_CARD = 104, RACK_CARD_H = 124, RACK_Y = 52, RACK_FOOT = 40 };
 
 typedef struct Pin {
     HWND hwnd; /* NULL: the window is gone, a save still holds the picture */
@@ -56,7 +56,7 @@ static struct {
     int rack_hover, rack_pressed, rack_dpi;
     bool rack_tracking;
     Img rack_img;
-    HFONT rack_font, rack_small;
+    HFONT rack_font, rack_small, rack_hint;
     bool rack_reorder;
     POINT rack_down_pt;
     int rack_selected;
@@ -171,6 +171,13 @@ static int rack_slots(void)
     GetClientRect(P.rack, &r);
     return MAXI(1, (r.right - rack_px(2 * RACK_PAD)) / rack_px(RACK_STEP));
 }
+static int rack_card_top(void)
+{
+    RECT r;
+    GetClientRect(P.rack, &r);
+    int top = rack_px(RACK_Y), bottom = r.bottom - rack_px(RACK_FOOT);
+    return top + MAXI(0, (bottom - top - rack_px(RACK_CARD_H)) / 2);
+}
 
 static void rack_refresh(void)
 {
@@ -184,9 +191,10 @@ static RECT rack_button(int i)
 {
     RECT r;
     GetClientRect(P.rack, &r);
-    int x = r.right - rack_px(10 + (3 - i) * 32);
-    RECT b = {x, rack_px(8), x + rack_px(28), rack_px(36)};
-    return b;
+    if (i == 2)
+        return (RECT){r.right - rack_px(40), rack_px(8), r.right - rack_px(12), rack_px(36)};
+    int x = r.right - rack_px(80 - i * 36);
+    return (RECT){x, r.bottom - rack_px(34), x + rack_px(28), r.bottom - rack_px(6)};
 }
 
 /* 0..2: header buttons; 3 onward: thumbnail slots; -1: background. */
@@ -201,7 +209,8 @@ static int rack_target(POINT pt)
         if (rect_has(&b, pt.x, pt.y))
             return i;
     }
-    if (pt.x >= rack_px(RACK_PAD) && pt.y >= rack_px(RACK_Y) && pt.y < r.bottom - rack_px(RACK_FOOT)) {
+    int card_top = rack_card_top();
+    if (pt.x >= rack_px(RACK_PAD) && pt.y >= card_top && pt.y < card_top + rack_px(RACK_CARD_H)) {
         int slot = (pt.x - rack_px(RACK_PAD)) / rack_px(RACK_STEP);
         int offset = (pt.x - rack_px(RACK_PAD)) % rack_px(RACK_STEP);
         if (slot < rack_slots() && offset < rack_px(RACK_CARD))
@@ -221,8 +230,8 @@ static void rack_invalidate_target(HWND h, int target)
         RECT client;
         GetClientRect(h, &client);
         int slot = target - 3;
-        int x = rack_px(RACK_PAD + slot * RACK_STEP), y = rack_px(RACK_Y);
-        r = (RECT){x, y, x + rack_px(RACK_CARD), client.bottom - rack_px(RACK_FOOT)};
+        int x = rack_px(RACK_PAD + slot * RACK_STEP), y = rack_card_top();
+        r = (RECT){x, y, x + rack_px(RACK_CARD), y + rack_px(RACK_CARD_H)};
     }
     InvalidateRect(h, &r, FALSE);
 }
@@ -340,9 +349,12 @@ static void rack_paint(HWND h)
     if (dpi != P.rack_dpi) {
         DeleteObject(P.rack_font);
         DeleteObject(P.rack_small);
-        P.rack_font = CreateFontW(-rack_px(13), 0, 0, 0, FW_SEMIBOLD, 0, 0, 0, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
-                                 CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, T(FONT));
-        P.rack_small = CreateFontW(-rack_px(10), 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+        DeleteObject(P.rack_hint);
+        P.rack_font = CreateFontW(-rack_px(14), 0, 0, 0, FW_SEMIBOLD, 0, 0, 0, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+                                  CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, T(FONT));
+        P.rack_small = CreateFontW(-rack_px(11), 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+                                   CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, T(FONT));
+        P.rack_hint = CreateFontW(-rack_px(12), 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
                                   CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, T(FONT));
         P.rack_dpi = dpi;
     }
@@ -351,46 +363,34 @@ static void rack_paint(HWND h)
     if (saved)
         IntersectClipRect(dc, ps.rcPaint.left, ps.rcPaint.top, ps.rcPaint.right, ps.rcPaint.bottom);
     HGDIOBJ font = SelectObject(dc, P.rack_font);
-    SetBkMode(dc, TRANSPARENT);
-    COLORREF panel = RGB(245, 247, 251);
-    SetDCBrushColor(dc, panel);
-    FillRect(dc, &rc, GetStockObject(DC_BRUSH));
-    rack_box(dc, rc, panel, RGB(213, 221, 233), 18);
-    RECT emblem = {rack_px(16), rack_px(10), rack_px(44), rack_px(38)};
-    rack_box(dc, emblem, RGB(229, 239, 255), RGB(229, 239, 255), 10);
     HGDIOBJ pen = SelectObject(dc, GetStockObject(DC_PEN));
-    SetDCPenColor(dc, RGB(45, 105, 198));
-    POINT hanger[] = {{rack_px(28), rack_px(19)}, {rack_px(28), rack_px(17)}, {rack_px(32), rack_px(17)},
-                      {rack_px(32), rack_px(21)}, {rack_px(22), rack_px(29)}, {rack_px(38), rack_px(29)},
-                      {rack_px(30), rack_px(23)}};
-    Polyline(dc, hanger, COUNTOF(hanger));
-    WCHAR text[160];
+    SetBkMode(dc, TRANSPARENT);
+    rack_box(dc, rc, RGB(250, 251, 253), RGB(216, 222, 231), 16);
+    RECT accent = {rack_px(16), rack_px(16), rack_px(20), rack_px(30)};
+    rack_box(dc, accent, RGB(63, 111, 224), RGB(63, 111, 224), 4);
+    RECT title = {rack_px(30), rack_px(8), rc.right - rack_px(100), rack_px(38)};
+    SetTextColor(dc, RGB(39, 47, 63));
+    DrawTextW(dc, T(RACK_TITLE), -1, &title, DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX);
+
     int count = rack_count(), slots = rack_slots();
+    WCHAR text[64];
     wsprintfW(text, L"%d", count);
-    SIZE badge_text = {0};
-    GetTextExtentPoint32W(dc, text, lstrlenW(text), &badge_text);
-    int badge_w = MAXI(rack_px(32), MINI(rack_px(56), badge_text.cx + rack_px(12)));
-    RECT badge = {rc.right - rack_px(108) - badge_w, rack_px(10), rc.right - rack_px(108), rack_px(34)};
-    rack_box(dc, badge, RGB(229, 239, 255), RGB(229, 239, 255), 9);
-    SetTextColor(dc, RGB(40, 98, 181));
-    DrawTextW(dc, text, -1, &badge, DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_NOPREFIX);
-    RECT title = {rack_px(54), rack_px(8), badge.left - rack_px(8), rack_px(38)};
-    wsprintfW(text, L"%s", T(RACK_TITLE));
-    SetTextColor(dc, RGB(30, 43, 63));
-    DrawTextW(dc, text, -1, &title, DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX);
-    SetDCPenColor(dc, RGB(224, 230, 239));
-    MoveToEx(dc, rack_px(16), rack_px(43), NULL);
-    LineTo(dc, rc.right - rack_px(16), rack_px(43));
-    SelectObject(dc, pen);
+    RECT badge = {rc.right - rack_px(88), rack_px(12), rc.right - rack_px(48), rack_px(34)};
+    rack_box(dc, badge, RGB(235, 240, 250), RGB(235, 240, 250), 8);
+    SelectObject(dc, P.rack_small);
+    SetTextColor(dc, RGB(69, 94, 146));
+    DrawTextW(dc, text, -1, &badge, DT_SINGLELINE | DT_VCENTER | DT_CENTER);
+    SetDCPenColor(dc, RGB(232, 235, 241));
+    MoveToEx(dc, rack_px(16), rack_px(44), NULL);
+    LineTo(dc, rc.right - rack_px(16), rack_px(44));
+
     for (int i = 0; i < 3; i++) {
         RECT b = rack_button(i);
         bool enabled = i == 2 || (i == 0 ? P.rack_first > 0 : P.rack_first + slots < count);
         bool hot = P.rack_hover == i && enabled, pressed = hot && P.rack_pressed == i;
-        COLORREF bg = i == 2 && hot ? RGB(255, 238, 239) : pressed ? RGB(221, 233, 250) : hot ? RGB(234, 241, 251) : RGB(255, 255, 255);
-        COLORREF edge = i == 2 && hot ? RGB(247, 204, 208) : pressed || hot ? RGB(207, 221, 242) : RGB(226, 231, 239);
-        rack_box(dc, b, bg, edge, 9);
-        HGDIOBJ old = SelectObject(dc, GetStockObject(DC_PEN));
-        SetDCPenColor(dc, !enabled ? RGB(183, 193, 207) : i == 2 && hot ? RGB(194, 63, 77) : RGB(73, 95, 126));
+        COLORREF bg = i == 2 && hot ? RGB(255, 235, 237) : pressed ? RGB(224, 232, 248) : hot ? RGB(236, 241, 250) : RGB(250, 251, 253);
+        rack_box(dc, b, bg, bg, 8);
+        SetDCPenColor(dc, !enabled ? RGB(198, 204, 215) : i == 2 && hot ? RGB(195, 62, 79) : RGB(83, 97, 122));
         int x = (b.left + b.right) / 2, y = (b.top + b.bottom) / 2, d = rack_px(4);
         if (i == 2) {
             MoveToEx(dc, x - d, y - d, NULL); LineTo(dc, x + d + 1, y + d + 1);
@@ -400,50 +400,59 @@ static void rack_paint(HWND h)
             POINT arrow[] = {{x - dir * d / 2, y - d}, {x + dir * d / 2, y}, {x - dir * d / 2, y + d}};
             Polyline(dc, arrow, COUNTOF(arrow));
         }
-        SelectObject(dc, old);
+    }
+
+    if (!count) {
+        int cx = rc.right / 2, cy = rack_px(96);
+        RECT back = {cx - rack_px(14), cy - rack_px(14), cx + rack_px(12), cy + rack_px(6)};
+        RECT front = {cx - rack_px(8), cy - rack_px(8), cx + rack_px(18), cy + rack_px(12)};
+        rack_box(dc, back, RGB(239, 243, 251), RGB(194, 207, 230), 5);
+        rack_box(dc, front, RGB(250, 251, 253), RGB(124, 151, 201), 5);
+        SelectObject(dc, P.rack_hint);
+        RECT hint = {rack_px(20), rack_px(126), rc.right - rack_px(20), rc.bottom - rack_px(44)};
+        SetTextColor(dc, RGB(112, 123, 144));
+        DrawTextW(dc, T(RACK_HINT), -1, &hint, DT_CENTER | DT_WORDBREAK | DT_NOPREFIX);
+    } else {
+        int card_y = rack_card_top();
+        SetStretchBltMode(dc, HALFTONE);
+        SetBrushOrgEx(dc, 0, 0, NULL);
+        for (int slot = 0; slot < slots && P.rack_first + slot < count; slot++) {
+            int index = P.rack_first + slot;
+            Pin *p = P.rack_items[index];
+            int x = rack_px(RACK_PAD + slot * RACK_STEP), y = card_y;
+            bool hot = P.rack_hover == slot + 3, pressed = hot && P.rack_pressed == slot + 3;
+            bool selected = index == P.rack_selected;
+            RECT card = {x, y, x + rack_px(RACK_CARD), y + rack_px(RACK_CARD_H)};
+            COLORREF bg = pressed ? RGB(236, 242, 255) : RGB(255, 255, 255);
+            COLORREF edge = selected || hot ? RGB(114, 151, 232) : RGB(225, 230, 239);
+            rack_box(dc, card, bg, edge, 10);
+            RECT preview = {x + rack_px(7), y + rack_px(7), card.right - rack_px(7), y + rack_px(91)};
+            rack_box(dc, preview, RGB(246, 248, 251), RGB(246, 248, 251), 6);
+            float fit = fminf((float)rack_px(84) / p->thumb.w, (float)rack_px(78) / p->thumb.h);
+            int w = MAXI(1, (int)lroundf(p->thumb.w * fit)), height = MAXI(1, (int)lroundf(p->thumb.h * fit));
+            int dx = (preview.left + preview.right - w) / 2, dy = (preview.top + preview.bottom - height) / 2;
+            if (w == p->thumb.w && height == p->thumb.h)
+                BitBlt(dc, dx, dy, w, height, p->thumb.dc, 0, 0, SRCCOPY);
+            else
+                StretchBlt(dc, dx, dy, w, height, p->thumb.dc, 0, 0, p->thumb.w, p->thumb.h, SRCCOPY);
+            RECT label = {x + rack_px(4), y + rack_px(96), card.right - rack_px(4), card.bottom - rack_px(5)};
+            wsprintfW(text, L"%d \x00D7 %d", p->img.w, p->img.h);
+            SetTextColor(dc, selected || hot ? RGB(55, 99, 194) : RGB(121, 132, 151));
+            DrawTextW(dc, text, -1, &label, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+        }
     }
     SelectObject(dc, P.rack_small);
-    for (int slot = 0; slot < slots && P.rack_first + slot < count; slot++) {
-        int index = P.rack_first + slot;
-        Pin *p = P.rack_items[index];
-        int x = rack_px(RACK_PAD + slot * RACK_STEP), y = rack_px(RACK_Y);
-        bool hot = P.rack_hover == slot + 3, pressed = hot && P.rack_pressed == slot + 3;
-        RECT card = {x, y, x + rack_px(RACK_CARD), rc.bottom - rack_px(RACK_FOOT)};
-        bool selected = index == P.rack_selected;
-        COLORREF bg = pressed ? RGB(224, 236, 253) : hot ? RGB(242, 247, 255) : RGB(255, 255, 255);
-        RECT shadow = card;
-        OffsetRect(&shadow, 0, rack_px(2));
-        rack_box(dc, shadow, RGB(229, 234, 242), RGB(229, 234, 242), 13);
-        COLORREF edge = selected ? RGB(49, 113, 207) : hot ? RGB(166, 195, 235) : RGB(222, 228, 237);
-        rack_box(dc, card, bg, edge, 13);
-        float fit = fminf((float)rack_px(80) / p->thumb.w, (float)rack_px(56) / p->thumb.h);
-        int w = MAXI(1, (int)lroundf(p->thumb.w * fit)), height = MAXI(1, (int)lroundf(p->thumb.h * fit));
-        int dx = x + (rack_px(RACK_CARD) - w) / 2, dy = y + rack_px(7) + (rack_px(56) - height) / 2;
-        if (w == p->thumb.w && height == p->thumb.h)
-            BitBlt(dc, dx, dy, w, height, p->thumb.dc, 0, 0, SRCCOPY);
-        else
-            StretchBlt(dc, dx, dy, w, height, p->thumb.dc, 0, 0, p->thumb.w, p->thumb.h, SRCCOPY);
-        RECT label = {x + rack_px(4), y + rack_px(65), card.right - rack_px(4), card.bottom - rack_px(3)};
-        wsprintfW(text, L"%d \x00D7 %d", p->img.w, p->img.h);
-        SetTextColor(dc, hot ? RGB(41, 111, 221) : RGB(121, 137, 160));
-        DrawTextW(dc, text, -1, &label, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-    }
-    if (!count) {
-        RECT hint = {rack_px(16), rack_px(RACK_Y), rc.right - rack_px(16), rc.bottom - rack_px(RACK_FOOT)};
-        rack_box(dc, hint, RGB(238, 243, 251), RGB(220, 230, 244), 12);
-        SetTextColor(dc, RGB(105, 126, 157));
-        DrawTextW(dc, T(RACK_HINT), -1, &hint, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
-    }
-    RECT footer = {rack_px(18), rc.bottom - rack_px(22), rc.right - rack_px(112), rc.bottom - rack_px(2)};
-    SetTextColor(dc, RGB(101, 117, 140));
+    RECT footer = {rack_px(16), rc.bottom - rack_px(34), rc.right - rack_px(168), rc.bottom - rack_px(6)};
+    SetTextColor(dc, RGB(132, 142, 160));
     DrawTextW(dc, T(RACK_HELP), -1, &footer, DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX);
-    if (count) {
-        RECT page = {rc.right - rack_px(100), rc.bottom - rack_px(22), rc.right - rack_px(14), rc.bottom - rack_px(2)};
-        rack_box(dc, page, RGB(255, 255, 255), RGB(223, 229, 238), 8);
+    RECT page = {rc.right - rack_px(164), rc.bottom - rack_px(34), rc.right - rack_px(84), rc.bottom - rack_px(6)};
+    if (count)
         wsprintfW(text, L"%d\x2013%d / %d", P.rack_first + 1, MINI(P.rack_first + slots, count), count);
-        SetTextColor(dc, RGB(71, 88, 115));
-        DrawTextW(dc, text, -1, &page, DT_CENTER | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
-    }
+    else
+        lstrcpyW(text, L"0 / 0");
+    SetTextColor(dc, RGB(111, 123, 145));
+    DrawTextW(dc, text, -1, &page, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
+    SelectObject(dc, pen);
     if (saved)
         RestoreDC(dc, saved);
     else
@@ -626,7 +635,8 @@ static LRESULT CALLBACK rack_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
         img_destroy(&P.rack_img);
         DeleteObject(P.rack_font);
         DeleteObject(P.rack_small);
-        P.rack_font = P.rack_small = NULL;
+        DeleteObject(P.rack_hint);
+        P.rack_font = P.rack_small = P.rack_hint = NULL;
         P.rack_dpi = 0;
         P.rack_hover = P.rack_pressed = -1;
         P.rack_tracking = false;
@@ -646,8 +656,8 @@ static bool rack_show(HWND pin)
         GetMonitorInfoW(MonitorFromRect(&r, MONITOR_DEFAULTTONEAREST), &mi);
         POINT at = {r.left, r.top};
         float s = dpi_scale_at(at);
-        int w = MINI((int)lroundf(552.f * s), mi.rcWork.right - mi.rcWork.left);
-        int h = (int)lroundf(156.f * s);
+        int w = MINI((int)lroundf(480.f * s), mi.rcWork.right - mi.rcWork.left - (int)lroundf(24.f * s));
+        int h = MINI((int)lroundf(224.f * s), mi.rcWork.bottom - mi.rcWork.top - (int)lroundf(24.f * s));
         P.rack_hover = P.rack_pressed = P.rack_selected = -1;
         P.rack = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW, L"sniplite.rack", T(RACK_TITLE), WS_POPUP | WS_CAPTION,
                                 mi.rcWork.left + (mi.rcWork.right - mi.rcWork.left - w) / 2,
