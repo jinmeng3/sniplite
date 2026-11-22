@@ -69,7 +69,7 @@ static struct {
     bool qr_busy;    /* the QR helper is being downloaded */
     bool portable;   /* the program by itself, not installed */
     volatile LONG ocr_cancel, qr_cancel;
-    bool formula_busy; /* the FormulaNet model is being downloaded */
+    bool formula_busy; /* the CrispEmbed model and runtime are being installed */
     volatile LONG formula_cancel;
     POINT at;        /* where it was */
 } S;
@@ -1154,7 +1154,7 @@ static void qr_done(int result)
         daemon_cmd(L"_reload", NULL);
 }
 
-/* ---- FormulaNet page: the optional on-device formula OCR model -------------------- */
+/* ---- CrispEmbed Texo-Distill formula OCR module ------------------------------- */
 
 static void formula_show(void)
 {
@@ -1166,7 +1166,7 @@ static void formula_show(void)
     else
         lstrcpynW(t, T(F_STATE_NONE), COUNTOF(t));
     SetDlgItemTextW(f, IDC_F_STATE, t);
-    SetDlgItemTextW(f, IDC_F_INSTALL, S.formula_busy ? T(O_CANCEL_BTN) : T(O_INSTALL_BTN));
+    SetDlgItemTextW(f, IDC_F_INSTALL, S.formula_busy ? T(O_CANCEL_BTN) : T(F_INSTALL_BTN));
     bool install = S.formula_busy ? !S.formula_cancel : !there;
     bool remove = !S.formula_busy && there;
     if ((!install && focus == GetDlgItem(f, IDC_F_INSTALL)) || (!remove && focus == GetDlgItem(f, IDC_F_REMOVE)))
@@ -1206,7 +1206,7 @@ static void formula_install(void)
     CloseHandle(thread);
     S.formula_busy = true;
     SendDlgItemMessageW(S.page[PG_FORMULA], IDC_F_BAR, PBM_SETPOS, 0, 0);
-    SetDlgItemTextW(S.page[PG_FORMULA], IDC_F_STATUS, T(U_DOWNLOADING));
+    SetDlgItemTextW(S.page[PG_FORMULA], IDC_F_STATUS, T(U_INSTALLING));
     formula_show();
 }
 
@@ -1215,7 +1215,8 @@ static void formula_done(int result)
     S.formula_busy = false;
     S.formula_cancel = 0;
     SetDlgItemTextW(S.page[PG_FORMULA], IDC_F_STATUS,
-                    result == FORMULA_GET_NET ? T(U_DOWNLOAD_FAILED) : result == FORMULA_GET_CHECK ? T(F_CHECK_FAILED)
+                    result == FORMULA_GET_CHECK ? T(F_CHECK_FAILED)
+                    : result == FORMULA_GET_SOURCE ? T(F_FILES_MISSING)
                     : result == FORMULA_GET_WRITE ? T(O_WRITE_FAILED) : L"");
     formula_show();
     if (result == FORMULA_GET_OK)

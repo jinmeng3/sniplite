@@ -25,7 +25,7 @@
 - **Screenshots:** Detect windows and controls, with a magnifier and pixel-level selection adjustment.
 - **Annotations and pins:** Draw arrows, text, numbers, and mosaics; keep screenshots above other windows.
 - **QR recognition:** Press `Ctrl+Q` inside a screenshot selection. Results stay on your PC and can be copied.
-- **Formula recognition:** An optional FormulaNet module converts screenshot selections to LaTeX locally and copies the result.
+- **Formula recognition:** An optional CrispEmbed module converts screenshot selections to LaTeX locally with the Texo-Distill GGUF. CrispEmbed requests Vulkan, but this PP-FormulaNet model path currently runs on CPU.
 - **Text recognition:** An optional OCR module recognizes text and tables locally.
 - **Scrolling screenshots:** Scroll a page and automatically stitch the captured content.
 - **Lightweight:** Performance-sensitive capture, composition, and drawing code uses x86-64 assembly. The main program does not link the C runtime.
@@ -45,14 +45,14 @@ Extract the ZIP and run `sniplite.exe`. The `sniplite-cli.com` companion provide
 
 If the app is running as administrator, run the CLI as administrator too; a standard-integrity CLI cannot send commands to the elevated app.
 
-The FormulaNet module can also be installed or removed from the Formula tab in Preferences.
+The CrispEmbed formula module can be installed from the local model and runtime files or removed from the Formula tab in Preferences.
 
 ## System requirements
 
 - Windows 10 or Windows 11, x64
 - No additional runtime is required for screenshots and annotations.
 - OCR requires the included or separately installed OCR module.
-- Formula recognition requires the separately installed FormulaNet module.
+- Formula recognition requires the Texo-Distill GGUF model, CrispEmbed runtime, and the Microsoft Visual C++ x64 runtime.
 
 ## Default shortcuts
 
@@ -89,7 +89,7 @@ The QR tab in Preferences can install or remove the helper. After installation, 
 Select an area and click the text recognition button or press `Ctrl+O`. Results appear in a panel beside the selection and can be edited and copied. Tables can preserve their columns or be converted to Markdown. This requires the OCR module, which uses PaddleOCR PP-OCRv6 and ONNX Runtime and processes images locally.
 ### How do I recognize a formula in a screenshot?
 
-Select the formula in the capture editor and click the “∫” button to recognize and copy LaTeX directly. The capture editor closes after the copy succeeds. The adjacent eye button opens an offline KaTeX preview/editor in sniplite’s WebView2 window. Edited formulas can be copied with the button or `Ctrl+Enter`; syntax errors are flagged in the preview. If the current capture or selection has no matching recognition result, the eye button recognizes it before opening; it does not open an empty page when no formula is found. The preview opens on the monitor containing the selection. Extra spaces around braces and operators are removed while word separators are preserved. First install FormulaNet (about 97 MB) from the Formula tab in Preferences. Inference runs locally.
+Select the formula in the capture editor and click the “∫” button to recognize and copy LaTeX directly. The capture editor closes after the copy succeeds. The adjacent eye button opens an offline KaTeX preview/editor in sniplite’s WebView2 window. Edited formulas can be copied with the button or `Ctrl+Enter`; syntax errors are flagged in the preview. If the current capture or selection has no matching recognition result, the eye button recognizes it before opening; it does not open an empty page when no formula is found. The preview opens on the monitor containing the selection. Extra spaces around braces and operators are removed while word separators are preserved. The formula module is about 82 MB installed and uses the local Texo-Distill GGUF with CrispEmbed. Vulkan is requested, but this PP-FormulaNet model path currently runs on CPU.
 No progress dialog appears during recognition. Failures and incomplete output leave the clipboard unchanged. Solid-color blank selections are rejected.
 
 
@@ -131,11 +131,11 @@ The app follows the Windows language by default. Open Preferences from the syste
 
 ## Build from source
 
-The project-local `w64devkit` can build the project directly. Alternatively, install MinGW-w64, CMake, and Ninja. Run `build.bat`, then `pack.bat` to create the installer and three portable ZIPs with QR recognition: the base version, the OCR version, and the OCR+FormulaNet version. The script prepares the OCR module. Before packaging FormulaNet, install it from Preferences in `build\sniplite.exe`. Output is placed in `build\dist`.
-For PCs without WebView2, download the x64 Fixed Version Runtime from [Microsoft's WebView2 page](https://developer.microsoft.com/en-us/microsoft-edge/webview2/), run `if not exist build\webview2-runtime mkdir build\webview2-runtime`, then extract it with `expand.exe <runtime.cab> -F:* build\webview2-runtime`. Running `pack.bat` then creates `..._portable_QR_OCR_FormulaNet_WebView2_x64.zip`. The fixed runtime adds over 250 MB and does not update automatically; replace it periodically. Extract the package to a local disk and launch it with the included `start-sniplite.bat`, which applies the required Windows 10 permissions. Fixed Version does not run from a network path.
+The project-local `w64devkit` can build the project directly. Alternatively, install MinGW-w64, CMake, and Ninja. Run `build.bat`, install the local module from the Formula tab in `build\sniplite.exe` Preferences, then run `pack.bat` to create the installer and QR portable ZIPs. The module sources are `E:\浏览器下载\texo-distill-q8_0.gguf`, `E:\浏览器下载\crispembed-windows-x86_64-vulkan`, and the installed Microsoft Visual C++ x64 runtime. Output is placed in `build\dist`.
+For PCs without WebView2, download the x64 Fixed Version Runtime from [Microsoft's WebView2 page](https://developer.microsoft.com/en-us/microsoft-edge/webview2/), run `if not exist build\webview2-runtime mkdir build\webview2-runtime`, then extract it with `expand.exe <runtime.cab> -F:* build\webview2-runtime`. Running `pack.bat` then creates `..._portable_QR_OCR_CrispEmbed_WebView2_x64.zip`. The fixed runtime adds over 250 MB and does not update automatically; replace it periodically. Extract the package to a local disk and launch it with the included `start-sniplite.bat`, which applies the required Windows 10 permissions. Fixed Version does not run from a network path.
 
 QR recognition uses [ZXing-C++ v3.1.1](https://github.com/zxing-cpp/zxing-cpp), with only QR Code decoding enabled, under Apache License 2.0. See the [QR recognition guide](qr-code-recognition.en.md) for implementation details and limitations.
 
 ## License
 
-This project is licensed under the [GNU Affero General Public License v3.0 (AGPL-3.0)](../LICENSE-AGPL-3.0). The FormulaNet model is provided by [alephpi/FormulaNet](https://huggingface.co/alephpi/FormulaNet) under AGPL-3.0; ONNX Runtime is under the MIT License. Other third-party components are distributed under their own licenses. See `third_party/webview2` and `LICENSE-WebView2.txt` / `NOTICE-WebView2.txt` in release packages for WebView2 SDK terms and notices. See the [upstream OCR release notes](https://github.com/MrTangLuyao/sniplite/releases/tag/ocr-1) for OCR licensing details.
+This project is licensed under the [GNU Affero General Public License v3.0 (AGPL-3.0)](../LICENSE-AGPL-3.0). Formula recognition uses CrispEmbed and the Texo-Distill GGUF model; their license notices are included in the formula module. ONNX Runtime remains in use for the separate text OCR module. Other third-party components are distributed under their own licenses. See `third_party/webview2` and `LICENSE-WebView2.txt` / `NOTICE-WebView2.txt` in release packages for WebView2 SDK terms and notices. See the [upstream OCR release notes](https://github.com/MrTangLuyao/sniplite/releases/tag/ocr-1) for OCR licensing details.

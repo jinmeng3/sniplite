@@ -35,7 +35,7 @@ if exist "build\webview2-runtime\msedgewebview2.exe" (
   call pack-qr-ocr-formula-webview2.bat || exit /b 1
 ) else (
   call pack-qr-ocr-formula.bat || exit /b 1
-  if exist "%D%\sniplite_%V%_portable_QR_OCR_FormulaNet_WebView2_x64.zip" del /q "%D%\sniplite_%V%_portable_QR_OCR_FormulaNet_WebView2_x64.zip"
+  if exist "%D%\sniplite_%V%_portable_QR_OCR_CrispEmbed_WebView2_x64.zip" del /q "%D%\sniplite_%V%_portable_QR_OCR_CrispEmbed_WebView2_x64.zip"
   echo Fixed WebView2 package skipped: extract the x64 Fixed Version runtime to build\webview2-runtime
 )
 for %%f in (%D%\*) do echo %%~nxf  %%~zf bytes

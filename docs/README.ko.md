@@ -37,7 +37,7 @@
 
 [Releases](https://github.com/MrTangLuyao/sniplite/releases/latest)에서 최신 설치 파일을 받으세요.
 
-설치가 필요 없는 포터블 ZIP은 세 가지이며 모두 QR 인식을 포함합니다: `sniplite_<버전>_portable_QR_x64.zip`, `sniplite_<버전>_portable_QR_OCR_x64.zip`, `sniplite_<버전>_portable_QR_OCR_FormulaNet_x64.zip`. Runtime이 없는 PC를 위해 고정 버전 WebView2를 포함한 `sniplite_<버전>_portable_QR_OCR_FormulaNet_WebView2_x64.zip`도 있으며, `start-sniplite.bat`으로 실행합니다.
+설치가 필요 없는 포터블 ZIP은 세 가지이며 모두 QR 인식을 포함합니다: `sniplite_<버전>_portable_QR_x64.zip`, `sniplite_<버전>_portable_QR_OCR_x64.zip`, `sniplite_<버전>_portable_QR_OCR_CrispEmbed_x64.zip`. Runtime이 없는 PC를 위해 고정 버전 WebView2를 포함한 `sniplite_<버전>_portable_QR_OCR_CrispEmbed_WebView2_x64.zip`도 있으며, `start-sniplite.bat`으로 실행합니다.
 
 > [!TIP]
 > 아이콘은 작업 표시줄 오른쪽 끝에 있습니다. 보이지 않으면 그곳의 작은 화살표를 누르세요. 항상 보이게 하려면 Windows 설정에서 "기타 시스템 트레이 아이콘"을 검색해 sniplite를 켜세요.

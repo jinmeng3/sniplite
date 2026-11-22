@@ -1,5 +1,5 @@
-/* The screenshot editor's FormulaNet command uses an isolated helper process,
- * keeping ONNX Runtime out of the capture process. The helper exits after 60 s idle. */
+/* The screenshot editor's CrispEmbed formula command uses an isolated helper process,
+ * keeping the model runtime out of the capture process. The helper exits after 60 s idle. */
 #include "common.h"
 #include "formula.h"
 #include "image.h"

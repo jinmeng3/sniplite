@@ -37,7 +37,7 @@
 
 到 [Releases](https://github.com/MrTangLuyao/sniplite/releases/latest) 下載最新版安裝。
 
-提供三種免安裝便攜 ZIP，全部包含 QR 碼辨識：`sniplite_<版本>_portable_QR_x64.zip`、`sniplite_<版本>_portable_QR_OCR_x64.zip`、`sniplite_<版本>_portable_QR_OCR_FormulaNet_x64.zip`。另有適用於未安裝 WebView2 電腦的 `sniplite_<版本>_portable_QR_OCR_FormulaNet_WebView2_x64.zip`，內含固定版本 Runtime，請透過 `start-sniplite.bat` 啟動。
+提供三種免安裝便攜 ZIP，全部包含 QR 碼辨識：`sniplite_<版本>_portable_QR_x64.zip`、`sniplite_<版本>_portable_QR_OCR_x64.zip`、`sniplite_<版本>_portable_QR_OCR_CrispEmbed_x64.zip`。另有適用於未安裝 WebView2 電腦的 `sniplite_<版本>_portable_QR_OCR_CrispEmbed_WebView2_x64.zip`，內含固定版本 Runtime，請透過 `start-sniplite.bat` 啟動。
 
 > [!TIP]
 > 圖示在工作列右下角，沒看到的話點一下那裡的小箭頭。想讓它一直顯示，在 Windows 設定裡搜尋“其他系統匣圖示”，把 sniplite 打開。

@@ -1,5 +1,5 @@
 @echo off
-rem Build the QR + OCR + FormulaNet + Fixed Version WebView2 portable ZIP.
+rem Build the QR + OCR + CrispEmbed + Fixed Version WebView2 portable ZIP.
 rem Extract Microsoft's x64 Fixed Version Runtime into build\webview2-runtime first.
 setlocal
 cd /d "%~dp0"
@@ -11,10 +11,10 @@ call pack-qr-ocr-formula.bat || exit /b 1
 for /f "tokens=3" %%v in ('findstr /C:"#define SNIPLITE_VERSION" src\common.h') do set V=%%v
 set V=%V:L"=%
 set V=%V:"=%
-set BASE_ZIP=build\dist\sniplite_%V%_portable_QR_OCR_FormulaNet_x64.zip
-set STAGE=build\dist\sniplite_%V%_portable_QR_OCR_FormulaNet_WebView2_stage
-set ZIP=build\dist\sniplite_%V%_portable_QR_OCR_FormulaNet_WebView2_x64.zip
-if not exist "%BASE_ZIP%" (echo the FormulaNet portable ZIP is missing & exit /b 1)
+set BASE_ZIP=build\dist\sniplite_%V%_portable_QR_OCR_CrispEmbed_x64.zip
+set STAGE=build\dist\sniplite_%V%_portable_QR_OCR_CrispEmbed_WebView2_stage
+set ZIP=build\dist\sniplite_%V%_portable_QR_OCR_CrispEmbed_WebView2_x64.zip
+if not exist "%BASE_ZIP%" (echo the CrispEmbed portable ZIP is missing & exit /b 1)
 if exist "%STAGE%" rmdir /s /q "%STAGE%"
 mkdir "%STAGE%" || exit /b 1
 "%SystemRoot%\System32\tar.exe" -xf "%BASE_ZIP%" -C "%STAGE%" || exit /b 1

@@ -25,7 +25,7 @@
 - **截图**：识别窗口和控件，提供放大镜及像素级选区调整。
 - **标注和贴图**：绘制箭头、文字、序号和马赛克，也可将截图置顶显示。
 - **二维码识别**：在截图选区按 `Ctrl+Q` 识别二维码，结果留在本机并可复制。
-- **公式识别**：可选 FormulaNet 模块，在本机将截图选区转换为 LaTeX 并复制。
+- **公式识别**：可选 CrispEmbed 模块，使用本机 Texo-Distill GGUF 将截图选区转换为 LaTeX 并复制。运行库请求 Vulkan，但当前 PP-FormulaNet 模型推理路径仅支持 CPU。
 - **文字识别**：可选 OCR 模块，支持普通文字和表格识别，在本机运行。
 - **长截图**：滚动页面时自动拼接内容。
 - **轻量运行**：截图、画面合成和绘制等性能敏感部分使用 x86-64 汇编；主程序不链接 C 运行库。
@@ -45,14 +45,14 @@
 
 管理员权限运行主程序时，也请以管理员权限运行命令行程序；普通权限的命令行程序不会向提权后的主程序发送命令。
 
-FormulaNet 公式识别模块也可在首选项的“公式识别”页面下载安装或删除。
+CrispEmbed 公式识别模块可在首选项的“公式识别”页面从本机模型与运行库文件安装或删除。
 
 ## 系统要求
 
 - Windows 10 或 Windows 11 x64
 - 普通截图与绘图不需要额外运行库
 - OCR 需要随包提供或另行安装 OCR 模块
-- 公式识别需要另行安装 FormulaNet 模块
+- 公式识别需要 Texo-Distill GGUF 模型、CrispEmbed 运行库和 Microsoft Visual C++ x64 运行库。
 
 ## 默认快捷键
 
@@ -89,7 +89,7 @@ FormulaNet 公式识别模块也可在首选项的“公式识别”页面下载
 框选区域后点击文字识别按钮或按 `Ctrl+O`。识别结果显示在选区旁的面板中，可以编辑和复制；表格可保留列结构，也可切换为 Markdown。此功能需要 OCR 模块，使用 PaddleOCR PP-OCRv6 模型和 ONNX Runtime，识别过程在本机完成。
 ### 如何识别截图中的公式？
 
-在截图编辑页框选公式，点击“∫”识别按钮即可识别并直接复制 LaTeX；复制成功后截图界面会自动退出。点击它旁边的眼睛按钮，会在 sniplite 自带的 WebView2 窗口中打开离线 KaTeX 预览与编辑页。修改公式后可复制，按 `Ctrl+Enter` 也可复制源码；公式语法有误时，预览页会显示提示。点击预览时，如果当前截图或选区还没有对应的识别结果，会先识别再打开；未识别出公式时不会打开空白页。预览窗口显示在选区所在的显示器。复制前会整理模型输出空格：移除括号和运算符周围多余空格，保留词间空格。首次使用前，在首选项的“公式识别”页面下载安装约 97 MB 的 FormulaNet 模块；推理在本机完成。
+在截图编辑页框选公式，点击“∫”识别按钮即可识别并直接复制 LaTeX；复制成功后截图界面会自动退出。点击它旁边的眼睛按钮，会在 sniplite 自带的 WebView2 窗口中打开离线 KaTeX 预览与编辑页。修改公式后可复制，按 `Ctrl+Enter` 也可复制源码；公式语法有误时，预览页会显示提示。点击预览时，如果当前截图或选区还没有对应的识别结果，会先识别再打开；未识别出公式时不会打开空白页。预览窗口显示在选区所在的显示器。复制前会整理模型输出空格：移除括号和运算符周围多余空格，保留词间空格。公式模块约 82 MB，使用本机 Texo-Distill GGUF 与 CrispEmbed；运行库请求 Vulkan，但当前 PP-FormulaNet 模型推理路径仅支持 CPU。
 识别期间不会弹出进度窗口；识别失败或结果未完整生成时，不会覆盖剪贴板。纯色空白选区会直接提示未识别到公式。
 
 
@@ -131,11 +131,11 @@ FormulaNet 公式识别模块也可在首选项的“公式识别”页面下载
 
 ## 自行编译
 
-项目根目录的 `w64devkit` 可直接用于构建；也可使用 MinGW-w64、CMake 和 Ninja。运行 `build.bat` 编译程序，再运行 `pack.bat` 生成安装程序和三种二维码便携 ZIP：基础版、OCR 版、OCR+FormulaNet 版。脚本会准备 OCR 模块；生成含公式识别的版本前，先在 `build\sniplite.exe` 的首选项中安装 FormulaNet。输出位于 `build\dist`。
-还可生成适用于未安装 WebView2 电脑的第四种 ZIP：从[微软 WebView2 下载页](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)下载 x64 Fixed Version Runtime，运行 `if not exist build\webview2-runtime mkdir build\webview2-runtime`，再用 `expand.exe <runtime.cab> -F:* build\webview2-runtime` 解压；随后 `pack.bat` 会生成 `..._portable_QR_OCR_FormulaNet_WebView2_x64.zip`。固定 Runtime 超过 250 MB 且不会自动更新，需定期替换；目标电脑解压到本地磁盘后，请用包内的 `start-sniplite.bat` 启动，它会设置 Windows 10 所需权限。Fixed Version 不能从网络路径运行。
+项目根目录的 `w64devkit` 可直接用于构建；也可使用 MinGW-w64、CMake 和 Ninja。运行 `build.bat` 编译程序，再从 `build\sniplite.exe` 首选项的“公式识别”页安装本机模块，随后运行 `pack.bat` 生成安装程序和二维码便携 ZIP。模块安装源为 `E:\浏览器下载\texo-distill-q8_0.gguf`、`E:\浏览器下载\crispembed-windows-x86_64-vulkan` 和系统中的 Visual C++ x64 运行库。输出位于 `build\dist`。
+还可生成适用于未安装 WebView2 电脑的公式识别 ZIP：从[微软 WebView2 下载页](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)下载 x64 Fixed Version Runtime，运行 `if not exist build\webview2-runtime mkdir build\webview2-runtime`，再用 `expand.exe <runtime.cab> -F:* build\webview2-runtime` 解压；随后 `pack.bat` 会生成 `..._portable_QR_OCR_CrispEmbed_WebView2_x64.zip`。固定 Runtime 超过 250 MB 且不会自动更新，需定期替换；目标电脑解压到本地磁盘后，请用包内的 `start-sniplite.bat` 启动，它会设置 Windows 10 所需权限。Fixed Version 不能从网络路径运行。
 
 二维码识别使用 [ZXing-C++ v3.1.1](https://github.com/zxing-cpp/zxing-cpp)，仅启用 QR Code 解码，遵循 Apache License 2.0。详细实现和限制见[二维码识别文档](docs/qr-code-recognition.md)。
 
 ## 许可证
 
-本项目采用 [GNU Affero 通用公共许可证 v3.0（AGPL-3.0）](LICENSE-AGPL-3.0)。FormulaNet 模型由 [alephpi/FormulaNet](https://huggingface.co/alephpi/FormulaNet) 提供并采用 AGPL-3.0；ONNX Runtime 遵循 MIT 许可证。其他第三方组件遵循各自的许可证；WebView2 SDK 组件的许可和声明见 `third_party/webview2` 与发布包中的 `LICENSE-WebView2.txt`、`NOTICE-WebView2.txt`；OCR 模块的具体许可信息见[上游 OCR 发布说明](https://github.com/MrTangLuyao/sniplite/releases/tag/ocr-1)。
+本项目采用 [GNU Affero 通用公共许可证 v3.0（AGPL-3.0）](LICENSE-AGPL-3.0)。公式识别使用 CrispEmbed 和 Texo-Distill GGUF；许可文件随公式模块提供。ONNX Runtime 仍用于独立的文字 OCR 模块。其他第三方组件遵循各自的许可证；WebView2 SDK 组件的许可和声明见 `third_party/webview2` 与发布包中的 `LICENSE-WebView2.txt`、`NOTICE-WebView2.txt`；OCR 模块的具体许可信息见[上游 OCR 发布说明](https://github.com/MrTangLuyao/sniplite/releases/tag/ocr-1)。

@@ -1,7 +1,7 @@
 #pragma once
 #include "common.h"
 
-enum { FORMULA_GET_OK, FORMULA_GET_NET, FORMULA_GET_CHECK, FORMULA_GET_WRITE, FORMULA_GET_CANCEL };
+enum { FORMULA_GET_OK, FORMULA_GET_CHECK, FORMULA_GET_WRITE, FORMULA_GET_CANCEL, FORMULA_GET_SOURCE };
 #define FORMULA_SERVICE_IDLE_MS 60000u
 typedef struct { uint32_t w, h; } FormulaRequest;
 typedef struct { uint32_t code, bytes; } FormulaReply;
