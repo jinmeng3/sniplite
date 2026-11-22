@@ -33,15 +33,15 @@
 
 ## 下载
 
-前往 [GitHub Releases](https://github.com/jinmeng3/sniplite/releases) 下载当前版本。v1.5.1.2 提供以下版本：
+前往 [GitHub Releases](https://github.com/jinmeng3/sniplite/releases) 下载当前版本。v1.5.1.3 提供以下版本：
 
-- [Windows 安装程序](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.2/sniplite_win_setup_amd64.exe)
-- [二维码便携版](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.2/sniplite_1.5.1.2_portable_QR_x64.zip)：主程序、二维码识别程序及其许可证。
-- [二维码 + OCR 便携版](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.2/sniplite_1.5.1.2_portable_QR_OCR_x64.zip)
-- [二维码 + OCR + FormulaNet 便携版](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.2/sniplite_1.5.1.2_portable_QR_OCR_FormulaNet_x64.zip)
-- [无需预装 WebView2 的便携版](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.2/sniplite_1.5.1.2_portable_QR_OCR_FormulaNet_WebView2_x64.zip)：附带 Fixed Version Runtime 158.0.4370.33。
+- [Windows 安装程序](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.3/sniplite_win_setup_amd64.exe)
+- [二维码便携版](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.3/sniplite_1.5.1.3_portable_QR_x64.zip)：主程序、二维码识别程序及其许可证。
+- [二维码 + OCR 便携版](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.3/sniplite_1.5.1.3_portable_QR_OCR_x64.zip)
+- [二维码 + OCR + FormulaNet 便携版](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.3/sniplite_1.5.1.3_portable_QR_OCR_FormulaNet_x64.zip)
+- [无需预装 WebView2 的便携版](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.3/sniplite_1.5.1.3_portable_QR_OCR_FormulaNet_WebView2_x64.zip)：附带 Fixed Version Runtime 158.0.4370.33。
 
-解压后运行 `sniplite.exe`。命令行功能由 `sniplite-cli.com` 提供；二维码 ZIP 已附带此文件，单文件便携版请从发布页另行下载，并与主程序放在同一目录。OCR 模块可在首选项的“OCR”页面下载安装或删除；更新页检查后会打开对应的 GitHub 发布页，供手动下载新版便携包。二维码助手也可在首选项的“二维码”页面单独下载安装或删除。便携版可在首选项中开启“开机启动”；快捷方式会指向当前程序位置，因此开启后不要移动或重命名程序目录。若已移动目录，请重新关闭并开启此选项以更新快捷方式。
+解压后运行 `sniplite.exe`。命令行功能由 `sniplite-cli.com` 提供；二维码 ZIP 已附带此文件，单文件便携版请从发布页另行下载，并与主程序放在同一目录。OCR 模块可在首选项的“OCR”页面下载安装或删除；便携版在更新页检查后可直接下载更新并原地替换已有程序文件，OCR、公式模型和 WebView2 Runtime 等目录会保留。二维码助手也可在首选项的“二维码”页面单独下载安装或删除。便携版可在首选项中开启“开机启动”；快捷方式会指向当前程序位置，因此开启后不要移动或重命名程序目录。若已移动目录，请重新关闭并开启此选项以更新快捷方式。
 
 管理员权限运行主程序时，也请以管理员权限运行命令行程序；普通权限的命令行程序不会向提权后的主程序发送命令。
 

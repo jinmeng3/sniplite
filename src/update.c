@@ -292,12 +292,12 @@ bool update_installed_copy(void)
     return GetFileAttributesW(com) != INVALID_FILE_ATTRIBUTES;
 }
 
-void update_setup_cmd(Str *cmd, const WCHAR *setup)
+void update_setup_cmd(Str *cmd, const WCHAR *setup, bool portable)
 {
     WCHAR arg[MAX_PATH + 8] = L"/D=";
     int n = own_dir(arg + 3);
     str_add_quoted(cmd, setup);
-    str_add(cmd, L" /update");
+    str_add(cmd, portable ? L" /portable-update" : L" /update");
     if (n > 1) {
         arg[3 + n - 1] = 0; /* without the last backslash */
         str_add(cmd, L" ");

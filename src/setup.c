@@ -17,7 +17,8 @@
  *                                           ticked: sniplite then downloads it, in its preferences)
  *   sniplite_win_setup_amd64.exe /S         silent; a fresh install turns start with Windows on
  *   sniplite_win_setup_amd64.exe /update    silent, keeps the current choice
- *   ... "/D=C:\some folder\sniplite"        into that folder (a whole path; not a drive by itself)
+ *   sniplite_win_setup_amd64.exe /portable-update silent, replaces existing files in place
+ *   ... "/D=C:\some folder\sniplite"        into that folder (a whole path, not a drive alone)
  * Exit code 0 = installed, 1 = failed or cancelled.
  *
  * The window speaks the language sniplite is set to (an installed sniplite.ini),
@@ -32,6 +33,7 @@ static struct {
     WCHAR dir[MAX_PATH], exe[MAX_PATH];
     HFONT title_font;
     bool done;
+    bool portable_update;
 } I;
 
 static bool exists(const WCHAR *p) { return GetFileAttributesW(p) != INVALID_FILE_ATTRIBUTES; }
@@ -154,8 +156,8 @@ static bool browse(HWND owner)
     return ok;
 }
 
-/* Close the background process (and its pins). Helper processes started from the
- * installed exe (preferences, save dialog) may keep running: their exe is moved aside. */
+/* Close the background process for this install only. A different portable copy can
+ * own the daemon window while this folder is being updated. */
 static void stop_running(void)
 {
     HWND d = FindWindowW(DAEMON_CLASS, NULL);
@@ -163,12 +165,18 @@ static void stop_running(void)
         return;
     DWORD pid = 0;
     GetWindowThreadProcessId(d, &pid);
-    HANDLE p = pid ? OpenProcess(SYNCHRONIZE, FALSE, pid) : NULL;
-    PostMessageW(d, WM_CLOSE, 0, 0);
-    if (p) {
-        WaitForSingleObject(p, 5000);
+    HANDLE p = pid ? OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid) : NULL;
+    if (!p)
+        return;
+    WCHAR exe[MAX_PATH];
+    DWORD n = COUNTOF(exe);
+    if (!QueryFullProcessImageNameW(p, 0, exe, &n) || CompareStringOrdinal(exe, -1, I.exe, -1, TRUE) != CSTR_EQUAL) {
         CloseHandle(p);
+        return;
     }
+    PostMessageW(d, WM_CLOSE, 0, 0);
+    WaitForSingleObject(p, 5000);
+    CloseHandle(p);
 }
 
 /* Program files and their third-party notices, embedded as resources. */
@@ -182,6 +190,15 @@ static bool g_had[COUNTOF(kFiles)]; /* the file existed and was moved to *.old b
 
 static bool paths(int i, WCHAR *path, WCHAR *tmp, WCHAR *old)
 {
+    if (I.portable_update && i == 1) {
+        WCHAR cli[MAX_PATH];
+        if (join(cli, I.dir, L"sniplite-cli.com") && exists(cli)) {
+            if (!join(path, I.dir, L"sniplite-cli.com") || !join(tmp, I.dir, L"sniplite.com.new") ||
+                !join(old, I.dir, L"sniplite.com.old"))
+                return false;
+            return lstrlenW(old) < MAX_PATH;
+        }
+    }
     if (!join(path, I.dir, kFiles[i].name) || lstrlenW(path) + 5 > MAX_PATH)
         return false;
     wsprintfW(tmp, L"%s.new", path);
@@ -269,28 +286,47 @@ static void delete_new(void)
             DeleteFileW(tmp);
 }
 
-/* autostart: 1 on, 0 off, -1 leave as it is. ocr: have sniplite download its text
- * recognition module (its preferences open on that page and begin). */
-static bool install(int autostart, bool ocr)
+/* autostart: 1 on, 0 off, -1 leave as it is. ocr: start the OCR download after install.
+ * portable_update: replace only files present in the target and leave shortcuts alone. */
+static bool install(int autostart, bool ocr, bool portable_update)
 {
     int e = SHCreateDirectoryExW(NULL, I.dir, NULL);
     if (e != ERROR_SUCCESS && e != ERROR_ALREADY_EXISTS && e != ERROR_FILE_EXISTS)
         return false;
-    for (int i = 0; i < COUNTOF(kFiles); i++)
-        if (!write_new(i)) { /* e.g. disk full: sniplite keeps running untouched */
+    int count = (int)COUNTOF(kFiles);
+    bool update_file[COUNTOF(kFiles)], swapped[COUNTOF(kFiles)] = {0};
+    for (int i = 0; i < count; i++) {
+        update_file[i] = true;
+        if (portable_update && i > 0) {
+            WCHAR path[MAX_PATH], tmp[MAX_PATH], old[MAX_PATH];
+            if (!paths(i, path, tmp, old)) {
+                delete_new();
+                return false;
+            }
+            update_file[i] = exists(path);
+        }
+        if (update_file[i] && !write_new(i)) {
             delete_new();
             return false;
         }
+    }
     stop_running();
-    int count = (int)COUNTOF(kFiles), swapped = 0;
-    while (swapped < count && swap(swapped))
-        swapped++;
-    bool ok = swapped == count;
+    bool ok = true;
+    for (int i = 0; i < count; i++) {
+        if (update_file[i]) {
+            if (!swap(i)) {
+                ok = false;
+                break;
+            }
+            swapped[i] = true;
+        }
+    }
     if (!ok)
-        while (swapped)
-            unswap(--swapped);
+        for (int i = count - 1; i >= 0; i--)
+            if (swapped[i])
+                unswap(i);
     delete_new();
-    if (ok) {
+    if (ok && !portable_update) {
         WCHAR menu[MAX_PATH], lnk[MAX_PATH];
         if (special(CSIDL_PROGRAMS, MENU_FOLDER, menu)) {
             CreateDirectoryW(menu, NULL);
@@ -395,7 +431,8 @@ static INT_PTR CALLBACK dlg_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
             EnableWindow(GetDlgItem(h, IDCANCEL), FALSE);
             EnableWindow(GetDlgItem(h, IDC_S_BROWSE), FALSE);
             HCURSOR old = SetCursor(LoadCursorW(NULL, IDC_WAIT));
-            bool ok = install(IsDlgButtonChecked(h, IDC_S_AUTOSTART) == BST_CHECKED, IsDlgButtonChecked(h, IDC_S_OCR) == BST_CHECKED);
+            bool ok = install(IsDlgButtonChecked(h, IDC_S_AUTOSTART) == BST_CHECKED,
+                              IsDlgButtonChecked(h, IDC_S_OCR) == BST_CHECKED, false);
             SetCursor(old);
             if (ok) {
                 I.done = true;
@@ -441,16 +478,19 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmdline, int show)
     (void)show;
     int argc;
     WCHAR **argv = cmdline_split(GetCommandLineW(), &argc);
-    bool silent = false, update = false;
+    bool silent = false, update = false, portable_update = false;
     const WCHAR *given = NULL;
     for (int i = 1; i < argc; i++) {
         if (arg_eq(argv[i], L"/S") || arg_eq(argv[i], L"-S"))
             silent = true;
         else if (arg_eq(argv[i], L"/update") || arg_eq(argv[i], L"--update"))
             update = true;
+        else if (arg_eq(argv[i], L"/portable-update") || arg_eq(argv[i], L"--portable-update"))
+            portable_update = true;
         else if ((argv[i][0] == L'/' || argv[i][0] == L'-') && (argv[i][1] | 32) == L'd' && argv[i][2] == L'=')
             given = argv[i] + 3;
     }
+    I.portable_update = portable_update;
     CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
     WCHAR dir[MAX_PATH], ini[MAX_PATH];
     if (given) { /* a folder that cannot be one is an error, not a reason to install somewhere else */
@@ -461,7 +501,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmdline, int show)
             return 1;
     }
     lang_init(join(ini, I.dir, L"sniplite.ini") ? ini : L"");
-    if (silent || update)
-        return install(update || exists(I.exe) ? -1 : 1, false) ? 0 : 1;
+    if (silent || update || portable_update)
+        return install(update || portable_update || exists(I.exe) ? -1 : 1, false, portable_update) ? 0 : 1;
     return (int)lang_dialog_box(inst, IDD_SETUP, NULL, dlg_proc);
 }

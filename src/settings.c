@@ -891,7 +891,7 @@ static void upd_checked(int state)
         lstrcpynW(S.tag, g_upd.tag, COUNTOF(S.tag));
         wsprintfW(t, T(U_NEWER), S.tag);
         if (S.portable)
-            SetDlgItemTextW(S.page[PG_UPDATE], IDC_U_INSTALL, T(U_PORTABLE_BTN));
+            SetDlgItemTextW(S.page[PG_UPDATE], IDC_U_INSTALL, T(U_INSTALL_BTN));
         upd_status(t);
         upd_buttons(true, true);
         return;
@@ -960,13 +960,6 @@ static void upd_install(void)
 {
     if (S.busy || !S.tag[0])
         return;
-    if (S.portable) {
-        WCHAR url[256];
-        wsprintfW(url, L"https://github.com" UPDATE_REPO L"/releases/tag/%s", S.tag);
-        if (!S.shell_exec || (INT_PTR)S.shell_exec(S.dlg, L"open", url, NULL, NULL, SW_SHOWNORMAL) <= 32)
-            upd_status(T(U_OPEN_FAILED));
-        return;
-    }
     if (daemon_pins() > 0 &&
         MessageBoxW(S.dlg, T(U_CONFIRM), T(SETTINGS_TITLE), MB_OKCANCEL | MB_ICONQUESTION) != IDOK)
         return;
@@ -988,7 +981,7 @@ static void upd_fetched(bool ok)
     }
     upd_status(T(U_INSTALLING));
     Str cmd = {0};
-    update_setup_cmd(&cmd, S.setup);
+    update_setup_cmd(&cmd, S.setup, S.portable);
     STARTUPINFOW si = {sizeof si};
     PROCESS_INFORMATION pi;
     HANDLE t = NULL;

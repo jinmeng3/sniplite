@@ -218,22 +218,14 @@ X(UPD_FAILED,
   "更新に失敗しました。後でもう一度お試しください\n", "업데이트 실패. 나중에 다시 시도하세요\n",
   "Échec de la mise à jour. Réessayez plus tard\n", "Update fehlgeschlagen. Später erneut versuchen\n",
   "Error al actualizar. Inténtalo más tarde\n")
-X(PORTABLE_UPDATE,
-  "便携版需手动替换程序，已打开发布页：%s\n", "便攜版需手動替換程式，已開啟發布頁：%s\n",
-  "Portable builds need a manual replacement. Opened release page: %s\n",
-  "ポータブル版は手動で置き換えてください。リリースページを開きました：%s\n",
-  "포터블 버전은 직접 교체해야 합니다. 릴리스 페이지를 열었습니다: %s\n",
-  "La version portable doit être remplacée manuellement. Page ouverte : %s\n",
-  "Portable-Versionen müssen manuell ersetzt werden. Release-Seite geöffnet: %s\n",
-  "La versión portátil debe sustituirse manualmente. Página abierta: %s\n")
 X(PORTABLE_NEWER,
-  "有新版本 %s（现在是 %s）。便携版需手动下载并替换：%s\n", "有新版本 %s（目前是 %s）。便攜版需手動下載並替換：%s\n",
-  "New version %s (this is %s). Download and replace the portable build manually: %s\n",
-  "新バージョン %s があります（現在は %s）。ポータブル版を手動でダウンロードして置き換えてください：%s\n",
-  "새 버전 %s (현재 %s). 포터블 버전을 직접 다운로드해 교체하세요: %s\n",
-  "Nouvelle version %s (actuelle : %s). Téléchargez et remplacez manuellement la version portable : %s\n",
-  "Neue Version %s (installiert: %s). Portable-Version manuell herunterladen und ersetzen: %s\n",
-  "Nueva versión %s (actual: %s). Descarga y sustituye manualmente la versión portátil: %s\n")
+  "有新版本 %s（现在是 %s）。运行 sniplite update --install 可在本地更新：%s\n", "有新版本 %s（目前是 %s）。运行 sniplite update --install 可在本地更新：%s\n",
+  "New version %s (this is %s). Run sniplite update --install to update locally: %s\n",
+  "新バージョン %s があります（現在は %s）。sniplite update --install でローカル更新できます：%s\n",
+  "새 버전 %s (현재 %s). sniplite update --install로 로컬 업데이트: %s\n",
+  "Nouvelle version %s (actuelle : %s). Exécutez sniplite update --install pour mettre à jour localement : %s\n",
+  "Neue Version %s (installiert: %s). Mit sniplite update --install lokal aktualisieren: %s\n",
+  "Nueva versión %s (actual: %s). Ejecuta sniplite update --install para actualizar localmente: %s\n")
 X(NEWER,
   "有新版本 %s（现在是 %s），运行 sniplite update --install 安装\n",
   "有新版本 %s（現在是 %s），執行 sniplite update --install 安裝\n",
@@ -706,10 +698,6 @@ X(U_CHECK_BTN, "检查更新", "檢查更新", "Check now", "更新を確認", "
   "Buscar")
 X(U_INSTALL_BTN, "立即更新", "立即更新", "Update now", "今すぐ更新", "지금 업데이트", "Mettre à jour",
   "Aktualisieren", "Actualizar")
-X(U_PORTABLE_BTN,
-  "打开便携版下载页", "開啟便攜版下載頁", "Open portable download page", "ポータブル版のダウンロードページを開く",
-  "포터블 다운로드 페이지 열기", "Ouvrir la page de téléchargement portable", "Portable-Downloadseite öffnen",
-  "Abrir la página de descarga portátil")
 X(U_AUTO,
   "自动检查更新", "自動檢查更新", "Check for updates automatically", "自動で更新を確認", "업데이트 자동 확인",
   "Recherche automatique", "Automatisch nach Updates suchen", "Buscar automáticamente")

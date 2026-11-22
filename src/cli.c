@@ -104,17 +104,6 @@ static HWND spawn_daemon(int argc, WCHAR **argv, bool is_start)
     return d;
 }
 
-static bool open_url(const WCHAR *url)
-{
-    HMODULE shell = LoadLibraryW(L"shell32.dll");
-    if (!shell)
-        return false;
-    typedef HINSTANCE(WINAPI *PFN_ShellExecuteW)(HWND, LPCWSTR, LPCWSTR, LPCWSTR, LPCWSTR, INT);
-    PFN_ShellExecuteW run = (PFN_ShellExecuteW)(void *)GetProcAddress(shell, "ShellExecuteW");
-    bool ok = run && (INT_PTR)run(NULL, L"open", url, NULL, NULL, SW_SHOWNORMAL) > 32;
-    FreeLibrary(shell);
-    return ok;
-}
 /* `sniplite update [--install] [--json]`: runs here, no background process needed. */
 static int cmd_update(int ac, WCHAR **av, bool json)
 {
@@ -130,30 +119,27 @@ static int cmd_update(int ac, WCHAR **av, bool json)
     static const WCHAR *kState[] = {L"error", L"none", L"latest", L"newer"};
     UpdateResult r;
     update_check(&r);
-    bool installed = false, portable_copy = !update_installed_copy(),
-         portable = install && r.state == UPD_NEWER && portable_copy, opened = false;
+    bool portable_copy = !update_installed_copy(), installed = false, updated = false;
     WCHAR url[256] = {0};
     int code = r.state == UPD_ERROR ? EXIT_FAIL : EXIT_OK;
     if (r.state == UPD_NEWER && portable_copy)
         wsprintfW(url, L"https://github.com" UPDATE_REPO L"/releases/tag/%s", r.tag);
-    if (portable) {
-        opened = open_url(url);
-        code = opened ? EXIT_OK : EXIT_FAIL;
-    } else if (install && r.state == UPD_NEWER) {
+    if (install && r.state == UPD_NEWER) {
         WCHAR setup[MAX_PATH];
         if (!json)
             print(T(DOWNLOADING), false);
         code = EXIT_FAIL;
         if (update_download(r.tag, setup, MAX_PATH, NULL, NULL)) {
             Str cmd = {0};
-            update_setup_cmd(&cmd, setup);
+            update_setup_cmd(&cmd, setup, portable_copy);
             STARTUPINFOW si = {sizeof si};
             PROCESS_INFORMATION pi;
             if (cmd.p && CreateProcessW(setup, cmd.p, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
                 DWORD rc = 1;
                 WaitForSingleObject(pi.hProcess, 120000);
                 if (GetExitCodeProcess(pi.hProcess, &rc) && rc == 0) {
-                    installed = true;
+                    updated = true;
+                    installed = !portable_copy;
                     code = EXIT_OK;
                 }
                 CloseHandle(pi.hThread);
@@ -168,19 +154,13 @@ static int cmd_update(int ac, WCHAR **av, bool json)
         str_addf(&out, L"{\"state\":\"%s\",\"current\":\"%s\",\"latest\":\"%s\"", kState[r.state],
                  SNIPLITE_VERSION, r.tag);
         if (install)
-            str_addf(&out, L",\"installed\":%s", installed ? L"true" : L"false");
+            str_addf(&out, L",\"updated\":%s,\"installed\":%s", updated ? L"true" : L"false",
+                     installed ? L"true" : L"false");
         if (r.state == UPD_NEWER && portable_copy)
             str_addf(&out, L",\"portable\":true,\"release_url\":\"%s\"", url);
-        if (portable)
-            str_addf(&out, L",\"opened\":%s", opened ? L"true" : L"false");
         str_add(&out, L"}\n");
-    } else if (installed) {
+    } else if (updated) {
         str_addf(&out, T(UPDATED), r.tag);
-    } else if (portable) {
-        if (opened)
-            str_addf(&out, T(PORTABLE_UPDATE), url);
-        else
-            str_addf(&out, T(PORTABLE_NEWER), r.tag, SNIPLITE_VERSION, url);
     } else if (code != EXIT_OK) {
         str_add(&out, r.state == UPD_ERROR ? T(NET_FAILED) : T(UPD_FAILED));
     } else if (r.state == UPD_NEWER && portable_copy) {
