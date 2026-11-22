@@ -9,6 +9,8 @@
 #define MAG_ROWS                     19
 #define TIMER_TIP                    1
 #define TIMER_CARET                  2
+#define TIMER_SNAP_ANIMATION         3
+#define OV_WM_SNAP_READY             0x8005
 #define ACCENT                       0x1A8CFF
 #define MAX_WINS                     1024
 #define MAX_CHAIN                    16

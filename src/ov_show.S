@@ -537,6 +537,7 @@ FUNC ov_cancel
         ENDPROLOG
         cmp byte ptr OV(OV_ACTIVE), 0
         je .Lca_ret
+        call snap_end
         cmp byte ptr [rip + ocr_panel_on], 0
         je .Lca_nopanel
         call ocr_hide                   /* the text panel goes with the capture */
@@ -709,6 +710,8 @@ FUNC ov_begin
         test edi, edi
         cmovnz rax, qword ptr OV(OV_HWND_DC)
         mov qword ptr OV(OV_HWND), rax
+        mov rcx, rax
+        call snap_begin
         mov byte ptr OV(OV_PIXELS), 0
         xorps xmm0, xmm0
         movups xmmword ptr OV(OV_TILE_GPU), xmm0
@@ -802,6 +805,7 @@ FUNC ov_begin
         lea rcx, OV(OV_SHOT)
         call shot_free
 .Lbg_fail:
+        call snap_end
         mov rcx, qword ptr OV(OV_WIN)
         call mem_free
         mov qword ptr OV(OV_WIN), 0
@@ -1024,6 +1028,7 @@ FUNC finish
         movups xmm0, xmmword ptr OV(OV_HL)
         movups xmmword ptr OV(OV_SEL), xmm0
         mov dword ptr OV(OV_PHASE), PH_EDIT
+        call snap_end
         call canvas_free
 .Lfi_edit:
         call ocr_hide                   /* the text panel belongs to the capture window */
@@ -1202,6 +1207,7 @@ FUNC enter_edit
         mov dword ptr OV(OV_SEL + RC_B), r11d
         mov word ptr OV(OV_LDOWN), 0    /* rubber, ldown */
         mov dword ptr OV(OV_DRAG), DR_NONE
+        call snap_end
         call canvas_free
         call update_scale
         add rsp, 40
@@ -1223,6 +1229,8 @@ FUNC back_to_select
         mov dword ptr OV(OV_TOOL), T_NONE
         mov dword ptr OV(OV_DRAG), DR_NONE
         mov qword ptr OV(OV_HOVER), 0   /* hover, tip */
+        mov rcx, qword ptr OV(OV_HWND)
+        call snap_begin
         mov rcx, qword ptr OV(OV_HWND)
         mov edx, TIMER_TIP
         API KillTimer

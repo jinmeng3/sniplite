@@ -716,6 +716,7 @@ FUNC on_wheel
         lea rcx, [rip + O + OV_CHAIN]
         movups xmm0, xmmword ptr [rcx + rax]
         movups xmmword ptr [rip + O + OV_HL], xmm0
+        call snap_remember
         jmp .Lwh_refresh
 .Lwh_edit:
         cmp byte ptr [rip + O + OV_TE_ON], 0
@@ -1289,12 +1290,18 @@ FUNC ov_proc
         add rax, r10
         jmp rax
 .Lp_high:
+        cmp edx, OV_WM_SNAP_READY
+        je .Lp_snap
         cmp edx, W_WM_DPICHANGED        /* we draw in physical pixels; never let the system resize us */
         je .Lp_zero
 .Lp_def:
         add rsp, 56
 .Lp_inactive:
         jmp qword ptr [rip + __imp_DefWindowProcW]
+.Lp_snap:
+        call update_chain
+        call refresh
+        jmp .Lp_zero
 .Lp_paint:
         call on_paint
         jmp .Lp_zero
@@ -1345,6 +1352,8 @@ FUNC ov_proc
         call on_char
         jmp .Lp_zero
 .Lp_timer:
+        cmp r8, TIMER_SNAP_ANIMATION
+        je .Lp_snap_frame
         cmp r8, TIMER_CARET
         je .Lp_caret
         cmp r8, TIMER_TIP
@@ -1353,6 +1362,9 @@ FUNC ov_proc
         API KillTimer
         mov eax, dword ptr [rip + O + OV_HOVER]
         mov dword ptr [rip + O + OV_TIP], eax
+        call refresh
+        jmp .Lp_zero
+.Lp_snap_frame:                         /* animation only; never query a provider */
         call refresh
         jmp .Lp_zero
 .Lp_caret:                              /* composition mode blinks the drawn caret */

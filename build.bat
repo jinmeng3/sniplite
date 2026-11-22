@@ -17,13 +17,13 @@ set CF=-Isrc -Ires -Ithird_party/webview2 -std=c11 -Os -Wall -Wextra -Wno-unused
 set APP_LDFLAGS=-nostdlib -nostartfiles -e start -s -Wl,--gc-sections -Wl,--nxcompat -Wl,--dynamicbase ^
  -Wl,--high-entropy-va
 
-windres --input-format=rc -O coff -I res res\sniplite.rc build\sniplite.res || exit /b 1
-windres --input-format=rc -O coff -I res -DSNIPLITE_CLI res\sniplite.rc build\cli.res || exit /b 1
+windres --input-format=rc -O coff -I res res/sniplite.rc build/sniplite.res || exit /b 1
+windres --input-format=rc -O coff -I res -DSNIPLITE_CLI res/sniplite.rc build/cli.res || exit /b 1
 
 gcc %CF% -Wl,--subsystem,windows -o build\sniplite.exe src\start.S src\main.c src\ov_base.S src\ov_edit.S ^
  src\ov_paint.S src\ov_show.S src\ov_input.S src\present.S src\shot.S src\draw.S src\pin.c src\image.S ^
  src\config.c src\settings.c src\update.c src\uninstall.c src\util.c src\ipc.c src\lang.c src\crt.c ^
- src\ocr.c src\ocr_ui.c src\ocr_table.c src\ocr_get.c src\formula.c src\formula_get.c src\formula_ui.c src\formula_preview.c src\scroll.c build\sniplite.res ^
+ src\ocr.c src\ocr_ui.c src\ocr_table.c src\ocr_get.c src\formula.c src\formula_get.c src\formula_ui.c src\formula_preview.c src\scroll.c src\snap.c build\sniplite.res ^
  %APP_LDFLAGS% -lkernel32 -luser32 -lgdi32 -ldwmapi -limm32 -luuid -lole32 -lshell32 -lshlwapi -lgcc || exit /b 1
 gcc %CF% -DCONSOLE -Wl,--subsystem,console -o build\sniplite.com src\start.S src\cli.c src\update.c src\util.c ^
  src\ipc.c src\lang.c src\crt.c build\cli.res %APP_LDFLAGS% -lkernel32 -luser32 -lgdi32 -lgcc || exit /b 1

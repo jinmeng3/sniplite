@@ -1562,7 +1562,8 @@ FUNC compute_visual
         lea r8, [rsp + CV_CL]
         call ovp_isect
         jmp 3f
-2:      RCOPY([rbx+VIS_BRIGHT], Ov(OV_HL))
+2:      lea rcx, [rbx + VIS_BRIGHT]
+        call snap_visual               /* exact action target stays in O.hl */
 3:      mov rcx, rbx
         call place_label
         cmp byte ptr Ov(OV_PIXELS), 0           /* it shows pixels: not before they are in memory */
