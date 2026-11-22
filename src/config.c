@@ -171,6 +171,7 @@ bool config_load(Config *c)
     c->gdi = arg_eq(v, L"gdi");
     c->tray = GetPrivateProfileIntW(L"sniplite", L"tray", 1, path) != 0;
     c->pin_top = GetPrivateProfileIntW(L"sniplite", L"pin_top", 1, path) != 0;
+    c->rack_bottom = GetPrivateProfileIntW(L"sniplite", L"rack_bottom", 0, path) != 0;
     c->auto_update = GetPrivateProfileIntW(L"sniplite", L"auto_update", 1, path) != 0;
     c->exit_ask = GetPrivateProfileIntW(L"sniplite", L"exit_ask", 1, path) != 0;
     GetPrivateProfileStringW(L"sniplite", L"theme", kThemes[THEME_AUTO], v, COUNTOF(v), path);
@@ -197,8 +198,8 @@ bool config_save(const Config *c)
         hotkey_format(c->mod[id], c->vk[id], k);
         str_addf(&s, L"%s=%s\r\n", kHkKeys[id], k);
     }
-    str_addf(&s, L"capture=%s\r\ntray=%d\r\nauto_update=%d\r\npin_top=%d\r\n", c->gdi ? L"gdi" : L"dxgi", c->tray ? 1 : 0,
-             c->auto_update ? 1 : 0, c->pin_top ? 1 : 0);
+    str_addf(&s, L"capture=%s\r\ntray=%d\r\nauto_update=%d\r\npin_top=%d\r\nrack_bottom=%d\r\n", c->gdi ? L"gdi" : L"dxgi",
+             c->tray ? 1 : 0, c->auto_update ? 1 : 0, c->pin_top ? 1 : 0, c->rack_bottom ? 1 : 0);
     str_addf(&s, L"exit_ask=%d\r\ntheme=%s\r\nquick_dir=", c->exit_ask ? 1 : 0, kThemes[c->theme]);
     str_add(&s, c->quick_dir); /* by itself: str_addf stops at 1024 characters */
     str_add(&s, L"\r\n");

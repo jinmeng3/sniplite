@@ -1,5 +1,4 @@
-/* Preferences window: eight tabs (general, capture, hotkeys, update, text recognition,
- * QR helper, FormulaNet, about); changes apply immediately.
+/* Preferences window: nine tabs; changes apply immediately.
  *
  * Every change is written to sniplite.ini and the background process is told to
  * reload it (`_reload`), which also reports whether each hotkey could be
@@ -34,7 +33,7 @@ typedef HRESULT(WINAPI *PFN_DrawThemeParentBackground)(HWND, HDC, const RECT *);
 #define HKN_DONE 2
 #define ETDT_ENABLETAB_ 6
 
-enum { PG_GENERAL, PG_CAPTURE, PG_HOTKEYS, PG_UPDATE, PG_OCR, PG_QR, PG_FORMULA, PG_ABOUT, PG_COUNT };
+enum { PG_GENERAL, PG_CAPTURE, PG_HOTKEYS, PG_UPDATE, PG_OCR, PG_QR, PG_FORMULA, PG_RACK, PG_ABOUT, PG_COUNT };
 enum { RI_NONE, RI_CLEAR, RI_OK, RI_FAIL, RI_HELP }; /* round icons */
 
 static struct {
@@ -1039,6 +1038,11 @@ static void page_command(HWND page, int id, int code, HWND ctl)
         S.cfg.pin_top = IsDlgButtonChecked(page, IDC_PIN_TOP) == BST_CHECKED;
         apply();
         break;
+    case IDC_RACK_TOP:
+    case IDC_RACK_BOTTOM:
+        S.cfg.rack_bottom = id == IDC_RACK_BOTTOM;
+        apply();
+        break;
     case IDC_TRAY:
         S.cfg.tray = IsDlgButtonChecked(page, IDC_TRAY) == BST_CHECKED;
         apply();
@@ -1143,6 +1147,10 @@ static void page_command(HWND page, int id, int code, HWND ctl)
         } else if (page == S.page[PG_UPDATE]) {
             S.cfg.auto_update = d.auto_update;
             CheckDlgButton(page, IDC_U_AUTO, d.auto_update ? BST_CHECKED : BST_UNCHECKED);
+        } else if (page == S.page[PG_RACK]) {
+            S.cfg.rack_bottom = d.rack_bottom;
+            CheckRadioButton(page, IDC_RACK_TOP, IDC_RACK_BOTTOM,
+                             d.rack_bottom ? IDC_RACK_BOTTOM : IDC_RACK_TOP);
         }
         apply();
         break;
@@ -1226,11 +1234,15 @@ static const struct {
     {PG_QR, IDC_Q_HINT, S_Q_HINT},
     {PG_FORMULA, IDC_F_REMOVE, S_O_REMOVE_BTN},
     {PG_FORMULA, IDC_F_HINT, S_F_HINT},
+    {PG_RACK, IDC_RACK_POS_LABEL, S_RACK_POS_LABEL},
+    {PG_RACK, IDC_RACK_TOP, S_RACK_TOP},
+    {PG_RACK, IDC_RACK_BOTTOM, S_RACK_BOTTOM},
+    {PG_RACK, IDC_RACK_HINT, S_RACK_SETTINGS_HINT},
     {PG_OCR, IDC_HINT, S_O_HINT},
     {PG_ABOUT, IDC_TAGLINE, S_TAGLINE},
     {PG_ABOUT, IDC_LICENSE, S_A_LICENSE},
 };
-_Static_assert(S_COUNT <= 256, "kTexts keeps text numbers in a byte");
+_Static_assert(PG_COUNT <= 256, "kTexts keeps page numbers in a byte");
 
 static void select_page(int i)
 {
@@ -1253,7 +1265,7 @@ static INT_PTR CALLBACK main_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
         SetPropW(h, SETTINGS_MARK, (HANDLE)1);
         SetWindowTextW(h, T(SETTINGS_TITLE));
         static const int ids[PG_COUNT] = {IDD_PAGE_GENERAL, IDD_PAGE_CAPTURE, IDD_PAGE_HOTKEYS, IDD_PAGE_UPDATE,
-                                           IDD_PAGE_OCR, IDD_PAGE_QR, IDD_PAGE_FORMULA, IDD_PAGE_ABOUT};
+                                           IDD_PAGE_OCR, IDD_PAGE_QR, IDD_PAGE_FORMULA, IDD_PAGE_RACK, IDD_PAGE_ABOUT};
         RECT rc;
         GetWindowRect(S.tabs, &rc);
         MapWindowPoints(NULL, h, (POINT *)&rc, 2);
@@ -1290,6 +1302,8 @@ static INT_PTR CALLBACK main_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
             SendDlgItemMessageW(c, IDC_THEME, CB_ADDSTRING, 0, (LPARAM)g_tr[S_C_THEME_AUTO + i]);
         SendDlgItemMessageW(c, IDC_THEME, CB_SETCURSEL, (WPARAM)S.cfg.theme, 0);
         CheckDlgButton(c, IDC_EXIT_ASK, S.cfg.exit_ask ? BST_CHECKED : BST_UNCHECKED);
+        CheckRadioButton(S.page[PG_RACK], IDC_RACK_TOP, IDC_RACK_BOTTOM,
+                         S.cfg.rack_bottom ? IDC_RACK_BOTTOM : IDC_RACK_TOP);
         show_quick_dir();
         SetDlgItemTextW(S.page[PG_ABOUT], IDC_VERSION,
                         S.portable ? L"sniplite " SNIPLITE_VERSION L" portable" : L"sniplite " SNIPLITE_VERSION);
@@ -1468,6 +1482,7 @@ int settings_main(HINSTANCE inst, const WCHAR *page)
                    : arg_eq(page, L"ocr") || S.ocr_auto     ? PG_OCR
                    : arg_eq(page, L"qr")                    ? PG_QR
                    : arg_eq(page, L"formula")               ? PG_FORMULA
+                   : arg_eq(page, L"rack")                 ? PG_RACK
                    : arg_eq(page, L"about")                 ? PG_ABOUT
                                                              : PG_GENERAL;
     HWND open = ipc_find_dialog(SETTINGS_MARK);

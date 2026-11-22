@@ -105,6 +105,11 @@
 #define IDC_QUICK_LABEL 198
 #define IDC_QUICK_DIR 199
 #define IDC_QUICK_PICK 220
+#define IDD_PAGE_RACK 239
+#define IDC_RACK_POS_LABEL 240
+#define IDC_RACK_TOP 241
+#define IDC_RACK_BOTTOM 242
+#define IDC_RACK_HINT 243
 
 /* the question before a capture is left (main.c) */
 #define IDD_LEAVE 114

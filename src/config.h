@@ -11,6 +11,7 @@ typedef struct {
     bool gdi;                         /* GDI capture instead of DXGI */
     bool tray;                        /* show the notification-area icon */
     bool pin_top;                     /* every pin stays above other windows */
+    bool rack_bottom;                 /* position the pin rack at the bottom of the work area */
     bool auto_update;                 /* look for a newer release after start-up, then daily */
     bool exit_ask;                    /* ask before a capture with a selection is left (Esc, the close button) */
     int theme;                        /* THEME_* */

@@ -238,6 +238,57 @@ static bool read_exact(HANDLE h,void *p,uint32_t n)
 {uint8_t *b=p;while(n){DWORD got=0;if(!ReadFile(h,b,n,&got,NULL)||!got)return false;b+=got;n-=got;}return true;}
 static bool write_all(HANDLE h,const void *p,uint32_t n)
 {const uint8_t *b=p;while(n){DWORD wrote=0;if(!WriteFile(h,b,n,&wrote,NULL)||!wrote)return false;b+=wrote;n-=wrote;}return true;}
+
+/* Keep the isolated helper and its initialized ONNX sessions warm briefly so a
+ * second recognition does not reload and re-optimize both models. */
+static int formula_service(void)
+{
+    HANDLE in = GetStdHandle(STD_INPUT_HANDLE), out = GetStdHandle(STD_OUTPUT_HANDLE);
+    uint32_t *pixels = NULL;
+    size_t cap = 0;
+    DWORD idle = GetTickCount();
+    for (;;) {
+        DWORD available = 0;
+        if (!PeekNamedPipe(in, NULL, 0, NULL, &available, NULL))
+            break;
+        if (!available) {
+            if (GetTickCount() - idle >= FORMULA_SERVICE_IDLE_MS)
+                break;
+            Sleep(50);
+            continue;
+        }
+        FormulaRequest req;
+        if (!read_exact(in, &req, sizeof req) || !req.w || !req.h || (uint64_t)req.w * req.h > 16000000)
+            break;
+        size_t bytes = (size_t)req.w * req.h * sizeof(uint32_t);
+        if (bytes > cap) {
+            uint32_t *next = mem_alloc(bytes);
+            if (!next)
+                break;
+            mem_free(pixels);
+            pixels = next;
+            cap = bytes;
+        }
+        if (!read_exact(in, pixels, (uint32_t)bytes))
+            break;
+        Str latex = {0};
+        bool ok = formula_run(pixels, (int)req.w, (int)req.h, &latex);
+        int n = ok ? WideCharToMultiByte(CP_UTF8, 0, latex.p, latex.n, NULL, 0, NULL, NULL) : 0;
+        char *text = n > 0 ? mem_alloc((size_t)n) : NULL;
+        bool encoded = ok && n > 0 && text &&
+                       WideCharToMultiByte(CP_UTF8, 0, latex.p, latex.n, text, n, NULL, NULL) == n;
+        FormulaReply reply = {encoded ? 0u : ok ? 1u : F.bad ? 1u : 4u, encoded ? (uint32_t)n : 0u};
+        bool wrote = write_all(out, &reply, sizeof reply) && (!reply.bytes || write_all(out, text, reply.bytes));
+        mem_free(text);
+        str_free(&latex);
+        if (!wrote)
+            break;
+        idle = GetTickCount();
+    }
+    mem_free(pixels);
+    return 0;
+}
+
 static bool parse_dimension(const WCHAR *s,int *value)
 {
     int n=0;if(!*s)return false;
@@ -247,6 +298,7 @@ static bool parse_dimension(const WCHAR *s,int *value)
 }
 int formula_helper(int argc,WCHAR **argv)
 {
+    if (argc >= 2 && arg_eq(argv[1], L"--formula-worker")) return formula_service();
     if(argc<4||!arg_eq(argv[1],L"--formula-raw"))return 1;
     int w,h;if(!parse_dimension(argv[2],&w)||!parse_dimension(argv[3],&h)||(uint64_t)w*h>16000000)return 1;
     size_t bytes=(size_t)w*h*4;uint32_t *px=mem_alloc(bytes);if(!px)return 1;

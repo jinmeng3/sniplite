@@ -550,6 +550,7 @@ X(TAB_UPDATE, "更新", "更新", "Update", "更新", "업데이트", "Mise à j
 X(TAB_OCR, "文字识别", "文字辨識", "OCR", "OCR", "OCR", "OCR", "OCR", "OCR")
 X(TAB_QR, "二维码", "QR", "QR", "QR", "QR", "QR", "QR", "QR")
 X(TAB_FORMULA, "公式识别", "公式辨識", "Formula", "数式認識", "수식 인식", "Formule", "Formel", "Fórmulas")
+X(TAB_RACK, "晾衣架", "晾衣架", "Pin rack", "ピンラック", "이미지 보관대", "Porte-images", "Bilderablage", "Estante de imágenes")
 X(TAB_ABOUT, "关于", "關於", "About", "情報", "정보", "À propos", "Info", "Acerca de")
 X(G_AUTOSTART,
   "开机启动", "開機啟動", "Start with Windows", "Windows 起動時に実行", "Windows 시작 시 실행",
@@ -951,6 +952,10 @@ X(PM_TOP, "置顶这个贴图", "置頂這張貼圖", "This pin on top", "この
   "Cette épingle au premier plan", "Diesen Pin im Vordergrund", "Esta imagen siempre visible")
 X(RACK_TITLE, "晾衣架", "晾衣架", "Pin rack", "ピンラック", "이미지 보관대", "Porte-images", "Bilderablage", "Estante de imágenes")
 X(RACK_HINT, "拖入贴图收纳，点击缩略图恢复", "拖入貼圖收納，點擊縮圖還原", "Drop pins here; click a thumbnail to restore", "ピンをドラッグして収納、クリックで復元", "이미지를 끌어 보관하고 클릭하여 복원", "Déposez une image ; cliquez pour la restaurer", "Bilder hier ablegen; zum Wiederherstellen anklicken", "Arrastra imágenes; pulsa una miniatura para restaurar")
+X(RACK_POS_LABEL, "显示位置", "顯示位置", "Position", "表示位置", "표시 위치", "Position", "Position", "Posición")
+X(RACK_TOP, "屏幕顶部居中", "螢幕頂部置中", "Top of screen, centered", "画面上部、中央", "화면 위쪽 가운데", "En haut de l’écran, centré", "Oben auf dem Bildschirm, zentriert", "Parte superior, centrado")
+X(RACK_BOTTOM, "屏幕底部居中", "螢幕底部置中", "Bottom of screen, centered", "画面下部、中央", "화면 아래쪽 가운데", "En bas de l’écran, centré", "Unten auf dem Bildschirm, zentriert", "Parte inferior, centrado")
+X(RACK_SETTINGS_HINT, "晾衣架会显示在当前显示器的工作区内。", "晾衣架會顯示在目前顯示器的工作區內。", "The rack stays within the current monitor's work area.", "ラックは現在のモニターの作業領域内に表示されます。", "보관대는 현재 모니터의 작업 영역 안에 표시됩니다.", "Le porte-images reste dans la zone de travail de l’écran actuel.", "Die Ablage bleibt im Arbeitsbereich des aktuellen Monitors.", "El estante permanece en el área de trabajo del monitor actual.")
 X(PM_STORE, "收纳到晾衣架\tCtrl+H", "收納到晾衣架\tCtrl+H", "Store on rack\tCtrl+H", "ラックに収納\tCtrl+H", "보관대에 넣기\tCtrl+H", "Ranger sur le porte-images\tCtrl+H", "In Ablage legen\tCtrl+H", "Guardar en el estante\tCtrl+H")
 X(RACK_RESTORE, "恢复贴图", "還原貼圖", "Restore pin", "ピンを復元", "이미지 복원", "Restaurer l’image", "Pin wiederherstellen", "Restaurar imagen")
 X(RACK_CLOSE_ONE, "关闭贴图", "關閉貼圖", "Close pin", "ピンを閉じる", "이미지 닫기", "Fermer l’image", "Pin schließen", "Cerrar imagen")

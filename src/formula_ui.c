@@ -1,5 +1,5 @@
-/* The screenshot editor's FormulaNet command. It sends the selected pixels to a short-lived
- * helper process so the ONNX Runtime DLL and its model never enter the capture process. */
+/* The screenshot editor's FormulaNet command uses an isolated helper process,
+ * keeping ONNX Runtime out of the capture process. The helper exits after 60 s idle. */
 #include "common.h"
 #include "formula.h"
 #include "image.h"
@@ -51,12 +51,15 @@ static void formula_compact(WCHAR *text)
     *write = 0;
 }
 typedef struct {
-    HANDLE process, worker, input, output;
+    HANDLE worker;
     uint32_t *pixels;
     DWORD bytes, used, code;
-    bool wrote, too_long;
+    int w, h;
+    bool wrote, response, too_long;
     char text[FORMULA_OUTPUT_CAP];
 } FormulaJob;
+typedef struct { HANDLE process, input, output; } FormulaHost;
+static FormulaHost formula_host;
 
 static FormulaJob *current_job; /* UI thread only; also guards nested toolbar commands. */
 static WCHAR *last_formula;
@@ -73,6 +76,75 @@ static bool formula_current(void)
     RECT selection = *ORC(OV_SEL);
     return last_formula && last_formula_grab_ms == shot->grab_ms &&
         last_formula_bits == bits && !memcmp(&last_formula_sel, &selection, sizeof selection);
+}
+
+static void formula_host_close(bool terminate)
+{
+    if (formula_host.process && terminate && WaitForSingleObject(formula_host.process, 0) == WAIT_TIMEOUT)
+        TerminateProcess(formula_host.process, 1);
+    if (formula_host.input) CloseHandle(formula_host.input);
+    if (formula_host.output) CloseHandle(formula_host.output);
+    if (formula_host.process) CloseHandle(formula_host.process);
+    memset(&formula_host, 0, sizeof formula_host);
+}
+
+static bool formula_pipe_write(HANDLE pipe, const void *data, DWORD bytes)
+{
+    const uint8_t *p = data;
+    while (bytes) {
+        DWORD wrote = 0;
+        if (!WriteFile(pipe, p, bytes, &wrote, NULL) || !wrote) return false;
+        p += wrote;
+        bytes -= wrote;
+    }
+    return true;
+}
+
+static bool formula_pipe_read(HANDLE pipe, void *data, DWORD bytes)
+{
+    uint8_t *p = data;
+    while (bytes) {
+        DWORD got = 0;
+        if (!ReadFile(pipe, p, bytes, &got, NULL) || !got) return false;
+        p += got;
+        bytes -= got;
+    }
+    return true;
+}
+
+static bool formula_host_start(const WCHAR *exe)
+{
+    if (formula_host.process) {
+        if (WaitForSingleObject(formula_host.process, 0) == WAIT_TIMEOUT) return true;
+        formula_host_close(false);
+    }
+    HANDLE child_in = NULL, child_out = NULL, errors = INVALID_HANDLE_VALUE;
+    SECURITY_ATTRIBUTES sa = {sizeof sa, NULL, TRUE};
+    WCHAR command[MAX_PATH * 2 + 64];
+    wsprintfW(command, L"\"%s\" --formula-worker", exe);
+    bool ok = false;
+    if (!CreatePipe(&child_in, &formula_host.input, &sa, 0) ||
+        !CreatePipe(&formula_host.output, &child_out, &sa, 0)) goto done;
+    if (!SetHandleInformation(formula_host.input, HANDLE_FLAG_INHERIT, 0) ||
+        !SetHandleInformation(formula_host.output, HANDLE_FLAG_INHERIT, 0)) goto done;
+    errors = CreateFileW(L"NUL", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, OPEN_EXISTING, 0, NULL);
+    if (errors == INVALID_HANDLE_VALUE) goto done;
+    STARTUPINFOW si = {sizeof si};
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdInput = child_in;
+    si.hStdOutput = child_out;
+    si.hStdError = errors;
+    PROCESS_INFORMATION pi = {0};
+    if (!CreateProcessW(exe, command, NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) goto done;
+    formula_host.process = pi.hProcess;
+    CloseHandle(pi.hThread);
+    ok = true;
+done:
+    if (child_in) CloseHandle(child_in);
+    if (child_out) CloseHandle(child_out);
+    if (errors != INVALID_HANDLE_VALUE) CloseHandle(errors);
+    if (!ok) formula_host_close(false);
+    return ok;
 }
 
 static bool resource_file(int id, const WCHAR *path)
@@ -152,23 +224,33 @@ void formula_preview(void)
 static DWORD WINAPI formula_worker(void *ctx)
 {
     FormulaJob *j = ctx;
-    DWORD sent = 0, got = 0;
-    j->wrote = WriteFile(j->input, j->pixels, j->bytes, &sent, NULL) && sent == j->bytes;
-    CloseHandle(j->input); j->input = NULL;
-    VirtualFree(j->pixels, 0, MEM_RELEASE); j->pixels = NULL;
-    if (!j->wrote) TerminateProcess(j->process, 1);
-    while (ReadFile(j->output, j->text + j->used, sizeof j->text - 1 - j->used, &got, NULL) && got) {
-        j->used += got;
-        if (j->used == sizeof j->text - 1) {
-            j->too_long = true;
-            TerminateProcess(j->process, 1);
-            break;
-        }
+    FormulaRequest req = {(uint32_t)j->w, (uint32_t)j->h};
+    j->wrote = formula_pipe_write(formula_host.input, &req, sizeof req) &&
+               formula_pipe_write(formula_host.input, j->pixels, j->bytes);
+    VirtualFree(j->pixels, 0, MEM_RELEASE);
+    j->pixels = NULL;
+    if (!j->wrote) {
+        formula_host_close(true);
+        return 0;
     }
-    CloseHandle(j->output); j->output = NULL;
-    WaitForSingleObject(j->process, INFINITE);
-    j->code = 1;
-    GetExitCodeProcess(j->process, &j->code);
+    FormulaReply reply;
+    if (!formula_pipe_read(formula_host.output, &reply, sizeof reply)) {
+        formula_host_close(true);
+        return 0;
+    }
+    j->code = reply.code;
+    if (reply.bytes >= sizeof j->text) {
+        j->too_long = true;
+        formula_host_close(true);
+        return 0;
+    }
+    j->used = reply.bytes;
+    if (j->used && !formula_pipe_read(formula_host.output, j->text, j->used)) {
+        formula_host_close(true);
+        return 0;
+    }
+    j->text[j->used] = 0;
+    j->response = true;
     return 0;
 }
 
@@ -218,41 +300,22 @@ bool formula_scan(void)
     FormulaJob *j = mem_alloc(sizeof *j);
     if (!j) { formula_notice(owner, T(F_ERROR), MB_ICONERROR); return false; }
     current_job = j;
+    j->w = w;
+    j->h = h;
     j->bytes = (DWORD)((size_t)w * h * 4);
     j->pixels = VirtualAlloc(NULL, j->bytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-    HANDLE child_in = NULL, child_out = NULL, errors = INVALID_HANDLE_VALUE;
     bool failed = true;
     bool copied = false;
     if (!j->pixels) goto cleanup;
     shot_copy(shot, r, j->pixels, w);
 
-    WCHAR exe[MAX_PATH * 2], command[MAX_PATH * 2 + 64];
+    WCHAR exe[MAX_PATH * 2];
     DWORD n = GetModuleFileNameW(NULL, exe, COUNTOF(exe));
-    if (!n || n >= COUNTOF(exe)) goto cleanup;
-    wsprintfW(command, L"\"%s\" --formula-raw %d %d", exe, w, h);
-    SECURITY_ATTRIBUTES sa = {sizeof sa, NULL, TRUE};
-    if (!CreatePipe(&child_in, &j->input, &sa, 0) || !CreatePipe(&j->output, &child_out, &sa, 0)) goto cleanup;
-    if (!SetHandleInformation(j->input, HANDLE_FLAG_INHERIT, 0) ||
-        !SetHandleInformation(j->output, HANDLE_FLAG_INHERIT, 0)) goto cleanup;
-    errors = CreateFileW(L"NUL", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, OPEN_EXISTING, 0, NULL);
-    if (errors == INVALID_HANDLE_VALUE) goto cleanup;
-    STARTUPINFOW si = {sizeof si};
-    si.dwFlags = STARTF_USESTDHANDLES;
-    si.hStdInput = child_in;
-    si.hStdOutput = child_out;
-    si.hStdError = errors; /* runtime diagnostics must never become clipboard text */
-    PROCESS_INFORMATION pi = {0};
-    if (!CreateProcessW(exe, command, NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) goto cleanup;
-    j->process = pi.hProcess;
-    CloseHandle(pi.hThread);
-    CloseHandle(child_in); child_in = NULL;
-    CloseHandle(child_out); child_out = NULL;
-    CloseHandle(errors); errors = INVALID_HANDLE_VALUE;
-
+    if (!n || n >= COUNTOF(exe) || !formula_host_start(exe)) goto cleanup;
     j->worker = CreateThread(NULL, 0, formula_worker, j, 0, NULL);
-    if (!j->worker) { TerminateProcess(j->process, 1); goto cleanup; }
+    if (!j->worker) { formula_host_close(true); goto cleanup; }
     formula_wait(owner, j->worker);
-    if (!j->wrote || j->too_long || j->code != 0) {
+    if (!j->wrote || !j->response || j->too_long || j->code != 0) {
         if (j->code == 4) {
             formula_notice(owner, T(F_NO_RESULT), MB_ICONINFORMATION);
             failed = false;
@@ -278,14 +341,8 @@ bool formula_scan(void)
     mem_free(text);
 
 cleanup:
-    if (child_in) CloseHandle(child_in);
-    if (child_out) CloseHandle(child_out);
-    if (errors != INVALID_HANDLE_VALUE) CloseHandle(errors);
-    if (j->input) CloseHandle(j->input);
-    if (j->output) CloseHandle(j->output);
     if (j->pixels) VirtualFree(j->pixels, 0, MEM_RELEASE);
     if (j->worker) CloseHandle(j->worker);
-    if (j->process) CloseHandle(j->process);
     mem_free(j);
     current_job = NULL;
     if (failed) formula_notice(owner, T(F_ERROR), MB_ICONERROR);

@@ -7,7 +7,7 @@
 #define SETTINGS_MARK L"sniplite.settings"
 #define SHORTCUTS_MARK L"sniplite.shortcuts"
 
-int settings_main(HINSTANCE inst, const WCHAR *page); /* `sniplite.exe --settings [update|ocr]` */
-/* main.c, in the background program: open that window; page: NULL, "update" or "ocr". */
+int settings_main(HINSTANCE inst, const WCHAR *page); /* `sniplite.exe --settings [update|ocr|qr|formula|rack]` */
+/* main.c, in the background program: open that window; page selects a named tab. */
 bool settings_open(const WCHAR *page);
 int shortcuts_main(HINSTANCE inst); /* `sniplite.exe --shortcuts`: the short shortcut list */

@@ -354,6 +354,7 @@ static void apply_config(const Config *c, bool force_keys)
         if (force_keys || c->mod[id] != D.hk[id].mod || c->vk[id] != D.hk[id].vk || !D.hk[id].ok)
             hotkey_apply(id, c->mod[id], c->vk[id]);
     pin_top_all(c->pin_top);
+    pin_rack_bottom(c->rack_bottom);
     if (c->gdi && gpu_enabled())
         gpu_stop();
     else if (!c->gdi && !gpu_enabled())
@@ -439,7 +440,7 @@ static bool run_helper(const WCHAR *args, bool quiet)
     return ok;
 }
 
-/* page: NULL opens General; update, ocr, qr and about select another tab. */
+/* page: NULL opens General; named pages include update, ocr, qr, formula, rack and about. */
 bool settings_open(const WCHAR *page)
 {
     WCHAR args[40] = L" --settings ";
@@ -1247,7 +1248,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmdline, int show)
         return update_check_main();
     if (argc > 1 && (arg_eq(argv[1], L"--ocr") || arg_eq(argv[1], L"--ocr-file")))
         return ocr_helper(argc, argv);
-    if (argc > 1 && (arg_eq(argv[1], L"--formula-raw") || arg_eq(argv[1], L"--formula-file")))
+    if (argc > 1 && (arg_eq(argv[1], L"--formula-raw") || arg_eq(argv[1], L"--formula-file") ||
+                     arg_eq(argv[1], L"--formula-worker")))
         return formula_helper(argc, argv);
     if (argc > 2 && arg_eq(argv[1], L"--quick-save"))
         return quick_save(argv[2]);

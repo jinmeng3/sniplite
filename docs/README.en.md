@@ -96,7 +96,7 @@ Select an area, click the scrolling screenshot button or press `Ctrl+L`, then sc
 
 ### How do I organize multiple pins?
 
-Dragging a pin reveals a rack near the top of the screen. Drop the pin onto the rack to collect it as a thumbnail. You can also press `Ctrl+H` in a pin window or choose “Store on rack” from its context menu. The “Pin rack” menu item opens the bar on its own.
+Dragging a pin reveals the rack. In Preferences > Pin rack, set it to the top or bottom center of the screen. Drop the pin onto the rack to collect it as a thumbnail. You can also press `Ctrl+H` in a pin window or choose “Store on rack” from its context menu. The “Pin rack” menu item opens the bar on its own.
 
 Click a thumbnail to restore its pin. Drag a card onto another card to reorder; right-click a card to restore or close that pin. Click the empty rack area to focus it, then use the arrow keys to select, `Home`/`End` to jump, `Enter` to restore, or `Delete` to close. Drag the rack title to move it; use the wheel or `<` and `>` buttons to browse more thumbnails. Closing the rack restores every collected pin. `Shift+F3` hides or shows the rack together with uncollected pins. Collection lasts for the current session; exiting the app releases all images.
 

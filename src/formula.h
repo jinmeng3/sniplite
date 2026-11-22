@@ -2,6 +2,9 @@
 #include "common.h"
 
 enum { FORMULA_GET_OK, FORMULA_GET_NET, FORMULA_GET_CHECK, FORMULA_GET_WRITE, FORMULA_GET_CANCEL };
+#define FORMULA_SERVICE_IDLE_MS 60000u
+typedef struct { uint32_t w, h; } FormulaRequest;
+typedef struct { uint32_t code, bytes; } FormulaReply;
 
 bool formula_installed(void);
 bool formula_remove(void);
