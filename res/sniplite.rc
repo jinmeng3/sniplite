@@ -12,9 +12,13 @@
 #define FILE_NAME "sniplite.exe"
 
 IDI_APP ICON "sniplite.ico"
-IDR_FORMULA_PREVIEW RCDATA "../src/formula_preview.html"
-IDR_KATEX_ZIP RCDATA "../build/katex.zip"
-IDR_WEBVIEW2_LOADER RCDATA "../third_party/webview2/WebView2Loader.dll"
+IDR_MICROTEX_DLL RCDATA "../build/sniplite_microtex.dll"
+IDR_MICROTEX_ASSETS RCDATA "../build/microtex-assets.zip"
+IDR_MICROTEX_LICENSE RCDATA "../third_party/microtex/LICENSE"
+IDR_FORMULA_ENGINE RCDATA "../build/sniplite_formula.dll"
+IDR_FORMULA_ENGINE_LICENSE RCDATA "../third_party/formulanet/LICENSE"
+IDR_OCR_ENGINE RCDATA "../build/sniplite_ocr.dll"
+IDR_OCR_ENGINE_LICENSE RCDATA "../third_party/ppocrv6/LICENSE"
 
 /* The dialogs give the places and sizes only. Every text is set when a dialog opens,
  * from src/lang_text.h, and the font named here is replaced by the font of the

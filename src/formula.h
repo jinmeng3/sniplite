@@ -13,4 +13,4 @@ int formula_size_mb(void);
 bool formula_run(const uint32_t *bgra, int w, int h, Str *latex);
 const WCHAR *formula_error(void);
 int formula_helper(int argc, WCHAR **argv);
-bool formula_preview_host(HWND owner, const WCHAR *url, HMONITOR monitor, bool refresh, WCHAR *detail, int cap);
+bool formula_preview_host(HWND owner, const WCHAR *latex, HMONITOR monitor, bool refresh, WCHAR *detail, int cap);

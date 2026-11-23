@@ -37,7 +37,7 @@
 
 Récupérez le dernier installeur dans [Releases](https://github.com/MrTangLuyao/sniplite/releases/latest).
 
-Trois archives ZIP portables, sans installation, sont disponibles et incluent toutes la lecture des QR codes : `sniplite_<version>_portable_QR_x64.zip`, `sniplite_<version>_portable_QR_OCR_x64.zip` et `sniplite_<version>_portable_QR_OCR_CrispEmbed_x64.zip`. Une quatrième option, `sniplite_<version>_portable_QR_OCR_CrispEmbed_WebView2_x64.zip`, contient une version fixe de WebView2 pour les PC sans Runtime ; lancez-la avec `start-sniplite.bat`.
+Sept archives ZIP portables, sans installation et avec lecture des QR codes : une version QR seule, QR+OCR en versions CPU, AVX2 et Vulkan, et QR+OCR+FormulaNet dans ces trois versions. Les noms utilisent `_portable_QR_OCR_<CPU|AVX2|Vulkan>_x64.zip` et `_portable_QR_OCR_FormulaNet_<CPU|AVX2|Vulkan>_x64.zip`. Vulkan essaie d’abord Vulkan, puis AVX2, puis le CPU générique. Tous incluent l’aperçu natif MicroTeX.
 
 > [!TIP]
 > L'icône se trouve à droite de la barre des tâches ; si vous ne la voyez pas, cliquez sur la petite flèche. Pour la garder visible, cherchez « Autres icônes de la barre d'état système » dans les paramètres de Windows et activez sniplite.
@@ -89,7 +89,7 @@ Les parties qui doivent aller vite (capture, composition, dessin et écran de ca
 
 **Comment récupérer le texte d'une capture ?**
 
-Sélectionnez une zone et cliquez sur le bouton de texte (Ctrl+O) : le texte apparaît dans un panneau à côté de la sélection, où vous pouvez le sélectionner, le modifier et le copier. Un tableau garde ses colonnes et se colle dans un tableur cellule par cellule, ou en Markdown si vous préférez. Ctrl+Shift+C copie le texte directement. Il faut le module de reconnaissance de texte (12 Mo ; les modèles PaddleOCR PP-OCRv6 avec ONNX Runtime, entièrement sur votre ordinateur) : installez-le depuis l'onglet OCR des préférences, cochez-le dans l'installeur, ou prenez la version portable avec OCR. Tant qu'il n'est pas installé, les boutons de texte ne sont pas affichés. F4 et Shift+F4 lancent une capture qui lit ou copie le texte aussitôt.
+Sélectionnez une zone et cliquez sur le bouton de texte (Ctrl+O) : le texte apparaît dans un panneau à côté de la sélection, où vous pouvez le sélectionner, le modifier et le copier. Un tableau garde ses colonnes et se colle dans un tableur cellule par cellule, ou en Markdown si vous préférez. Ctrl+Shift+C copie le texte directement. Le module OCR utilise le détecteur PP-OCRv6 tiny GGUF et le modèle de reconnaissance small GGUF avec CrispEmbed/GGML sur CPU ; les images sont traitées localement. Il ajoute environ 81 Mo seul, ou 21 Mo si le module Formules est déjà installé. Installez-le depuis l'onglet OCR des préférences, cochez-le dans l'installeur, ou prenez la version portable avec OCR.
 
 **Comment faire une capture défilante ?**
 
@@ -141,9 +141,8 @@ Installez [w64devkit](https://github.com/skeeto/w64devkit) (ou un autre MinGW-w6
 
 ## Logiciels libres tiers
 
-sniplite lui-même n'utilise que les bibliothèques système de Windows. Le module facultatif de reconnaissance de texte est le travail d'autres personnes, redistribué tel quel avec leurs licences ou des liens vers celles-ci (dans le dossier `ocr` du module et sur la [page du module](https://github.com/MrTangLuyao/sniplite/releases/tag/ocr-2)) :
+sniplite lui-même n'utilise que les bibliothèques système de Windows. Le module facultatif de reconnaissance de texte est le travail d'autres personnes, redistribué tel quel avec leurs licences ou des liens vers celles-ci (dans le dossier `ocr` du module et sur la [page du module](https://github.com/MrTangLuyao/sniplite/releases/tag/ocr-4)) :
 
-- [ONNX Runtime](https://github.com/microsoft/onnxruntime) 1.26.0, Copyright (c) Microsoft Corporation, licence MIT
-- Le runtime [Microsoft Visual C++](https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files) 14.51.36247 dont ONNX Runtime a besoin (`msvcp140.dll`, `msvcp140_1.dll`, `vcruntime140.dll`, `vcruntime140_1.dll`), Copyright (c) Microsoft Corporation, pas open source : redistribué selon les [conditions de licence](https://visualstudio.microsoft.com/license-terms/) de Microsoft
-- Les modèles PP-OCRv6 de [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR), Copyright (c) PaddlePaddle Authors, licence Apache 2.0
-- Leur version ONNX vient de [RapidOCR](https://github.com/RapidAI/RapidOCR), licence Apache 2.0
+- Moteur [CrispEmbed](https://github.com/CrispStrobe/CrispEmbed), licence MIT ; les mentions CrispEmbed, GGML et composants figurent dans le module OCR
+- Modèles PP-OCRv6 de [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR), Copyright (c) PaddlePaddle Authors, licence Apache 2.0 ; leur version GGUF est fournie par CrispEmbed
+- Runtime [Microsoft Visual C++](https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files) 14.51.36247 requis par CrispEmbed/ggml (`msvcp140.dll`, `msvcp140_1.dll`, `vcruntime140.dll`, `vcruntime140_1.dll`), Copyright (c) Microsoft Corporation, redistribué selon les [conditions de licence](https://visualstudio.microsoft.com/license-terms/) de Microsoft

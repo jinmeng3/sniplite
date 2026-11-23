@@ -25,7 +25,7 @@
 - **Screenshots:** Detect windows and controls, with a magnifier and pixel-level selection adjustment.
 - **Annotations and pins:** Draw arrows, text, numbers, and mosaics; keep screenshots above other windows.
 - **QR recognition:** Press `Ctrl+Q` inside a screenshot selection. Results stay on your PC and can be copied.
-- **Formula recognition:** An optional CrispEmbed module converts screenshot selections to LaTeX locally with the Texo-Distill GGUF. CrispEmbed requests Vulkan, but this PP-FormulaNet model path currently runs on CPU.
+- **Formula recognition:** An optional CrispEmbed module converts screenshot selections to LaTeX locally with the Texo-Distill GGUF, running on CPU.
 - **Text recognition:** An optional OCR module recognizes text and tables locally.
 - **Scrolling screenshots:** Scroll a page and automatically stitch the captured content.
 - **Lightweight:** Performance-sensitive capture, composition, and drawing code uses x86-64 assembly. The main program does not link the C runtime.
@@ -33,15 +33,18 @@
 
 ## Download
 
-Get the current version from [GitHub Releases](https://github.com/jinmeng3/sniplite/releases). Version 1.5.1.4 provides these packages:
+Get the current version from [GitHub Releases](https://github.com/jinmeng3/sniplite/releases). Version 1.5.1.5 provides an installer and seven portable ZIPs:
 
-- [Windows installer](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.4/sniplite_win_setup_amd64.exe)
-- [QR portable package](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.4/sniplite_1.5.1.4_portable_QR_x64.zip): the app, QR helper, and its license.
-- [QR + OCR portable package](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.4/sniplite_1.5.1.4_portable_QR_OCR_x64.zip)
-- [QR + OCR + FormulaNet portable package](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.4/sniplite_1.5.1.4_portable_QR_OCR_FormulaNet_x64.zip)
-- [Portable package without a preinstalled WebView2 Runtime](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.4/sniplite_1.5.1.4_portable_QR_OCR_FormulaNet_WebView2_x64.zip): includes Fixed Version Runtime 158.0.4370.33.
+- [Windows installer](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.5/sniplite_win_setup_amd64.exe)
+- [QR portable package](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.5/sniplite_1.5.1.5_portable_QR_x64.zip)
+- [QR + OCR CPU](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.5/sniplite_1.5.1.5_portable_QR_OCR_CPU_x64.zip)
+- [QR + OCR AVX2](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.5/sniplite_1.5.1.5_portable_QR_OCR_AVX2_x64.zip)
+- [QR + OCR Vulkan](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.5/sniplite_1.5.1.5_portable_QR_OCR_Vulkan_x64.zip)
+- [QR + OCR + FormulaNet CPU](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.5/sniplite_1.5.1.5_portable_QR_OCR_FormulaNet_CPU_x64.zip)
+- [QR + OCR + FormulaNet AVX2](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.5/sniplite_1.5.1.5_portable_QR_OCR_FormulaNet_AVX2_x64.zip)
+- [QR + OCR + FormulaNet Vulkan](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.5/sniplite_1.5.1.5_portable_QR_OCR_FormulaNet_Vulkan_x64.zip)
 
-Extract the ZIP and run `sniplite.exe`. The `sniplite-cli.com` companion provides command-line features; it is included in the QR ZIPs and is a separate download for single-file portable builds. Keep it beside the app. Portable builds can download or remove OCR from the OCR tab in Preferences. After checking for updates in the Update tab, portable builds can download and replace existing program files locally; optional OCR, FormulaNet, and WebView2 Runtime folders are preserved. The QR helper can also be installed or removed from the QR tab. Portable builds can enable “Start with Windows” in Preferences. The shortcut points to the current program location, so do not move or rename its directory afterward. If you move it, turn the option off and on again to update the shortcut.
+Extract the ZIP and run `sniplite.exe`. The `sniplite-cli.com` companion provides command-line features; it is included in the QR ZIPs and is a separate download for single-file portable builds. Keep it beside the app. Portable builds can download or remove OCR from the OCR tab in Preferences. After checking for updates in the Update tab, portable builds can download and replace existing program files locally; optional OCR and formula model folders are preserved. The QR helper can also be installed or removed from the QR tab. Portable builds can enable “Start with Windows” in Preferences. The shortcut points to the current program location, so do not move or rename its directory afterward. If you move it, turn the option off and on again to update the shortcut.
 
 If the app is running as administrator, run the CLI as administrator too; a standard-integrity CLI cannot send commands to the elevated app.
 
@@ -86,10 +89,10 @@ The QR tab in Preferences can install or remove the helper. After installation, 
 
 ### How do I extract text from a screenshot?
 
-Select an area and click the text recognition button or press `Ctrl+O`. Results appear in a panel beside the selection and can be edited and copied. Tables can preserve their columns or be converted to Markdown. This requires the OCR module, which uses PaddleOCR PP-OCRv6 and ONNX Runtime and processes images locally.
+Select an area and click the text recognition button or press `Ctrl+O`. Results appear in a panel beside the selection and can be edited and copied. Tables can preserve their columns or be converted to Markdown. The OCR module uses the user-supplied CrispEmbed PP-OCRv6 tiny FP16 GGUF detector and recognizer through a native OCR engine built from source, processing images locally. Both detector and recognizer use CPU in CPU packages. The Vulkan package prefers Vulkan for both models and falls back to CPU if the device is unavailable or initialization or inference fails; it also enables graph optimization.
 ### How do I recognize a formula in a screenshot?
 
-Select the formula in the capture editor and click the “∫” button to recognize and copy LaTeX directly. The capture editor closes after the copy succeeds. The adjacent eye button opens an offline KaTeX preview/editor in sniplite’s WebView2 window. Edited formulas can be copied with the button or `Ctrl+Enter`; syntax errors are flagged in the preview. If the current capture or selection has no matching recognition result, the eye button recognizes it before opening; it does not open an empty page when no formula is found. The preview opens on the monitor containing the selection. Extra spaces around braces and operators are removed while word separators are preserved. The formula module is about 82 MB installed and uses the local Texo-Distill GGUF with CrispEmbed. Vulkan is requested, but this PP-FormulaNet model path currently runs on CPU.
+Select the formula in the capture editor and click the “∫” button to recognize and copy LaTeX directly. The capture editor closes after the copy succeeds. The adjacent eye button opens sniplite’s native MicroTeX preview window, where LaTeX remains editable and changes render live. Edited formulas can be copied with the button or `Ctrl+Enter`; syntax errors are flagged in the preview. If the current capture or selection has no matching recognition result, the eye button recognizes it before opening; it does not open an empty page when no formula is found. The preview opens on the monitor containing the selection. Extra spaces around braces and operators are removed while word separators are preserved. The formula module is about 82 MB installed and uses the local Texo-Distill GGUF with a CPU formula engine derived from CrispEmbed.
 No progress dialog appears during recognition. Failures and incomplete output leave the clipboard unchanged. Solid-color blank selections are rejected.
 
 
@@ -131,11 +134,14 @@ The app follows the Windows language by default. Open Preferences from the syste
 
 ## Build from source
 
-The project-local `w64devkit` can build the project directly. Alternatively, install MinGW-w64, CMake, and Ninja. Run `build.bat`, install the local module from the Formula tab in `build\sniplite.exe` Preferences, then run `pack.bat` to create the installer and QR portable ZIPs. The module sources are `E:\浏览器下载\texo-distill-q8_0.gguf`, `E:\浏览器下载\crispembed-windows-x86_64-vulkan`, and the installed Microsoft Visual C++ x64 runtime. Output is placed in `build\dist`.
-For PCs without WebView2, download the x64 Fixed Version Runtime from [Microsoft's WebView2 page](https://developer.microsoft.com/en-us/microsoft-edge/webview2/), run `if not exist build\webview2-runtime mkdir build\webview2-runtime`, then extract it with `expand.exe <runtime.cab> -F:* build\webview2-runtime`. Running `pack.bat` then creates `..._portable_QR_OCR_CrispEmbed_WebView2_x64.zip`. The fixed runtime adds over 250 MB and does not update automatically; replace it periodically. Extract the package to a local disk and launch it with the included `start-sniplite.bat`, which applies the required Windows 10 permissions. Fixed Version does not run from a network path.
+The project-local `w64devkit` can build the project directly. Alternatively, install MinGW-w64, CMake, and Ninja. Run `build.bat`, install the formula module from the Formula tab in `build\sniplite.exe` Preferences, then run `package-all.bat`. Packaging invokes `build-cpu-runtime.bat` to build a baseline x64 CPU GGML runtime from pinned CrispEmbed `v0.17.19` sources with Vulkan disabled. `package-qr-ocr-formula.bat` creates the all-CPU inference package; `package-qr-ocr-formula-vulkan.bat` overlays the Vulkan runtime and engines. Sources are under `E:\浏览器下载`; output goes to `build\dist`.
+OCR packaging also needs `PP-OCRv6_tiny_det-f16.gguf`, `PP-OCRv6_tiny_rec-f16.gguf`, and `crispembed-windows-x86_64-vulkan` in `E:\浏览器下载`. Their pinned model checksums are in `res/ocr-notice.txt`; remove any ` (1)` download suffix from the detector filename. `build.bat` compiles `build/sniplite_ocr.dll` from native PP-OCRv6 sources, with official `(2, 1)` height/width downsampling in tiny recognizer stages 3 and 4. `package-all.bat` includes the engine and complete `third_party/ppocrv6/LICENSE` in the OCR module and CPU package; the Vulkan package uses the original Vulkan GGML runtime. After changing the engine, models, or OCR notices, repack and update `MODULE_BYTES` in `src/ocr_get.c` to the actual `build/sniplite_ocr.zip` size, then rebuild and repack. Publish the ZIP under the `ocr-5` release tag.
+`build.bat` builds `src/microtex` with CMake, Ninja, and g++, producing `build/sniplite_microtex.dll`, then archives `res` and `LICENSE` from `third_party/microtex` as `build/microtex-assets.zip`. The DLL, resources, and license are embedded in the main executable. The installer and all four portable ZIPs include native MicroTeX preview without an additional preview runtime. Each portable package includes `LICENSE-MicroTeX.txt` beside the executable; font licenses remain in the resources.
+
+The native renderer also uses TinyXML2 10.0.0; see `third_party/tinyxml2/LICENSE.txt`. The installer and all portable ZIPs include `LICENSE-TinyXML2.txt` beside the executable.
 
 QR recognition uses [ZXing-C++ v3.1.1](https://github.com/zxing-cpp/zxing-cpp), with only QR Code decoding enabled, under Apache License 2.0. See the [QR recognition guide](qr-code-recognition.en.md) for implementation details and limitations.
 
 ## License
 
-This project is licensed under the [GNU Affero General Public License v3.0 (AGPL-3.0)](../LICENSE-AGPL-3.0). Formula recognition uses CrispEmbed and the Texo-Distill GGUF model; their license notices are included in the formula module. ONNX Runtime remains in use for the separate text OCR module. Other third-party components are distributed under their own licenses. See `third_party/webview2` and `LICENSE-WebView2.txt` / `NOTICE-WebView2.txt` in release packages for WebView2 SDK terms and notices. See the [upstream OCR release notes](https://github.com/MrTangLuyao/sniplite/releases/tag/ocr-1) for OCR licensing details.
+This project is licensed under the [GNU Affero General Public License v3.0 (AGPL-3.0)](../LICENSE-AGPL-3.0). Formula recognition uses CrispEmbed and the Texo-Distill GGUF model; their license notices are included in the formula module. Text OCR uses CrispEmbed's PP-OCRv6 GGUF models and GGML runtime; the OCR module includes their MIT and Apache 2.0 licenses and third-party notices. Formula preview uses MicroTeX; see `third_party/microtex/LICENSE` and `LICENSE-MicroTeX.txt` in release packages. Font licenses remain in the embedded preview resources. Other third-party components are distributed under their own licenses.

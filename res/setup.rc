@@ -10,8 +10,8 @@ IDR_APP_EXE RCDATA "sniplite.exe"
 IDR_APP_COM RCDATA "sniplite.com"
 IDR_APP_QR RCDATA "sniplite_qr.exe"
 IDR_QR_LICENSE RCDATA "third_party/zxing-cpp/LICENSE"
-IDR_WEBVIEW2_LICENSE RCDATA "third_party/webview2/LICENSE.txt"
-IDR_WEBVIEW2_NOTICE RCDATA "third_party/webview2/NOTICE.txt"
+IDR_MICROTEX_LICENSE RCDATA "third_party/microtex/LICENSE"
+IDR_TINYXML2_LICENSE RCDATA "third_party/tinyxml2/LICENSE.txt"
 
 /* Places and sizes only: the texts come from src/lang_text.h and the font is replaced
  * by the one of the language in use (src/lang.c). */

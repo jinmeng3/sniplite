@@ -6,8 +6,6 @@
 #include "lang.h"
 #include "ov_layout.inc"
 #include "shot.h"
-#include "resource.h"
-#include <shlwapi.h>
 
 extern uint8_t O[];
 extern bool ov_active(void);
@@ -147,136 +145,17 @@ done:
     return ok;
 }
 
-static bool resource_file(int id, const WCHAR *path)
-{
-    HRSRC r = FindResourceW(NULL, MAKEINTRESOURCEW(id), RT_RCDATA);
-    HGLOBAL g = r ? LoadResource(NULL, r) : NULL;
-    const void *data = g ? LockResource(g) : NULL;
-    DWORD size = r ? SizeofResource(NULL, r) : 0, written = 0;
-    HANDLE f = data && size ? CreateFileW(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL) : INVALID_HANDLE_VALUE;
-    if (f == INVALID_HANDLE_VALUE) return false;
-    bool ok = WriteFile(f, data, size, &written, NULL) && written == size;
-    CloseHandle(f);
-    return ok;
-}
-
 void formula_preview(void)
 {
     bool refresh = !formula_current();
     if (refresh) formula_scan();
     if (!formula_current()) return;
     HWND owner = *(HWND *)(O + OV_HWND);
-    WCHAR temp[MAX_PATH], dir[MAX_PATH], page[MAX_PATH], zip[MAX_PATH], asset[MAX_PATH], url[MAX_PATH + 30000];
-    const WCHAR *failed_at = L"Prepare preview";
-    HRESULT failure = E_FAIL;
-    DWORD temp_n = GetTempPathW(COUNTOF(temp), temp);
-    if (!temp_n || temp_n >= COUNTOF(temp)) {
-        failed_at = L"GetTempPathW";
-        failure = HRESULT_FROM_WIN32(temp_n ? ERROR_INSUFFICIENT_BUFFER : GetLastError());
-        goto failed;
-    }
-    wsprintfW(dir, L"%ssniplite-formula-preview", temp);
-    if (!CreateDirectoryW(dir, NULL) && GetLastError() != ERROR_ALREADY_EXISTS) {
-        failed_at = L"Create preview temp directory";
-        failure = HRESULT_FROM_WIN32(GetLastError());
-        goto failed;
-    }
-    wsprintfW(page, L"%s\\formula_preview.html", dir);
-    wsprintfW(zip, L"%s\\katex.zip", dir);
-    wsprintfW(asset, L"%s\\katex\\katex.min.js", dir);
-    if (!resource_file(IDR_FORMULA_PREVIEW, page)) {
-        failed_at = L"Write formula_preview.html";
-        failure = HRESULT_FROM_WIN32(GetLastError());
-        goto failed;
-    }
-    if (GetFileAttributesW(asset) == INVALID_FILE_ATTRIBUTES) {
-        if (!resource_file(IDR_KATEX_ZIP, zip)) {
-            failed_at = L"Write katex.zip";
-            failure = HRESULT_FROM_WIN32(GetLastError());
-            goto failed;
-        }
-        WCHAR tar[MAX_PATH];
-        UINT sys = GetSystemDirectoryW(tar, COUNTOF(tar));
-        if (!sys || sys + 8 >= COUNTOF(tar)) {
-            failed_at = L"GetSystemDirectoryW";
-            failure = HRESULT_FROM_WIN32(sys ? ERROR_INSUFFICIENT_BUFFER : GetLastError());
-            goto failed;
-        }
-        lstrcatW(tar, L"\\tar.exe");
-        WCHAR cmd[MAX_PATH * 3];
-        wsprintfW(cmd, L"\"%s\" -xf \"%s\" -C \"%s\"", tar, zip, dir);
-        STARTUPINFOW si = {sizeof si};
-        PROCESS_INFORMATION pi = {0};
-        if (!CreateProcessW(tar, cmd, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
-            DWORD e = GetLastError();
-            DeleteFileW(zip);
-            failed_at = L"Start tar.exe to unpack KaTeX";
-            failure = HRESULT_FROM_WIN32(e);
-            goto failed;
-        }
-        CloseHandle(pi.hThread);
-        WaitForSingleObject(pi.hProcess, INFINITE);
-        DWORD code = 1;
-        GetExitCodeProcess(pi.hProcess, &code);
-        CloseHandle(pi.hProcess);
-        DeleteFileW(zip);
-        if (code) {
-            failed_at = L"Unpack KaTeX with tar.exe";
-            failure = HRESULT_FROM_WIN32(code);
-            goto failed;
-        }
-    }
-    DWORD cap = COUNTOF(url);
-    HRESULT url_hr = UrlCreateFromPathW(page, url, &cap, 0);
-    if (FAILED(url_hr)) {
-        failed_at = L"UrlCreateFromPathW";
-        failure = url_hr;
-        goto failed;
-    }
-    int at = lstrlenW(url);
-    const WCHAR *text = last_formula ? last_formula : L"";
-    int bytes = WideCharToMultiByte(CP_UTF8, 0, text, -1, NULL, 0, NULL, NULL);
-    if (bytes <= 0 || at + bytes * 3 >= COUNTOF(url)) {
-        failed_at = L"Encode formula preview URL";
-        failure = bytes <= 0 ? HRESULT_FROM_WIN32(GetLastError()) : E_INVALIDARG;
-        goto failed;
-    }
-    char *utf8 = mem_alloc(bytes);
-    if (!utf8) {
-        failed_at = L"Allocate formula preview URL";
-        failure = E_OUTOFMEMORY;
-        goto failed;
-    }
-    if (!WideCharToMultiByte(CP_UTF8, 0, text, -1, utf8, bytes, NULL, NULL)) {
-        mem_free(utf8);
-        failed_at = L"Convert formula preview URL to UTF-8";
-        failure = HRESULT_FROM_WIN32(GetLastError());
-        goto failed;
-    }
-    static const WCHAR hex[] = L"0123456789ABCDEF";
-    url[at++] = L'#';
-    for (int i = 0; i < bytes - 1; i++) {
-        unsigned char c = (unsigned char)utf8[i];
-        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~')
-            url[at++] = c;
-        else {
-            url[at++] = L'%'; url[at++] = hex[c >> 4]; url[at++] = hex[c & 15];
-        }
-    }
-    url[at] = 0;
-    mem_free(utf8);
     RECT selection = *ORC(OV_SEL);
     HMONITOR monitor = MonitorFromRect(&selection, MONITOR_DEFAULTTONEAREST);
-    WCHAR host_detail[320] = {0};
-    if (!formula_preview_host(owner, url, monitor, refresh, host_detail, COUNTOF(host_detail))) {
-        formula_notice(owner, host_detail[0] ? host_detail : T(F_PREVIEW_ERROR), MB_ICONERROR);
-        return;
-    }
-    return;
-failed:
-    WCHAR message[320];
-    wsprintfW(message, L"%s\n\n%s: 0x%08lx", T(F_PREVIEW_ERROR), failed_at, (unsigned long)failure);
-    formula_notice(owner, message, MB_ICONERROR);
+    WCHAR detail[320] = {0};
+    if (!formula_preview_host(owner, last_formula, monitor, refresh, detail, COUNTOF(detail)))
+        formula_notice(owner, detail[0] ? detail : T(F_PREVIEW_ERROR), MB_ICONERROR);
 }
 
 static DWORD WINAPI formula_worker(void *ctx)

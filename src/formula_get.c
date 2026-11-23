@@ -1,16 +1,18 @@
 #include "formula.h"
+#include "ocr.h"
+#include "resource.h"
 
 #define FORMULA_MODEL_SOURCE L"E:\\浏览器下载\\texo-distill-q8_0.gguf"
 #define FORMULA_RUNTIME_SOURCE L"E:\\浏览器下载\\crispembed-windows-x86_64-vulkan\\"
 #define FORMULA_MODEL_BYTES 22739744u
 
-typedef struct { const WCHAR *name; DWORD size; } FormulaFile;
+typedef struct { const WCHAR *name; DWORD size; int resource; } FormulaFile;
 static const FormulaFile files[] = {
     {L"texo-distill-q8_0.gguf", FORMULA_MODEL_BYTES},
     {L"crispembed.dll", 7956992u},
-    {L"ggml.dll", 69120u},
-    {L"ggml-base.dll", 680448u},
-    {L"ggml-cpu.dll", 955904u},
+    {L"ggml.dll", 0},
+    {L"ggml-base.dll", 0},
+    {L"ggml-cpu.dll", 0},
     {L"ggml-vulkan.dll", 52247552u},
     {L"vcruntime140.dll", 0},
     {L"vcruntime140_1.dll", 0},
@@ -21,6 +23,8 @@ static const FormulaFile files[] = {
     {L"NOTICE.marker", 4252u},
     {L"NOTICE.sheenbidi", 433u},
     {L"NOTICE.teleocr", 3276u},
+    {L"sniplite_formula.dll", 0, IDR_FORMULA_ENGINE},
+    {L"LICENSE-FormulaEngine.txt", 0, IDR_FORMULA_ENGINE_LICENSE},
 };
 
 static bool paths(const WCHAR *name, WCHAR *dir, WCHAR *path, WCHAR *tmp, int cap)
@@ -46,7 +50,10 @@ static bool file_size(const WCHAR *path, DWORD size)
 bool formula_installed(void)
 {
     WCHAR dir[MAX_PATH * 2], path[MAX_PATH * 2], tmp[MAX_PATH * 2];
+    if (!paths(L"sniplite_formula_vulkan.dll", dir, path, tmp, COUNTOF(dir))) return false;
+    bool vulkan_engine = file_size(path, 0);
     for (int i = 0; i < COUNTOF(files); i++) {
+        if (!vulkan_engine && lstrcmpW(files[i].name, L"ggml-vulkan.dll") == 0) continue;
         if (!paths(files[i].name, dir, path, tmp, COUNTOF(dir)) || !file_size(path, files[i].size))
             return false;
     }
@@ -128,6 +135,25 @@ static int copy_file(const WCHAR *source, const WCHAR *target, const WCHAR *tmp,
     return FORMULA_GET_OK;
 }
 
+static int copy_resource(int id, const WCHAR *target, const WCHAR *tmp, volatile LONG *cancel)
+{
+    HRSRC r = FindResourceW(NULL, MAKEINTRESOURCEW(id), RT_RCDATA);
+    HGLOBAL g = r ? LoadResource(NULL, r) : NULL;
+    const void *data = g ? LockResource(g) : NULL;
+    DWORD size = r ? SizeofResource(NULL, r) : 0, wrote = 0;
+    if (!data || !size) return FORMULA_GET_CHECK;
+    HANDLE out = CreateFileW(tmp, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (out == INVALID_HANDLE_VALUE) return FORMULA_GET_WRITE;
+    bool ok = WriteFile(out, data, size, &wrote, NULL) && wrote == size;
+    CloseHandle(out);
+    if (cancelled(cancel)) { DeleteFileW(tmp); return FORMULA_GET_CANCEL; }
+    if (!ok || !MoveFileExW(tmp, target, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+        DeleteFileW(tmp);
+        return FORMULA_GET_WRITE;
+    }
+    return FORMULA_GET_OK;
+}
+
 int formula_get(volatile LONG *cancel, void (*progress)(int, void *), void *ctx)
 {
     WCHAR dir[MAX_PATH * 2], path[MAX_PATH * 2], tmp[MAX_PATH * 2];
@@ -139,18 +165,23 @@ int formula_get(volatile LONG *cancel, void (*progress)(int, void *), void *ctx)
     for (int i = 0; i < COUNTOF(files); i++) {
         if (cancelled(cancel)) return FORMULA_GET_CANCEL;
         if (!paths(files[i].name, dir, path, tmp, COUNTOF(dir))) return FORMULA_GET_WRITE;
-        WCHAR source[MAX_PATH * 2];
-        if (i == 0) {
-            lstrcpynW(source, FORMULA_MODEL_SOURCE, COUNTOF(source));
-        } else if (i >= 6 && i <= 9) {
-            DWORD n = GetSystemDirectoryW(source, COUNTOF(source));
-            if (!n || n + lstrlenW(files[i].name) + 2 >= COUNTOF(source)) return FORMULA_GET_SOURCE;
-            lstrcatW(source, L"\\");
-            lstrcatW(source, files[i].name);
+        int result;
+        if (files[i].resource) {
+            result = copy_resource(files[i].resource, path, tmp, cancel);
         } else {
-            wsprintfW(source, L"%s%s", FORMULA_RUNTIME_SOURCE, files[i].name);
+            WCHAR source[MAX_PATH * 2];
+            if (i == 0) {
+                lstrcpynW(source, FORMULA_MODEL_SOURCE, COUNTOF(source));
+            } else if (i >= 6 && i <= 9) {
+                DWORD n = GetSystemDirectoryW(source, COUNTOF(source));
+                if (!n || n + lstrlenW(files[i].name) + 2 >= COUNTOF(source)) return FORMULA_GET_SOURCE;
+                lstrcatW(source, L"\\");
+                lstrcatW(source, files[i].name);
+            } else {
+                wsprintfW(source, L"%s%s", FORMULA_RUNTIME_SOURCE, files[i].name);
+            }
+            result = copy_file(source, path, tmp, files[i].size, cancel);
         }
-        int result = copy_file(source, path, tmp, files[i].size, cancel);
         if (result != FORMULA_GET_OK) return result;
         done += files[i].size;
         if (progress) progress((int)(done * 100 / total), ctx);
@@ -174,13 +205,16 @@ int formula_size_mb(void)
 bool formula_remove(void)
 {
     WCHAR dir[MAX_PATH * 2], path[MAX_PATH * 2], tmp[MAX_PATH * 2];
-    bool good = true;
+    bool good = true, keep_runtime = ocr_installed();
     if (!paths(L"*", dir, path, tmp, COUNTOF(dir))) return false;
     WIN32_FIND_DATAW fd;
     HANDLE search = FindFirstFileW(path, &fd);
     if (search != INVALID_HANDLE_VALUE) {
         do {
             if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+            if (keep_runtime && lstrcmpiW(fd.cFileName, files[0].name) &&
+                lstrcmpiW(fd.cFileName, L"sniplite_formula.dll") &&
+                lstrcmpiW(fd.cFileName, L"LICENSE-FormulaEngine.txt")) continue;
             wsprintfW(tmp, L"%s\\%s", dir, fd.cFileName);
             if (!DeleteFileW(tmp) && GetLastError() != ERROR_FILE_NOT_FOUND) good = false;
         } while (FindNextFileW(search, &fd));

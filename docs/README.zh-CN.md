@@ -37,7 +37,7 @@
 
 到 [Releases](https://github.com/MrTangLuyao/sniplite/releases/latest) 下载最新版安装。
 
-也有两个免安装的便携版：`sniplite_<版本>_portable_x64.exe`，以及自带文字识别模块的 `sniplite_<版本>_portable_with_OCR_x64.exe`。
+提供七种免安装便携 ZIP：QR 专用一种、QR+OCR 的 CPU／AVX2／Vulkan 版，以及 QR+OCR+FormulaNet 的 CPU／AVX2／Vulkan 版。文件名分别使用 `_portable_QR_OCR_<CPU|AVX2|Vulkan>_x64.zip` 和 `_portable_QR_OCR_FormulaNet_<CPU|AVX2|Vulkan>_x64.zip`。Vulkan 版依次尝试 Vulkan、AVX2、通用 CPU。全部内建 MicroTeX 原生公式预览，支持 LaTeX 编辑、实时渲染、语法错误提示，以及按钮或 `Ctrl+Enter` 复制；不需另装预览运行库。`LICENSE-MicroTeX.txt` 随程序提供。
 
 > [!TIP]
 > 图标在任务栏右下角，没看到的话点一下那里的小箭头。想让它一直显示，在 Windows 设置里搜索“其他系统托盘图标”，把 sniplite 打开。
@@ -89,7 +89,7 @@
 
 **怎么把截图里的文字提取出来？**
 
-框选一块区域，点识别文字按钮（Ctrl+O），文字会出现在选区旁边的面板里，可以选中、修改和复制。表格会保持分列，粘贴到 Excel 里直接分格，也可以切换成 Markdown 格式。Ctrl+Shift+C 可以直接复制文字。这需要文字识别模块（12 MB，模型是 PaddleOCR PP-OCRv6，运行库是 ONNX Runtime，全部在本机运行）：可以在首选项的文字识别页安装，安装时勾选，或者直接用带 OCR 的便携版。没装模块时不显示文字按钮。按 F4 或 Shift+F4 可以直接开始截图并识别或复制文字。
+框选一块区域，点识别文字按钮（Ctrl+O），文字会出现在选区旁边的面板里，可以选中、修改和复制。表格会保持分列，粘贴到 Excel 里直接分格，也可以切换成 Markdown 格式。Ctrl+Shift+C 可以直接复制文字。这需要 CrispEmbed 的 PP-OCRv6 tiny GGUF 检测模型和 small GGUF 识别模型：独立安装约 81 MB；已装公式模块时共用运行库，额外约 21 MB。文字识别固定在 CPU 上运行，完全在本机进行。可以在首选项的文字识别页安装，安装时勾选，或者直接用带 OCR 的便携版。没装模块时不显示文字按钮。按 F4 或 Shift+F4 可以直接开始截图并识别或复制文字。
 
 **怎么截长图？**
 
@@ -144,9 +144,8 @@
 
 ## 第三方开源组件
 
-sniplite 本身只用到 Windows 自带的系统库。可选的文字识别模块是别人的成果，原样提供，并附带它们的许可证或许可条款的链接（在模块的 `ocr` 文件夹里，也在[模块的发布页](https://github.com/MrTangLuyao/sniplite/releases/tag/ocr-2)）：
+sniplite 本身只用到 Windows 自带的系统库。可选的文字识别模块是别人的成果，原样提供，并附带它们的许可证或许可条款的链接（在模块的 `ocr` 文件夹里，也在[模块的发布页](https://github.com/MrTangLuyao/sniplite/releases/tag/ocr-4)）：
 
-- [ONNX Runtime](https://github.com/microsoft/onnxruntime) 1.26.0，Copyright (c) Microsoft Corporation，MIT 许可证
-- ONNX Runtime 需要的 [Microsoft Visual C++](https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files) 运行库 14.51.36247（`msvcp140.dll`、`msvcp140_1.dll`、`vcruntime140.dll`、`vcruntime140_1.dll`），Copyright (c) Microsoft Corporation，不是开源软件，按微软的[许可条款](https://visualstudio.microsoft.com/license-terms/)再分发
-- [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) 的 PP-OCRv6 模型，Copyright (c) PaddlePaddle Authors，Apache 2.0 许可证
-- 模型的 ONNX 格式来自 [RapidOCR](https://github.com/RapidAI/RapidOCR)，Apache 2.0 许可证
+- [CrispEmbed](https://github.com/CrispStrobe/CrispEmbed) 运行库，MIT 许可证；CrispEmbed、GGML 与组件的版权声明随 OCR 模块提供
+- [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) 的 PP-OCRv6 模型，Copyright (c) PaddlePaddle Authors，Apache 2.0 许可证；GGUF 版本由 CrispEmbed 提供
+- CrispEmbed/ggml 所需的 [Microsoft Visual C++](https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files) 运行库 14.51.36247（`msvcp140.dll`、`msvcp140_1.dll`、`vcruntime140.dll`、`vcruntime140_1.dll`），Copyright (c) Microsoft Corporation，不是开源软件，按微软的[许可条款](https://visualstudio.microsoft.com/license-terms/)再分发

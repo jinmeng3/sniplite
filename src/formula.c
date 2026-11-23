@@ -4,21 +4,17 @@
 #define FORMULA_MAX_PIXELS 16000000u
 #define FORMULA_OUTPUT_CAP 65536
 
-typedef void (*CrispSetBackend)(const char *name);
 typedef void *(*CrispModelInit)(const char *model_path, int threads);
 typedef void (*CrispModelFree)(void *ctx);
 typedef const char *(*CrispRecognize)(void *ctx, const uint8_t *pixels, int width,
                                       int height, int channels, int *length);
-typedef const char *(*CrispLastError)(const void *ctx);
 
 static struct {
     HMODULE dll;
     void *ctx;
-    CrispSetBackend set_backend;
     CrispModelInit model_init;
     CrispModelFree model_free;
     CrispRecognize recognize;
-    CrispLastError last_error;
     bool ready, bad;
     WCHAR err[200];
 } F;
@@ -26,14 +22,6 @@ static struct {
 const WCHAR *formula_error(void) { return F.err; }
 static void error(const WCHAR *s) { lstrcpynW(F.err, s, COUNTOF(F.err)); }
 
-static void error_utf8(const char *s)
-{
-    int n = s ? MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s, -1, NULL, 0) : 0;
-    if (n > 0 && n <= COUNTOF(F.err))
-        MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s, -1, F.err, COUNTOF(F.err));
-    else
-        error(L"CrispEmbed formula recognition failed");
-}
 
 static bool find_path(const WCHAR *name, WCHAR *path, int cap)
 {
@@ -45,6 +33,11 @@ static bool find_path(const WCHAR *name, WCHAR *path, int cap)
     lstrcatW(path, name);
     return true;
 }
+static bool runtime_path(const WCHAR *name, WCHAR *path, int cap)
+{
+    return find_path(name, path, cap) && GetFileAttributesW(path) != INVALID_FILE_ATTRIBUTES;
+}
+
 
 static void unload(void)
 {
@@ -52,34 +45,29 @@ static void unload(void)
     if (F.dll) FreeLibrary(F.dll);
     F.ctx = NULL;
     F.dll = NULL;
-    F.set_backend = NULL;
     F.model_init = NULL;
     F.model_free = NULL;
     F.recognize = NULL;
-    F.last_error = NULL;
     F.ready = false;
 }
 
 static bool load(void)
 {
     if (F.ready) return true;
-    WCHAR path[MAX_PATH * 2];
-    if (!find_path(L"crispembed.dll", path, COUNTOF(path))) {
-        error(L"CrispEmbed runtime is not installed");
-        goto failed;
-    }
-    F.dll = LoadLibraryExW(path, NULL, LOAD_WITH_ALTERED_SEARCH_PATH);
-    if (!F.dll) {
-        error(L"CrispEmbed runtime could not be loaded");
-        goto failed;
-    }
-    F.set_backend = (CrispSetBackend)(void *)GetProcAddress(F.dll, "crispembed_set_gpu_backend");
-    F.model_init = (CrispModelInit)(void *)GetProcAddress(F.dll, "crispembed_ocr_model_init");
-    F.model_free = (CrispModelFree)(void *)GetProcAddress(F.dll, "crispembed_ocr_model_free");
-    F.recognize = (CrispRecognize)(void *)GetProcAddress(F.dll, "crispembed_ocr_model_recognize");
-    F.last_error = (CrispLastError)(void *)GetProcAddress(F.dll, "crispembed_ocr_model_last_error");
-    if (!F.set_backend || !F.model_init || !F.model_free || !F.recognize || !F.last_error) {
-        error(L"CrispEmbed runtime is missing the OCR API");
+    WCHAR path[MAX_PATH * 2], vulkan_path[MAX_PATH * 2], avx2_path[MAX_PATH * 2];
+    WCHAR cpu_generic_path[MAX_PATH * 2], cpu_path[MAX_PATH * 2];
+    const WCHAR *candidate[3];
+    int count = 0;
+    bool vulkan = runtime_path(L"sniplite_formula_vulkan.dll", vulkan_path, COUNTOF(vulkan_path));
+    bool avx2 = IsProcessorFeaturePresent(PF_AVX2_INSTRUCTIONS_AVAILABLE) &&
+                runtime_path(L"cpu-avx2\\sniplite_formula.dll", avx2_path, COUNTOF(avx2_path));
+    bool cpu_generic = runtime_path(L"cpu-generic\\sniplite_formula.dll", cpu_generic_path, COUNTOF(cpu_generic_path));
+    bool cpu = cpu_generic || runtime_path(L"sniplite_formula.dll", cpu_path, COUNTOF(cpu_path));
+    if (vulkan) candidate[count++] = vulkan_path;
+    if (avx2) candidate[count++] = avx2_path;
+    if (cpu) candidate[count++] = cpu_generic ? cpu_generic_path : cpu_path;
+    if (!count) {
+        error(L"Formula runtime is not installed");
         goto failed;
     }
     if (!find_path(L"texo-distill-q8_0.gguf", path, COUNTOF(path))) {
@@ -93,17 +81,25 @@ static bool load(void)
         error(L"Could not encode the model path as UTF-8");
         goto failed;
     }
-    F.set_backend("vulkan");
     DWORD processors = GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
     int threads = processors > 4 ? 4 : (processors ? (int)processors : 1);
-    F.ctx = F.model_init(model, threads);
-    mem_free(model);
-    if (!F.ctx) {
-        error(L"Texo-Distill model could not be loaded by CrispEmbed");
-        goto failed;
+    for (int i = 0; i < count; ++i) {
+        unload();
+        F.dll = LoadLibraryExW(candidate[i], NULL, LOAD_WITH_ALTERED_SEARCH_PATH);
+        if (!F.dll) continue;
+        F.model_init = (CrispModelInit)(void *)GetProcAddress(F.dll, "ppformulanet_ocr_init");
+        F.model_free = (CrispModelFree)(void *)GetProcAddress(F.dll, "ppformulanet_ocr_free");
+        F.recognize = (CrispRecognize)(void *)GetProcAddress(F.dll, "ppformulanet_ocr_recognize_raw");
+        if (!F.model_init || !F.model_free || !F.recognize) continue;
+        F.ctx = F.model_init(model, threads);
+        if (F.ctx) {
+            mem_free(model);
+            F.ready = true;
+            return true;
+        }
     }
-    F.ready = true;
-    return true;
+    mem_free(model);
+    error(L"Texo-Distill model could not be loaded by any available backend");
 failed:
     unload();
     return false;
@@ -116,7 +112,7 @@ static bool run(const uint8_t *rgb, int w, int h, Str *latex)
     int n = 0;
     const char *text = F.recognize(F.ctx, rgb, w, h, 3, &n);
     if (!text) {
-        error_utf8(F.last_error(F.ctx));
+        error(L"Formula recognition failed");
         return false;
     }
     if (n < 0 || n >= FORMULA_OUTPUT_CAP) {

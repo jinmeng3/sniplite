@@ -1,0 +1,5 @@
+LIBRARY sniplite_formula
+EXPORTS
+    ppformulanet_ocr_init
+    ppformulanet_ocr_free
+    ppformulanet_ocr_recognize_raw

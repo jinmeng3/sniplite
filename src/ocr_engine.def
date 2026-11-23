@@ -1,0 +1,5 @@
+LIBRARY sniplite_ocr
+EXPORTS
+    sniplite_ocr_init
+    sniplite_ocr_free
+    sniplite_ocr_run

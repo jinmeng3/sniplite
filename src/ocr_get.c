@@ -1,32 +1,15 @@
-/* Getting the text recognition module: the files of the "ocr" folder next to the program.
- *
- *   onnxruntime.dll                                  ONNX Runtime 1.26.0
- *   vcruntime140.dll, vcruntime140_1.dll,            the Visual C++ runtime that DLL needs: the
- *   msvcp140_1.dll, msvcp140.dll                     computer may have none, or too old a one
- *   PP-OCRv6_det_tiny.onnx, PP-OCRv6_rec_tiny.onnx   the PP-OCRv6 models of PaddleOCR, as
- *                                                    RapidOCR converted them
- *   NOTICE.txt and the licenses                      whose work these are
- *
- * They travel as one zip (pack.bat makes it). Settings downloads it from this project's
- * own releases, where it is published once under a tag of its own; the portable program
- * with OCR has it after itself in its own file. Either way the same code takes it apart:
- * each of the seven that are not text is checked against the SHA-256 written below before
- * it gets its name, so what is installed is exactly what this version of the program was
- * tested with, and nothing but those seven and the four texts named below is written.
- *
- * Runs in the preferences window's process, on a worker thread, or in the helper that
- * reads text (the carried zip, the first time; the runtime files a module lacks). */
+/* The optional text OCR module: CrispEmbed's PP-OCRv6 GGUF models and GGML runtime.
+ * The release ZIP is built by package-all.bat. Upstream models/DLLs have pinned SHA-256;
+ * the fixed native engine and its license must match this executable's resources. */
 #include "ocr.h"
 #include "update.h"
+#include "formula.h"
+#include "resource.h"
 
-/* The published OCR zip. Its size is for progress; extracted parts are verified by hashes. */
-#define MODULE_TAG UPDATE_REPO L"/releases/download/ocr-2/"
+/* The published OCR zip. Its size is used for download progress. */
+#define MODULE_TAG UPDATE_REPO L"/releases/download/ocr-5/"
 #define MODULE_PATH MODULE_TAG L"sniplite_ocr.zip"
-#define MODULE_BYTES 11985367u
-/* Runtime files for completing modules published before they came with it. */
-#define RUNTIME_PATH MODULE_TAG L"sniplite_ocr_runtime.zip"
-#define RUNTIME_BYTES 334232u
-#define RUNTIME_PARTS 4 /* the last of kParts */
+#define MODULE_BYTES 10815699u
 #define QR_MODULE_PATH UPDATE_REPO L"/releases/download/v" SNIPLITE_VERSION L"/sniplite_" SNIPLITE_VERSION L"_portable_QR_x64.zip"
 #define QR_ARCHIVE_LIMIT (8u * 1024u * 1024u)
 #define QR_HELPER_SIZE 3248943u
@@ -36,34 +19,67 @@ typedef struct {
     const WCHAR *name;
     uint32_t size;
     uint8_t sha[32];
+    int resource;
+    bool optional;
 } Part;
 
+
 static const Part kParts[] = {
-    {L"PP-OCRv6_det_tiny.onnx", 1829618,
-     {0xf4, 0x2c, 0x0f, 0xbd, 0x29, 0x4d, 0x95, 0xea, 0xc1, 0xa5, 0x50, 0xe1, 0x31, 0xb2, 0x77, 0xda,
-      0xc9, 0x74, 0x62, 0xc8, 0x02, 0x5f, 0xa4, 0xb6, 0xc3, 0xce, 0xc1, 0xb7, 0x89, 0x4b, 0xd3, 0xd5}},
-    {L"PP-OCRv6_rec_tiny.onnx", 4489813,
-     {0xe1, 0x6e, 0x24, 0x2d, 0xe5, 0x93, 0x7a, 0xd9, 0x26, 0x09, 0x22, 0x3f, 0x19, 0xbc, 0x2a, 0xff,
-      0x37, 0x27, 0xee, 0x40, 0xb0, 0x95, 0xf9, 0x96, 0x90, 0x7c, 0x24, 0x74, 0x9b, 0xad, 0x25, 0x1b}},
-    {L"onnxruntime.dll", 16783672,
-     {0xef, 0xa1, 0x4d, 0xc0, 0xf3, 0xe8, 0xd6, 0xe4, 0xfc, 0x7c, 0xe0, 0xb9, 0xb5, 0xaa, 0x70, 0xd6,
-      0xe2, 0x7d, 0xee, 0xc9, 0x08, 0xaf, 0x05, 0xc1, 0xfa, 0x9a, 0x37, 0x27, 0x0f, 0x57, 0x46, 0x0b}},
-    {L"vcruntime140.dll", 178616,
-     {0xd1, 0xf4, 0x22, 0x5d, 0xf2, 0xcd, 0x87, 0x7d, 0xbf, 0x13, 0x0d, 0x56, 0x68, 0xa0, 0x21, 0xdc,
-      0xe3, 0xf9, 0x41, 0x18, 0x45, 0x5f, 0xf5, 0xec, 0x95, 0x20, 0x61, 0xc3, 0x0a, 0xfc, 0x9c, 0xe7}},
-    {L"vcruntime140_1.dll", 50112,
-     {0xa7, 0x14, 0x6c, 0x08, 0xf8, 0x9f, 0xe5, 0xb0, 0x45, 0x41, 0xab, 0x50, 0x7c, 0xdb, 0x59, 0xff,
-      0x7b, 0x44, 0x53, 0x4d, 0x4b, 0xa3, 0xc6, 0x68, 0xa4, 0x26, 0xc6, 0x45, 0x0a, 0x03, 0x43, 0x4e}},
-    {L"msvcp140_1.dll", 35768,
-     {0x20, 0x6c, 0x93, 0x1b, 0xf9, 0x0f, 0xda, 0xd8, 0x81, 0x6d, 0xe3, 0xb5, 0xe2, 0xef, 0x80, 0xb2,
-      0xbc, 0xaa, 0x94, 0x06, 0xc8, 0x9e, 0xcc, 0x05, 0xfe, 0x6f, 0xdd, 0xff, 0xe2, 0x51, 0xe9, 0x82}},
-    {L"msvcp140.dll", 643512,
-     {0x7c, 0x26, 0x61, 0x4e, 0x1d, 0x73, 0x38, 0x92, 0xc2, 0xde, 0xac, 0x7e, 0x24, 0x5c, 0xe1, 0x15,
-      0x50, 0x4b, 0x1d, 0x80, 0x59, 0x2d, 0xd0, 0xa0, 0x1b, 0x08, 0xe3, 0xe5, 0xa5, 0x5f, 0x89, 0xca}},
+    {L"PP-OCRv6_tiny_det-f16.gguf", 878592,
+     {0x3b,0x16,0x5a,0x16,0xa3,0x3b,0x05,0x52,0x1a,0x6b,0x37,0x48,0x37,0xda,0xd9,0xbe,
+      0xff,0x5e,0x8e,0x89,0x16,0x4e,0x70,0x0b,0x9a,0xbe,0x18,0x7f,0x99,0x23,0xde,0x50}},
+    {L"PP-OCRv6_tiny_rec-f16.gguf", 2390272,
+     {0x55,0x20,0x12,0x2d,0x9b,0xa9,0x17,0xa2,0x28,0x95,0xc4,0x8a,0x2b,0xee,0xec,0x96,
+      0xff,0x4f,0x7b,0x7c,0xcb,0x61,0xa4,0x0a,0xd4,0xc7,0x11,0xbe,0x01,0x8b,0xeb,0x59}},
+    {L"sniplite_ocr.dll", 0, {0}, IDR_OCR_ENGINE},
+    {L"LICENSE-OCREngine.txt", 0, {0}, IDR_OCR_ENGINE_LICENSE},
+    {L"crispembed.dll", 7956992,
+     {0x35,0x74,0x39,0xa1,0xf4,0x3b,0x1c,0x97,0x16,0x62,0x48,0xc7,0x59,0x09,0x11,0x3c,
+      0xed,0x59,0x79,0x0d,0x2a,0xae,0xe0,0xbc,0x0a,0xd8,0x0f,0x83,0x1b,0x13,0xdc,0x44}},
+    {L"ggml.dll", 2817022,
+     {0x75,0x70,0xf8,0x71,0x90,0x26,0x7a,0xc1,0x99,0x45,0x51,0xb3,0xa7,0x43,0x84,0x83,
+      0x2c,0x54,0xf5,0x92,0xeb,0xf0,0x5d,0x63,0x28,0xfa,0x30,0x87,0xd1,0x2b,0x2c,0x3c}},
+    {L"ggml-base.dll", 1416801,
+     {0xf7,0xe0,0xeb,0x2d,0x64,0x52,0xa4,0xab,0x7f,0x22,0x37,0x96,0xfe,0x1d,0xe9,0x8b,
+      0x1b,0x05,0x7e,0x20,0xe6,0xfc,0x38,0x24,0x56,0x82,0x2b,0xa9,0x4c,0xfc,0x94,0xd7}},
+    {L"ggml-cpu.dll", 1468953,
+     {0x21,0xaf,0x84,0x8b,0x66,0xef,0x91,0x35,0xb3,0x17,0x10,0x6d,0x28,0x56,0xc2,0x8c,
+      0x9b,0x65,0x49,0x0e,0x16,0x13,0x2f,0x63,0x4a,0x99,0x87,0x61,0x49,0x44,0x12,0xc6}},
+    {L"vcruntime140.dll", 123472,
+     {0x18,0x41,0x46,0x85,0x27,0x27,0xa9,0xdb,0x4e,0xea,0x06,0x17,0x87,0x16,0xbe,0xc3,
+      0xcd,0xbb,0x10,0x15,0xc9,0x11,0xf6,0xb0,0xf9,0x15,0xb1,0x84,0xad,0x77,0x75,0xb2}},
+    {L"vcruntime140_1.dll", 47264,
+     {0xe6,0xbf,0xb3,0x66,0x2a,0xb4,0xb1,0x96,0x9a,0x73,0x44,0x1d,0xbe,0x35,0xc9,0x6d,
+      0x51,0x44,0x1b,0x6b,0xff,0x8c,0xf1,0xfe,0x74,0x30,0xbd,0x5b,0x24,0x6c,0xa6,0x05}},
+    {L"msvcp140_1.dll", 35488,
+     {0x2d,0xd6,0x70,0xf8,0x74,0x56,0x2f,0xbd,0xca,0x5b,0x02,0x2d,0xf1,0x94,0x3d,0x70,
+      0xa5,0x7b,0xa9,0x1f,0xde,0x55,0x92,0x80,0xe3,0xa1,0xda,0xeb,0xe4,0xdb,0x23,0x80}},
+    {L"msvcp140.dll", 553552,
+     {0xde,0xf4,0x6a,0xa6,0xa8,0xf7,0x2f,0x27,0xba,0xfa,0xc0,0xc4,0x33,0x34,0x41,0x94,
+      0x86,0xa4,0xd1,0xdc,0xdb,0x6c,0x47,0x9a,0x8e,0xf7,0x03,0x4b,0x3e,0x1f,0xa4,0xcb}},
+    {L"cpu-avx2\\sniplite_ocr.dll", 754688,
+     {0x16,0xa4,0x5a,0x32,0x7e,0x0c,0x2d,0x70,0x04,0x83,0xec,0x04,0x23,0x1d,0x25,0x44,
+      0x7a,0xe9,0xd2,0xb3,0x46,0x37,0x28,0xcd,0xca,0xad,0x18,0x5d,0x9a,0x7e,0x82,0xb4}, 0, true},
+    {L"cpu-avx2\\ggml.dll", 2817022,
+     {0x75,0x70,0xf8,0x71,0x90,0x26,0x7a,0xc1,0x99,0x45,0x51,0xb3,0xa7,0x43,0x84,0x83,
+      0x2c,0x54,0xf5,0x92,0xeb,0xf0,0x5d,0x63,0x28,0xfa,0x30,0x87,0xd1,0x2b,0x2c,0x3c}, 0, true},
+    {L"cpu-avx2\\ggml-base.dll", 1416801,
+     {0xf7,0xe0,0xeb,0x2d,0x64,0x52,0xa4,0xab,0x7f,0x22,0x37,0x96,0xfe,0x1d,0xe9,0x8b,
+      0x1b,0x05,0x7e,0x20,0xe6,0xfc,0x38,0x24,0x56,0x82,0x2b,0xa9,0x4c,0xfc,0x94,0xd7}, 0, true},
+    {L"cpu-avx2\\ggml-cpu.dll", 1691031,
+     {0x33,0x16,0x6c,0xb4,0x1c,0xaf,0x90,0x4d,0x5a,0x5c,0xc3,0x98,0xb0,0xe5,0xd8,0x68,
+      0x0a,0xf2,0x74,0xf6,0x77,0x22,0x21,0x31,0x2c,0x23,0x65,0x27,0x69,0xc0,0x58,0xf8}, 0, true},
 };
 
-static const WCHAR *const kNotes[] = {L"NOTICE.txt", L"LICENSE-onnxruntime.txt", L"LICENSE-PaddleOCR.txt",
-                                      L"ThirdPartyNotices-onnxruntime.txt"};
+static const WCHAR *const kNotes[] = {L"NOTICE.txt", L"Apache-2.0.txt", L"LICENSE",
+                                      L"NOTICE.marker", L"NOTICE.sheenbidi", L"NOTICE.teleocr"};
+
+static const WCHAR *const kLegacy[] = {
+    L"PP-OCRv6_tiny_rec-q8-head.gguf",
+    L"PP-OCRv6_small_rec-q8-head.gguf",
+    L"PP-OCRv6_det_tiny.onnx", L"PP-OCRv6_rec_tiny.onnx", L"onnxruntime.dll",
+    L"LICENSE-PaddleOCR.txt", L"LICENSE-onnxruntime.txt", L"ThirdPartyNotices-onnxruntime.txt",
+};
 
 /* ---- SHA-256 ---- */
 
@@ -330,9 +346,14 @@ static bool part_path(const WCHAR *name, const WCHAR *suffix, WCHAR *path, int c
 /* A ZIP entry into its destination folder: written under another name, then given its own. */
 static bool file_write(const WCHAR *dir, const WCHAR *name, const uint8_t *data, uint32_t n)
 {
-    WCHAR path[MAX_PATH * 2], tmp[MAX_PATH * 2];
+    WCHAR path[MAX_PATH * 2], tmp[MAX_PATH * 2], child[MAX_PATH * 2];
     if (lstrlenW(dir) + lstrlenW(name) + 8 >= COUNTOF(path))
         return false;
+    if (lstrlenW(name) > 9 && name[8] == L'\\') {
+        wsprintfW(child, L"%s\\cpu-avx2", dir);
+        if (!CreateDirectoryW(child, NULL) && GetLastError() != ERROR_ALREADY_EXISTS)
+            return false;
+    }
     wsprintfW(path, L"%s\\%s", dir, name);
     wsprintfW(tmp, L"%s.part", path);
     HANDLE h = CreateFileW(tmp, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -347,108 +368,87 @@ static bool file_write(const WCHAR *dir, const WCHAR *name, const uint8_t *data,
     return true;
 }
 
-/* The zip, whole in memory, taken apart into the module's folder: OCR_GET_OK, _CHECK or
- * _WRITE. A zip is read from its end, where its directory is (no comment after it: pack.bat
- * writes none). Only plain files right in "ocr/" are looked at: the module's own, each
- * with the size and SHA-256 it must have, and its four texts (the notice, the licenses).
- * Nothing else is written, so nothing can land outside the folder or be loaded from it.
- * Runtime-only extraction writes the verified runtime files to target without installing OCR. */
-static int zip_unpack(const uint8_t *zip, size_t n, const WCHAR *target, bool runtime_only)
+/* Extract only the known OCR files from the archive; all model and DLL bytes are pinned. */
+static int zip_unpack(const uint8_t *zip, size_t n)
 {
-    WCHAR dir[MAX_PATH * 2];
-    if (n < 22 || rd32(zip + n - 22) != 0x06054b50)
-        return OCR_GET_CHECK;
+    if (n < 22 || rd32(zip + n - 22) != 0x06054b50) return OCR_GET_CHECK;
     const uint8_t *end = zip + n - 22;
     uint32_t count = rd16(end + 10), dir_bytes = rd32(end + 12), dir_at = rd32(end + 16);
-    if ((uint64_t)dir_at + dir_bytes > n - 22)
-        return OCR_GET_CHECK;
-    if (runtime_only && (!target || !*target))
-        return OCR_GET_WRITE;
-    if (runtime_only)
-        lstrcpynW(dir, target, COUNTOF(dir));
-    else
-        ocr_dir(dir, COUNTOF(dir));
-    if (!dir[0] || (!CreateDirectoryW(dir, NULL) && GetLastError() != ERROR_ALREADY_EXISTS))
-        return OCR_GET_WRITE;
+    if ((uint64_t)dir_at + dir_bytes > n - 22) return OCR_GET_CHECK;
+    WCHAR dir[MAX_PATH * 2];
+    ocr_dir(dir, COUNTOF(dir));
+    if (!dir[0] || (!CreateDirectoryW(dir, NULL) && GetLastError() != ERROR_ALREADY_EXISTS)) return OCR_GET_WRITE;
+    bool shared_runtime = formula_installed();
     const uint8_t *e = zip + dir_at, *dir_end = e + dir_bytes;
-    uint32_t runtime_seen = 0;
-    bool runtime_license = false, runtime_notices = false;
+    uint32_t seen = 0;
     for (uint32_t i = 0; i < count; i++) {
-        if (dir_end - e < 46 || rd32(e) != 0x02014b50)
-            return OCR_GET_CHECK;
-        uint32_t method = rd16(e + 10), csize = rd32(e + 20), usize = rd32(e + 24), nlen = rd16(e + 28), at = rd32(e + 42);
+        if (dir_end - e < 46 || rd32(e) != 0x02014b50) return OCR_GET_CHECK;
+        uint32_t method = rd16(e + 10), csize = rd32(e + 20), usize = rd32(e + 24);
+        uint32_t nlen = rd16(e + 28), at = rd32(e + 42);
         const char *name = (const char *)e + 46;
-        if ((size_t)(dir_end - e) < 46 + (size_t)nlen + rd16(e + 30) + rd16(e + 32))
-            return OCR_GET_CHECK;
+        if ((size_t)(dir_end - e) < 46 + (size_t)nlen + rd16(e + 30) + rd16(e + 32)) return OCR_GET_CHECK;
         e += 46 + nlen + rd16(e + 30) + rd16(e + 32);
         WCHAR file[64];
         bool plain = nlen > 4 && nlen < 4 + COUNTOF(file) && !memcmp(name, "ocr/", 4) && name[4] != '.';
+        bool nested = false;
         for (uint32_t c = 4; plain && c < nlen; c++) {
             char ch = name[c];
-            plain = ch > 32 && ch < 127 && ch != '/' && ch != '\\' && ch != ':';
-            file[c - 4] = (WCHAR)ch;
-        }
-        if (!plain)
-            continue; /* the folder's own entry, or something not expected here */
-        file[nlen - 4] = 0;
-        bool runtime_text = runtime_only && (!lstrcmpiW(file, L"LICENSE-onnxruntime.txt") ||
-                                             !lstrcmpiW(file, L"ThirdPartyNotices-onnxruntime.txt"));
-        const Part *part = NULL;
-        if (runtime_only) {
-            int first = COUNTOF(kParts) - RUNTIME_PARTS;
-            for (int k = first; k < COUNTOF(kParts); k++) {
-                if (!lstrcmpiW(file, kParts[k].name)) {
-                    uint32_t bit = 1u << (k - first);
-                    if (runtime_seen & bit)
-                        return OCR_GET_CHECK;
-                    runtime_seen |= bit;
-                    part = &kParts[k];
-                }
+            if (ch == '/') {
+                plain = !nested && c > 4;
+                nested = true;
+                file[c - 4] = L'\\';
+            } else {
+                plain = ch > 32 && ch < 127 && ch != '\\' && ch != ':';
+                file[c - 4] = (WCHAR)ch;
             }
-            if (!part && !runtime_text)
-                continue;
-        } else {
-            for (int k = 0; k < COUNTOF(kParts); k++)
-                if (!lstrcmpiW(file, kParts[k].name))
-                    part = &kParts[k];
-            bool note = false;
-            for (int k = 0; k < COUNTOF(kNotes); k++)
-                note |= !lstrcmpiW(file, kNotes[k]);
-            if (!part && !note)
-                continue;
         }
-        if (runtime_text && ((!lstrcmpiW(file, L"LICENSE-onnxruntime.txt") && (runtime_license || usize != 1073)) ||
-                             (!lstrcmpiW(file, L"ThirdPartyNotices-onnxruntime.txt") && (runtime_notices || usize != 325054))))
-            return OCR_GET_CHECK;
-        if ((part && usize != part->size) || (uint64_t)at + 30 > dir_at || rd32(zip + at) != 0x04034b50)
-            return OCR_GET_CHECK;
+        if (!plain) continue;
+        file[nlen - 4] = 0;
+        const Part *part = NULL;
+        int part_index = -1;
+        for (int k = 0; k < COUNTOF(kParts); k++)
+            if (!lstrcmpiW(file, kParts[k].name)) { part = &kParts[k]; part_index = k; break; }
+        bool note = false;
+        for (int k = 0; k < COUNTOF(kNotes); k++) note |= !lstrcmpiW(file, kNotes[k]);
+        if (!part && !note) continue;
+        const void *embedded = NULL;
+        DWORD expected = part ? part->size : 0;
+        if (part && part->resource) {
+            HRSRC r = FindResourceW(NULL, MAKEINTRESOURCEW(part->resource), RT_RCDATA);
+            HGLOBAL g = r ? LoadResource(NULL, r) : NULL;
+            embedded = g ? LockResource(g) : NULL;
+            expected = r ? SizeofResource(NULL, r) : 0;
+            if (!embedded || !expected) return OCR_GET_CHECK;
+        }
+        if (part) {
+            uint32_t bit = 1u << part_index;
+            if ((seen & bit) || usize != expected) return OCR_GET_CHECK;
+            seen |= bit;
+        }
+        if ((uint64_t)at + 30 > dir_at || rd32(zip + at) != 0x04034b50) return OCR_GET_CHECK;
         const uint8_t *data = zip + at + 30 + rd16(zip + at + 26) + rd16(zip + at + 28);
-        if (data > zip + dir_at || (size_t)(zip + dir_at - data) < csize)
-            return OCR_GET_CHECK;
+        if (data > zip + dir_at || (size_t)(zip + dir_at - data) < csize) return OCR_GET_CHECK;
         uint8_t *mem = method == 8 ? mem_alloc(usize ? usize : 1) : NULL, sha[32];
         const uint8_t *out = mem ? mem : data;
         int result = method == 8 ? (mem && inflate(data, csize, mem, usize) ? OCR_GET_OK : OCR_GET_CHECK)
                                  : method == 0 && csize == usize ? OCR_GET_OK : OCR_GET_CHECK;
         if (result == OCR_GET_OK && part) {
-            sha256(out, usize, sha);
-            if (memcmp(sha, part->sha, 32))
-                result = OCR_GET_CHECK;
+            if (embedded) {
+                if (memcmp(out, embedded, usize)) result = OCR_GET_CHECK;
+            } else {
+                sha256(out, usize, sha);
+                if (memcmp(sha, part->sha, 32)) result = OCR_GET_CHECK;
+            }
         }
-        if (result == OCR_GET_OK && !file_write(dir, file, out, usize))
+        if (result == OCR_GET_OK && !(part && part_index >= 4 && !part->optional && shared_runtime) && !file_write(dir, file, out, usize))
             result = OCR_GET_WRITE;
-        if (result == OCR_GET_OK && runtime_only && !part) {
-            if (!lstrcmpiW(file, L"LICENSE-onnxruntime.txt"))
-                runtime_license = true;
-            else if (!lstrcmpiW(file, L"ThirdPartyNotices-onnxruntime.txt"))
-                runtime_notices = true;
-        }
         mem_free(mem);
-        if (result != OCR_GET_OK)
-            return result;
+        if (result != OCR_GET_OK) return result;
     }
-    uint32_t runtime_all = (1u << RUNTIME_PARTS) - 1;
-    return runtime_only ? (runtime_seen == runtime_all && runtime_license && runtime_notices ? OCR_GET_OK : OCR_GET_CHECK)
-                        : ocr_installed() ? OCR_GET_OK : OCR_GET_CHECK;
+    uint32_t required = 0;
+    for (int k = 0; k < COUNTOF(kParts); k++)
+        if (!kParts[k].optional) required |= 1u << k;
+    return (seen & required) == required && ocr_installed() ? OCR_GET_OK : OCR_GET_CHECK;
 }
 
 /* ---- downloaded ---- */
@@ -475,37 +475,30 @@ static bool fetch_sink(const void *data, DWORD n, void *ctx)
     return true;
 }
 
-/* one of the published zips, which has that many bytes, into the module's folder */
-static int get(const WCHAR *path, uint32_t bytes, const WCHAR *target, bool runtime_only, volatile LONG *cancel,
+/* Download the pinned module ZIP, then validate its contents before installing them. */
+static int get(const WCHAR *path, uint32_t bytes, volatile LONG *cancel,
                void (*progress)(int percent, void *ctx), void *ctx)
 {
     Fetch f = {mem_alloc(bytes), 0, bytes, cancel, progress, ctx, -1};
     DWORD status;
-    if (!f.buf)
-        return OCR_GET_WRITE;
+    if (!f.buf) return OCR_GET_WRITE;
     bool whole = http_fetch(UPDATE_HOST, path, NULL, &status, fetch_sink, &f) && f.have == bytes;
-    int result = *cancel ? OCR_GET_CANCEL : !whole ? OCR_GET_NET : zip_unpack(f.buf, f.have, target, runtime_only);
+    int result = *cancel ? OCR_GET_CANCEL : !whole ? OCR_GET_NET : zip_unpack(f.buf, f.have);
     mem_free(f.buf);
     return result;
 }
 
-int ocr_runtime_get(const WCHAR *dir, volatile LONG *cancel, void (*progress)(int percent, void *ctx), void *ctx)
-{
-    LONG never_cancel = 0;
-    if (!cancel)
-        cancel = &never_cancel;
-    return get(RUNTIME_PATH, RUNTIME_BYTES, dir, true, cancel, progress, ctx);
-}
-
 int ocr_get(volatile LONG *cancel, void (*progress)(int percent, void *ctx), void *ctx)
 {
-    return get(MODULE_PATH, MODULE_BYTES, NULL, false, cancel, progress, ctx);
+    LONG never_cancel = 0;
+    if (!cancel) cancel = &never_cancel;
+    return get(MODULE_PATH, MODULE_BYTES, cancel, progress, ctx);
 }
 
 /* ---- carried by the program itself ----
  *
  * sniplite_<version>_portable_with_OCR_x64.exe is sniplite.exe with the zip put after it
- * (pack.bat: copy /b), so the module travels in the one file. The zip's last record says how
+ * (package-all.bat: copy /b), so the module travels in the one file. The zip's last record says how
  * long its directory is and where that begins, counted from the zip's own start: so where the
  * zip begins in the program's file is known from the file's end. The first time text is to be
  * read, the folder is written beside the program. A sniplite.exe without the zip is not slowed
@@ -565,45 +558,12 @@ bool ocr_unpack(void)
     if (!pack_open(&k))
         return false;
     uint8_t *zip = mem_alloc(k.bytes);
-    bool ok = zip && read_at(k.f, k.at, zip, k.bytes) && zip_unpack(zip, k.bytes, NULL, false) == OCR_GET_OK;
+    bool ok = zip && read_at(k.f, k.at, zip, k.bytes) && zip_unpack(zip, k.bytes) == OCR_GET_OK;
     mem_free(zip);
     CloseHandle(k.f);
     return ok;
 }
 
-/* ---- completed ----
- *
- * A module from before the runtime files came with it loads only where the computer has that
- * runtime, and one new enough. Where it does not load, the files are added: out of the
- * program's own file when that carries the module, else an installed copy downloads the small
- * zip. A portable program that does not carry the module fetches nothing, here as in Settings.
- * Both zips have msvcp140.dll as the last of the four: old files mixed with new ones load only
- * when that one is new (measured), so a set cut short stays one that does not load, and is
- * completed the next time. */
-
-/* all four, each of the size it must have: another version, put there by hand, does not count */
-static bool runtime_there(void)
-{
-    WCHAR path[MAX_PATH * 2];
-    WIN32_FILE_ATTRIBUTE_DATA fa;
-    for (int i = COUNTOF(kParts) - RUNTIME_PARTS; i < COUNTOF(kParts); i++)
-        if (!part_path(kParts[i].name, L"", path, COUNTOF(path)) || !GetFileAttributesExW(path, GetFileExInfoStandard, &fa) ||
-            fa.nFileSizeHigh || fa.nFileSizeLow != kParts[i].size)
-            return false;
-    return true;
-}
-
-bool ocr_mend(void)
-{
-    static volatile LONG never;
-    if (!ocr_installed() || runtime_there())
-        return false; /* no module to complete, or something else keeps it from loading */
-    if (ocr_packed())
-        return ocr_unpack();
-    WCHAR dir[MAX_PATH * 2];
-    ocr_dir(dir, COUNTOF(dir));
-    return update_installed_copy() && ocr_runtime_get(dir, &never, NULL, NULL) == OCR_GET_OK;
-}
 
 /* ---- removed ---- */
 
@@ -618,18 +578,32 @@ bool ocr_remove(void)
         if (part_path(kParts[i].name, L".part", path, COUNTOF(path)))
             DeleteFileW(path);
     }
+    for (int i = 0; i < COUNTOF(kLegacy); i++)
+        if (part_path(kLegacy[i], L"", path, COUNTOF(path)) && !DeleteFileW(path) &&
+            GetLastError() != ERROR_FILE_NOT_FOUND && GetLastError() != ERROR_PATH_NOT_FOUND)
+            return false;
     for (int i = 0; i < COUNTOF(kNotes); i++)
         if (part_path(kNotes[i], L"", path, COUNTOF(path)))
             DeleteFileW(path);
+    if (lstrlenW(dir) + 10 < COUNTOF(path)) {
+        wsprintfW(path, L"%s\\cpu-avx2", dir);
+        RemoveDirectoryW(path);
+    }
     RemoveDirectoryW(dir); /* stays when something else is in it */
+    if (!formula_installed()) return formula_remove();
     return true;
 }
 
 int ocr_size_mb(void)
 {
     uint64_t sum = 0;
-    for (int i = 0; i < COUNTOF(kParts); i++)
-        sum += kParts[i].size;
+    WCHAR path[MAX_PATH * 2];
+    for (int i = 0; i < COUNTOF(kParts); i++) {
+        if (!part_path(kParts[i].name, L"", path, COUNTOF(path))) continue;
+        WIN32_FILE_ATTRIBUTE_DATA data;
+        if (GetFileAttributesExW(path, GetFileExInfoStandard, &data))
+            sum += ((uint64_t)data.nFileSizeHigh << 32) | data.nFileSizeLow;
+    }
     return (int)((sum + 512 * 1024) >> 20);
 }
 

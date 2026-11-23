@@ -25,7 +25,7 @@
 - **截图**：识别窗口和控件，提供放大镜及像素级选区调整。
 - **标注和贴图**：绘制箭头、文字、序号和马赛克，也可将截图置顶显示。
 - **二维码识别**：在截图选区按 `Ctrl+Q` 识别二维码，结果留在本机并可复制。
-- **公式识别**：可选 CrispEmbed 模块，使用本机 Texo-Distill GGUF 将截图选区转换为 LaTeX 并复制。运行库请求 Vulkan，但当前 PP-FormulaNet 模型推理路径仅支持 CPU。
+- **公式识别**：可选 CrispEmbed 模块，使用本机 Texo-Distill GGUF 将截图选区转换为 LaTeX 并复制，在 CPU 上本地运行。
 - **文字识别**：可选 OCR 模块，支持普通文字和表格识别，在本机运行。
 - **长截图**：滚动页面时自动拼接内容。
 - **轻量运行**：截图、画面合成和绘制等性能敏感部分使用 x86-64 汇编；主程序不链接 C 运行库。
@@ -33,15 +33,18 @@
 
 ## 下载
 
-前往 [GitHub Releases](https://github.com/jinmeng3/sniplite/releases) 下载当前版本。v1.5.1.4 提供以下版本：
+前往 [GitHub Releases](https://github.com/jinmeng3/sniplite/releases) 下载当前版本。v1.5.1.5 提供一个安装程序和七种便携 ZIP：
 
-- [Windows 安装程序](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.4/sniplite_win_setup_amd64.exe)
-- [二维码便携版](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.4/sniplite_1.5.1.4_portable_QR_x64.zip)：主程序、二维码识别程序及其许可证。
-- [二维码 + OCR 便携版](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.4/sniplite_1.5.1.4_portable_QR_OCR_x64.zip)
-- [二维码 + OCR + FormulaNet 便携版](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.4/sniplite_1.5.1.4_portable_QR_OCR_FormulaNet_x64.zip)
-- [无需预装 WebView2 的便携版](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.4/sniplite_1.5.1.4_portable_QR_OCR_FormulaNet_WebView2_x64.zip)：附带 Fixed Version Runtime 158.0.4370.33。
+- [Windows 安装程序](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.5/sniplite_win_setup_amd64.exe)
+- [二维码便携版](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.5/sniplite_1.5.1.5_portable_QR_x64.zip)
+- [二维码 + OCR CPU 版](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.5/sniplite_1.5.1.5_portable_QR_OCR_CPU_x64.zip)
+- [二维码 + OCR AVX2 版](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.5/sniplite_1.5.1.5_portable_QR_OCR_AVX2_x64.zip)
+- [二维码 + OCR Vulkan 版](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.5/sniplite_1.5.1.5_portable_QR_OCR_Vulkan_x64.zip)
+- [二维码 + OCR + FormulaNet CPU 版](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.5/sniplite_1.5.1.5_portable_QR_OCR_FormulaNet_CPU_x64.zip)
+- [二维码 + OCR + FormulaNet AVX2 版](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.5/sniplite_1.5.1.5_portable_QR_OCR_FormulaNet_AVX2_x64.zip)
+- [二维码 + OCR + FormulaNet Vulkan 版](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.5/sniplite_1.5.1.5_portable_QR_OCR_FormulaNet_Vulkan_x64.zip)
 
-解压后运行 `sniplite.exe`。命令行功能由 `sniplite-cli.com` 提供；二维码 ZIP 已附带此文件，单文件便携版请从发布页另行下载，并与主程序放在同一目录。OCR 模块可在首选项的“OCR”页面下载安装或删除；便携版在更新页检查后可直接下载更新并原地替换已有程序文件，OCR、公式模型和 WebView2 Runtime 等目录会保留。二维码助手也可在首选项的“二维码”页面单独下载安装或删除。便携版可在首选项中开启“开机启动”；快捷方式会指向当前程序位置，因此开启后不要移动或重命名程序目录。若已移动目录，请重新关闭并开启此选项以更新快捷方式。
+解压后运行 `sniplite.exe`。命令行功能由 `sniplite-cli.com` 提供；二维码 ZIP 已附带此文件，单文件便携版请从发布页另行下载，并与主程序放在同一目录。OCR 模块可在首选项的“OCR”页面下载安装或删除；便携版在更新页检查后可直接下载更新并原地替换已有程序文件，OCR 和公式模型等目录会保留。二维码助手也可在首选项的“二维码”页面单独下载安装或删除。便携版可在首选项中开启“开机启动”；快捷方式会指向当前程序位置，因此开启后不要移动或重命名程序目录。若已移动目录，请重新关闭并开启此选项以更新快捷方式。
 
 管理员权限运行主程序时，也请以管理员权限运行命令行程序；普通权限的命令行程序不会向提权后的主程序发送命令。
 
@@ -86,10 +89,10 @@ CrispEmbed 公式识别模块可在首选项的“公式识别”页面从本机
 
 ### 如何提取截图中的文字？
 
-框选区域后点击文字识别按钮或按 `Ctrl+O`。识别结果显示在选区旁的面板中，可以编辑和复制；表格可保留列结构，也可切换为 Markdown。此功能需要 OCR 模块，使用 PaddleOCR PP-OCRv6 模型和 ONNX Runtime，识别过程在本机完成。
+框选区域后点击文字识别按钮或按 `Ctrl+O`。识别结果显示在选区旁的面板中，可以编辑和复制；表格可保留列结构，也可切换为 Markdown。此功能使用用户提供的 CrispEmbed PP-OCRv6 tiny FP16 GGUF 检测、识别模型，通过从源码构建的原生 OCR 引擎在本地运行。CPU 便携包的检测和识别均使用 CPU；Vulkan 包的两个模型均优先使用 Vulkan，设备不可用或初始化、推理失败时回退 CPU，并启用计算图优化。
 ### 如何识别截图中的公式？
 
-在截图编辑页框选公式，点击“∫”识别按钮即可识别并直接复制 LaTeX；复制成功后截图界面会自动退出。点击它旁边的眼睛按钮，会在 sniplite 自带的 WebView2 窗口中打开离线 KaTeX 预览与编辑页。修改公式后可复制，按 `Ctrl+Enter` 也可复制源码；公式语法有误时，预览页会显示提示。点击预览时，如果当前截图或选区还没有对应的识别结果，会先识别再打开；未识别出公式时不会打开空白页。预览窗口显示在选区所在的显示器。复制前会整理模型输出空格：移除括号和运算符周围多余空格，保留词间空格。公式模块约 82 MB，使用本机 Texo-Distill GGUF 与 CrispEmbed；运行库请求 Vulkan，但当前 PP-FormulaNet 模型推理路径仅支持 CPU。
+在截图编辑页框选公式，点击“∫”识别按钮即可识别并直接复制 LaTeX；复制成功后截图界面会自动退出。点击它旁边的眼睛按钮，会打开 sniplite 的 MicroTeX 原生公式预览窗口，可编辑 LaTeX 并实时查看结果。修改公式后可复制，按 `Ctrl+Enter` 也可复制源码；公式语法有误时，预览页会显示提示。点击预览时，如果当前截图或选区还没有对应的识别结果，会先识别再打开；未识别出公式时不会打开空白页。预览窗口显示在选区所在的显示器。复制前会整理模型输出空格：移除括号和运算符周围多余空格，保留词间空格。公式模块约 82 MB，使用本机 Texo-Distill GGUF 与基于 CrispEmbed 的公式引擎，在 CPU 上运行。
 识别期间不会弹出进度窗口；识别失败或结果未完整生成时，不会覆盖剪贴板。纯色空白选区会直接提示未识别到公式。
 
 
@@ -131,11 +134,15 @@ CrispEmbed 公式识别模块可在首选项的“公式识别”页面从本机
 
 ## 自行编译
 
-项目根目录的 `w64devkit` 可直接用于构建；也可使用 MinGW-w64、CMake 和 Ninja。运行 `build.bat` 编译程序，再从 `build\sniplite.exe` 首选项的“公式识别”页安装本机模块，随后运行 `pack.bat` 生成安装程序和二维码便携 ZIP。模块安装源为 `E:\浏览器下载\texo-distill-q8_0.gguf`、`E:\浏览器下载\crispembed-windows-x86_64-vulkan` 和系统中的 Visual C++ x64 运行库。输出位于 `build\dist`。
-还可生成适用于未安装 WebView2 电脑的公式识别 ZIP：从[微软 WebView2 下载页](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)下载 x64 Fixed Version Runtime，运行 `if not exist build\webview2-runtime mkdir build\webview2-runtime`，再用 `expand.exe <runtime.cab> -F:* build\webview2-runtime` 解压；随后 `pack.bat` 会生成 `..._portable_QR_OCR_CrispEmbed_WebView2_x64.zip`。固定 Runtime 超过 250 MB 且不会自动更新，需定期替换；目标电脑解压到本地磁盘后，请用包内的 `start-sniplite.bat` 启动，它会设置 Windows 10 所需权限。Fixed Version 不能从网络路径运行。
+项目根目录的 `w64devkit` 可直接用于构建；也可使用 MinGW-w64、CMake 和 Ninja。运行 `build.bat` 编译程序，从首选项安装 OCR 与公式模块，再运行 `package-all.bat`。它生成 QR-only，以及 QR+OCR、QR+OCR+FormulaNet 各自的 CPU、Vulkan、AVX2 便携包，共七个 ZIP。CPU 版使用通用运行库；AVX2 版优先 AVX2 并回退通用 CPU；Vulkan 版按 Vulkan、AVX2、通用 CPU 的顺序回退。输出位于 `build\dist`。
+文字 OCR 打包还需要 `E:\浏览器下载` 中的 `PP-OCRv6_tiny_det-f16.gguf`、`PP-OCRv6_tiny_rec-f16.gguf` 和 `crispembed-windows-x86_64-vulkan` 运行库。固定模型校验值见 `res/ocr-notice.txt`。`build.bat` 从 PP-OCRv6 源码构建通用 CPU、AVX2 CPU 和 Vulkan 优先 OCR 引擎；CPU、AVX2、Vulkan 便携包分别携带所需引擎与运行库。OCR 模块 ZIP 中的 AVX2 文件可选，旧 ZIP 仍可安装；更换模块后更新 `src/ocr_get.c` 的 ZIP 长度和文件校验值，再重新构建并发布到 `ocr-5` 标签。
+`build.bat` 从 `third_party/formulanet` 构建通用 CPU、AVX2 CPU 和 Vulkan 公式引擎。CPU 版使用通用引擎；AVX2 版仅在 Windows 报告 AVX2 可用时尝试优化引擎，加载或初始化失败时回退通用 CPU；Vulkan 版依次尝试 Vulkan、AVX2、通用 CPU。Vulkan 公式图仍可由 GGML 调度器回退到 CPU 计算。
+`build.bat` 使用 CMake、Ninja 和 g++ 编译 `src/microtex`，生成 `build/sniplite_microtex.dll`，并将 `third_party/microtex` 的 `res` 和 `LICENSE` 打包为 `build/microtex-assets.zip`。DLL、资源和许可均嵌入主程序，安装版及七种便携 ZIP 均自带 MicroTeX 原生预览，无需另装预览运行库。各便携包在主程序旁附带 `LICENSE-MicroTeX.txt`，资源中的字体许可一并保留。
+
+原生渲染器还使用 TinyXML2 10.0.0，许可见 `third_party/tinyxml2/LICENSE.txt`。安装版及所有便携 ZIP 均在主程序旁提供 `LICENSE-TinyXML2.txt`。
 
 二维码识别使用 [ZXing-C++ v3.1.1](https://github.com/zxing-cpp/zxing-cpp)，仅启用 QR Code 解码，遵循 Apache License 2.0。详细实现和限制见[二维码识别文档](docs/qr-code-recognition.md)。
 
 ## 许可证
 
-本项目采用 [GNU Affero 通用公共许可证 v3.0（AGPL-3.0）](LICENSE-AGPL-3.0)。公式识别使用 CrispEmbed 和 Texo-Distill GGUF；许可文件随公式模块提供。ONNX Runtime 仍用于独立的文字 OCR 模块。其他第三方组件遵循各自的许可证；WebView2 SDK 组件的许可和声明见 `third_party/webview2` 与发布包中的 `LICENSE-WebView2.txt`、`NOTICE-WebView2.txt`；OCR 模块的具体许可信息见[上游 OCR 发布说明](https://github.com/MrTangLuyao/sniplite/releases/tag/ocr-1)。
+本项目采用 [GNU Affero 通用公共许可证 v3.0（AGPL-3.0）](LICENSE-AGPL-3.0)。公式识别使用 CrispEmbed 和 Texo-Distill GGUF，许可文件随公式模块提供。文字 OCR 使用 CrispEmbed 的 PP-OCRv6 GGUF 模型和 GGML 运行库；MIT、Apache 2.0 许可证及第三方声明随 OCR 模块提供。公式预览使用 MicroTeX，其许可见 `third_party/microtex/LICENSE` 和发布包中的 `LICENSE-MicroTeX.txt`；字体许可随内嵌预览资源保留。其他第三方组件遵循各自的许可证。

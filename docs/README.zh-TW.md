@@ -37,7 +37,7 @@
 
 到 [Releases](https://github.com/MrTangLuyao/sniplite/releases/latest) 下載最新版安裝。
 
-提供三種免安裝便攜 ZIP，全部包含 QR 碼辨識：`sniplite_<版本>_portable_QR_x64.zip`、`sniplite_<版本>_portable_QR_OCR_x64.zip`、`sniplite_<版本>_portable_QR_OCR_CrispEmbed_x64.zip`。另有適用於未安裝 WebView2 電腦的 `sniplite_<版本>_portable_QR_OCR_CrispEmbed_WebView2_x64.zip`，內含固定版本 Runtime，請透過 `start-sniplite.bat` 啟動。
+提供七種免安裝便攜 ZIP：QR 專用一種、QR+OCR 的 CPU／AVX2／Vulkan 版，以及 QR+OCR+FormulaNet 的 CPU／AVX2／Vulkan 版。檔名分別使用 `_portable_QR_OCR_<CPU|AVX2|Vulkan>_x64.zip` 和 `_portable_QR_OCR_FormulaNet_<CPU|AVX2|Vulkan>_x64.zip`。Vulkan 版依序嘗試 Vulkan、AVX2、通用 CPU。全部內建 MicroTeX 原生公式預覽。
 
 > [!TIP]
 > 圖示在工作列右下角，沒看到的話點一下那裡的小箭頭。想讓它一直顯示，在 Windows 設定裡搜尋“其他系統匣圖示”，把 sniplite 打開。
@@ -89,7 +89,7 @@
 
 **怎麼把截圖裡的文字取出來？**
 
-框選一塊區域，按辨識文字按鈕（Ctrl+O），文字會出現在選取範圍旁邊的面板裡，可以選取、修改和複製。表格會保持分欄，貼到 Excel 裡直接分格，也可以切換成 Markdown 格式。Ctrl+Shift+C 可以直接複製文字。這需要文字辨識模組（12 MB，模型是 PaddleOCR PP-OCRv6，執行庫是 ONNX Runtime，全部在本機執行）：可以在偏好設定的文字辨識分頁安裝，安裝時勾選，或者直接用帶 OCR 的免安裝版。沒裝模組時不顯示文字按鈕。按 F4 或 Shift+F4 可以直接開始截圖並辨識或複製文字。
+框選一塊區域，按辨識文字按鈕（Ctrl+O），文字會出現在選取範圍旁邊的面板裡，可以選取、修改和複製。表格會保持分欄，貼到 Excel 裡直接分格，也可以切換成 Markdown 格式。Ctrl+Shift+C 可以直接複製文字。這需要 CrispEmbed 的 PP-OCRv6 tiny GGUF 偵測模型和 small GGUF 辨識模型：獨立安裝約 81 MB；已安裝公式模組時共用執行庫，額外約 21 MB。文字辨識固定在 CPU 上執行，完全在本機進行。可以在偏好設定的文字辨識分頁安裝，安裝時勾選，或者直接用帶 OCR 的免安裝版。沒裝模組時不顯示文字按鈕。按 F4 或 Shift+F4 可以直接開始截圖並辨識或複製文字。
 
 **怎麼截長圖？**
 
@@ -141,9 +141,8 @@
 
 ## 第三方開源元件
 
-sniplite 本身只用到 Windows 內建的系統程式庫。選用的文字辨識模組是他人的成果，原樣提供，並附帶它們的授權條款或其連結（在模組的 `ocr` 資料夾裡，也在[模組的發布頁](https://github.com/MrTangLuyao/sniplite/releases/tag/ocr-2)）：
+sniplite 本身只用到 Windows 內建的系統程式庫。選用的文字辨識模組是他人的成果，原樣提供，並附帶它們的授權條款或其連結（在模組的 `ocr` 資料夾裡，也在[模組的發布頁](https://github.com/MrTangLuyao/sniplite/releases/tag/ocr-4)）:
 
-- [ONNX Runtime](https://github.com/microsoft/onnxruntime) 1.26.0，Copyright (c) Microsoft Corporation，MIT 授權
-- ONNX Runtime 需要的 [Microsoft Visual C++](https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files) 執行階段程式庫 14.51.36247（`msvcp140.dll`、`msvcp140_1.dll`、`vcruntime140.dll`、`vcruntime140_1.dll`），Copyright (c) Microsoft Corporation，不是開源軟體，依 Microsoft 的[授權條款](https://visualstudio.microsoft.com/license-terms/)轉散發
-- [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) 的 PP-OCRv6 模型，Copyright (c) PaddlePaddle Authors，Apache 2.0 授權
-- 模型的 ONNX 格式來自 [RapidOCR](https://github.com/RapidAI/RapidOCR)，Apache 2.0 授權
+- [CrispEmbed](https://github.com/CrispStrobe/CrispEmbed) 執行庫，MIT 授權；CrispEmbed、GGML 與元件的版權聲明隨 OCR 模組提供
+- [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) 的 PP-OCRv6 模型，Copyright (c) PaddlePaddle Authors，Apache 2.0 授權；GGUF 版本由 CrispEmbed 提供
+- CrispEmbed/ggml 所需的 [Microsoft Visual C++](https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files) 執行階段程式庫 14.51.36247（`msvcp140.dll`、`msvcp140_1.dll`、`vcruntime140.dll`、`vcruntime140_1.dll`），Copyright (c) Microsoft Corporation，不是開源軟體，依 Microsoft 的[授權條款](https://visualstudio.microsoft.com/license-terms/)轉散發

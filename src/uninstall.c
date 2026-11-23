@@ -85,10 +85,10 @@ int uninstall_main(bool silent)
     for (int i = 0; i < 20 && !formula_remove(); i++) /* the formula worker exits when its pipe closes */
         Sleep(100);
     static const WCHAR *files[] = {
-        L"sniplite.com", L"sniplite_qr.exe", L"LICENSE-ZXing.txt", L"LICENSE-WebView2.txt", L"NOTICE-WebView2.txt",
+        L"sniplite.com", L"sniplite_qr.exe", L"LICENSE-ZXing.txt", L"LICENSE-MicroTeX.txt", L"LICENSE-TinyXML2.txt",
         L"sniplite.ini", L"sniplite.exe.new", L"sniplite.com.new", L"sniplite_qr.exe.new", L"LICENSE-ZXing.txt.new",
-        L"LICENSE-WebView2.txt.new", L"NOTICE-WebView2.txt.new", L"LICENSE-ZXing.txt.old", L"LICENSE-WebView2.txt.old",
-        L"NOTICE-WebView2.txt.old"};
+        L"LICENSE-MicroTeX.txt.new", L"LICENSE-TinyXML2.txt.new", L"LICENSE-ZXing.txt.old", L"LICENSE-MicroTeX.txt.old",
+        L"LICENSE-TinyXML2.txt.old"};
     for (int i = 0; i < COUNTOF(files); i++)
         if (join(p, dir, files[i]))
             DeleteFileW(p);

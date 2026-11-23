@@ -1,25 +1,40 @@
 The text recognition module of sniplite
 
-This folder holds software and models made by others, unchanged.
+This folder contains the user-supplied CrispEmbed PP-OCRv6 tiny FP16 GGUF models,
+sniplite's source-built OCR engine, and the original CrispEmbed/GGML runtime payload.
 
-onnxruntime.dll
-    ONNX Runtime 1.26.0, Copyright (c) Microsoft Corporation, MIT License.
-    https://github.com/microsoft/onnxruntime
-    See LICENSE-onnxruntime.txt and ThirdPartyNotices-onnxruntime.txt.
+PP-OCRv6_tiny_det-f16.gguf and PP-OCRv6_tiny_rec-f16.gguf
+    PP-OCRv6 text detection and recognition weights from PaddleOCR, distributed in
+    GGUF form by CrispEmbed. Copyright (c) PaddlePaddle Authors. Apache License 2.0.
+    See Apache-2.0.txt.
+    The user-supplied model files and their checksums are unchanged by the engine fix.
+    Detection SHA-256: 3b165a16a33b05521a6b374837dad9beff5e8e89164e700b9abe187f9923de50
+    Recognition SHA-256: 5520122d9ba917a22895c48a2beeec96ff4f7b7ccb61a40ad4c711be018beb59
+
+sniplite_ocr.dll
+    Built from src/ocr_engine.cpp and CrispEmbed PP-OCRv6 detector, recognizer,
+    detection and crop sources vendored in third_party/ppocrv6, using the shared
+    GGUF/GGML helpers from third_party/formulanet. The vendored CrispEmbed sources
+    are supplied under the upstream CrispStrobe MIT license with its third-party
+    notices; see the complete LICENSE-OCREngine.txt. Model weights remain Apache 2.0.
+    The tiny recognizer's stage 3 and 4 downsampling uses the official (2, 1)
+    height/width strides, preserving width instead of incorrectly halving it.
+    This correction is compiled from native source; no runtime binary is patched.
+    CPU packages force CPU inference for detection and recognition. Vulkan packages
+    prefer Vulkan for both models and retry each on CPU when the device, model
+    initialization, or inference fails. Vulkan graph optimization is enabled; each
+    graph shape keeps its allocation across repeated computations. The unflavored
+    development build honors SNIPLITE_OCR_BACKEND=cpu.
+
+crispembed.dll and ggml*.dll
+    CrispEmbed and GGML runtime components. Copyright notices and license terms are
+    included in LICENSE, NOTICE.marker, NOTICE.sheenbidi, and NOTICE.teleocr.
 
 msvcp140.dll, msvcp140_1.dll, vcruntime140.dll, vcruntime140_1.dll
-    The Visual C++ runtime that onnxruntime.dll needs, version 14.51.36247,
-    Copyright (c) Microsoft Corporation. Not open source: files of the
-    Microsoft Visual C++ Redistributable, redistributed under its license terms.
+    Microsoft Visual C++ runtime 14.51.36247, Copyright (c) Microsoft Corporation.
+    These files are not open source and are redistributed under Microsoft's license.
     https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files
     https://visualstudio.microsoft.com/license-terms/
 
-PP-OCRv6_det_tiny.onnx, PP-OCRv6_rec_tiny.onnx
-    The PP-OCRv6 text detection and recognition models of PaddleOCR,
-    Copyright (c) PaddlePaddle Authors, Apache License 2.0.
-    https://github.com/PaddlePaddle/PaddleOCR
-    In the ONNX form published by RapidOCR, Apache License 2.0.
-    https://github.com/RapidAI/RapidOCR
-    See LICENSE-PaddleOCR.txt for the text of the Apache License 2.0.
-
-sniplite itself is under the MIT License: https://github.com/MrTangLuyao/sniplite
+sniplite itself is under the GNU Affero General Public License v3.0:
+https://github.com/MrTangLuyao/sniplite

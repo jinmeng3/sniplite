@@ -37,7 +37,7 @@
 
 [Releases](https://github.com/MrTangLuyao/sniplite/releases/latest) から最新版のインストーラーを入手してください。
 
-インストール不要のポータブル ZIP は 3 種類あります。すべて QR コード認識に対応し、`sniplite_<バージョン>_portable_QR_x64.zip`、`sniplite_<バージョン>_portable_QR_OCR_x64.zip`、`sniplite_<バージョン>_portable_QR_OCR_CrispEmbed_x64.zip` を用意しています。WebView2 Runtime がない PC 向けに、固定版 Runtime を含む `sniplite_<バージョン>_portable_QR_OCR_CrispEmbed_WebView2_x64.zip` もあり、`start-sniplite.bat` から起動します。
+インストール不要のポータブル ZIP は 7 種類です。QR のみが 1 種類、QR+OCR と QR+OCR+FormulaNet はそれぞれ CPU、AVX2、Vulkan の 3 種類です。ファイル名は `_portable_QR_OCR_<CPU|AVX2|Vulkan>_x64.zip` と `_portable_QR_OCR_FormulaNet_<CPU|AVX2|Vulkan>_x64.zip` です。Vulkan 版は Vulkan、AVX2、汎用 CPU の順に試します。すべて MicroTeX のネイティブ数式プレビューを含みます。
 
 > [!TIP]
 > アイコンはタスクバーの右端にあります。見当たらないときは、そこの小さな矢印をクリックしてください。常に表示するには、Windows の設定で **その他のシステム トレイ アイコン** を検索し、sniplite をオンにします。
@@ -89,7 +89,7 @@
 
 **スクリーンショットの文字を取り出すには？**
 
-範囲を選んで文字認識ボタン（Ctrl+O）を押すと、選択範囲の横のパネルに文字が表示され、選択、編集、コピーができます。表は列を保ったまま読み取るので、表計算ソフトにそのままセルとして貼り付けられ、Markdown 形式にも切り替えられます。Ctrl+Shift+C なら文字をすぐにコピーします。これには文字認識モジュール（12 MB。モデルは PaddleOCR PP-OCRv6、ランタイムは ONNX Runtime で、すべてこのパソコン上で動きます）が必要です。設定の OCR タブから導入するか、インストーラーでチェックを入れるか、OCR 付きのポータブル版を使ってください。導入するまで文字のボタンは表示されません。F4 と Shift+F4 は、キャプチャしてすぐに文字を読み取る、またはコピーします。
+範囲を選んで文字認識ボタン（Ctrl+O）を押すと、選択範囲の横のパネルに文字が表示され、選択、編集、コピーができます。表は列を保ったまま読み取るので、表計算ソフトにそのままセルとして貼り付けられ、Markdown 形式にも切り替えられます。Ctrl+Shift+C なら文字をすぐにコピーします。CrispEmbed の PP-OCRv6 tiny GGUF 検出モデルと small GGUF 認識モデルを使う OCR モジュールが必要です。単独では約 81 MB、数式認識モジュール導入済みなら追加分は約 21 MB です。文字認識は CPU で実行し、画像はローカルで処理します。設定の OCR タブから導入するか、インストーラーでチェックを入れるか、OCR 付きのポータブル版を使ってください。導入するまで文字のボタンは表示されません。F4 と Shift+F4 は、キャプチャしてすぐに文字を読み取る、またはコピーします。
 
 **長いスクリーンショットを撮るには？**
 
@@ -141,9 +141,8 @@ Ctrl+S の保存ダイアログには、前回保存したフォルダーが表�
 
 ## サードパーティのオープンソース
 
-sniplite 本体は Windows 標準のシステムライブラリだけを使います。オプションの文字認識モジュールはほかの方々の成果物で、変更を加えず、ライセンスとともに配布しています（ライセンスまたはそのリンクは、モジュールの `ocr` フォルダーと[モジュールのリリースページ](https://github.com/MrTangLuyao/sniplite/releases/tag/ocr-2)にあります）。
+sniplite 本体は Windows 標準のシステムライブラリだけを使います。オプションの文字認識モジュールはほかの方々の成果物で、変更を加えず、ライセンスとともに配布しています（ライセンスまたはそのリンクは、モジュールの `ocr` フォルダーと[モジュールのリリースページ](https://github.com/MrTangLuyao/sniplite/releases/tag/ocr-4)にあります）。
 
-- [ONNX Runtime](https://github.com/microsoft/onnxruntime) 1.26.0、Copyright (c) Microsoft Corporation、MIT ライセンス
-- ONNX Runtime が必要とする [Microsoft Visual C++](https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files) ランタイム 14.51.36247（`msvcp140.dll`、`msvcp140_1.dll`、`vcruntime140.dll`、`vcruntime140_1.dll`）、Copyright (c) Microsoft Corporation、オープンソースではなく、Microsoft の[ライセンス条項](https://visualstudio.microsoft.com/license-terms/)に従って再頒布しています
-- [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) の PP-OCRv6 モデル、Copyright (c) PaddlePaddle Authors、Apache License 2.0
-- モデルの ONNX 形式は [RapidOCR](https://github.com/RapidAI/RapidOCR) によるもの、Apache License 2.0
+- [CrispEmbed](https://github.com/CrispStrobe/CrispEmbed) ランタイム（MIT ライセンス）。CrispEmbed、GGML、および各コンポーネントの表示は OCR モジュールに含まれています
+- [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) の PP-OCRv6 モデル、Copyright (c) PaddlePaddle Authors、Apache License 2.0。GGUF 版は CrispEmbed が提供します
+- CrispEmbed/ggml に必要な [Microsoft Visual C++](https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files) ランタイム 14.51.36247（`msvcp140.dll`、`msvcp140_1.dll`、`vcruntime140.dll`、`vcruntime140_1.dll`）、Copyright (c) Microsoft Corporation。オープンソースではなく、Microsoft の[ライセンス条項](https://visualstudio.microsoft.com/license-terms/)に従って再頒布します

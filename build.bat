@@ -9,10 +9,70 @@ cd /d "%~dp0"
 if exist "%~dp0w64devkit\bin\gcc.exe" set "PATH=%~dp0w64devkit\bin;%PATH%"
 where gcc >nul 2>nul || (echo gcc not found: put w64devkit in the project root or install MinGW-w64 on PATH & exit /b 1)
 if not exist build mkdir build
-"%SystemRoot%\System32\tar.exe" -a -c -f build\katex.zip -C third_party katex || exit /b 1
+rem Build generic CPU, AVX2 CPU, and Vulkan-first formula inference engines.
+for %%n in (ggml ggml-base ggml-cpu) do dlltool -d third_party\formulanet\ggml\%%n.def -l build\%%n-import.a || exit /b 1
+g++ -std=c++17 -O3 -DNOMINMAX -DWIN32_LEAN_AND_MEAN ^
+ -ffunction-sections -fdata-sections -fno-ident -Ithird_party/formulanet -Ithird_party/formulanet/ggml ^
+ -shared -static-libgcc -static-libstdc++ -s -Wl,--gc-sections,--exclude-all-symbols,--nxcompat,--dynamicbase,--high-entropy-va,--no-insert-timestamp ^
+ -o build\sniplite_formula.dll third_party\formulanet\ppformulanet_ocr.cpp third_party\formulanet\core\gguf_loader.cpp ^
+ third_party\formulanet\formula.def build\ggml-import.a build\ggml-base-import.a build\ggml-cpu-import.a || exit /b 1
+g++ -std=c++17 -O3 -mavx2 -mfma -mf16c -DNOMINMAX -DWIN32_LEAN_AND_MEAN ^
+ -ffunction-sections -fdata-sections -fno-ident -Ithird_party/formulanet -Ithird_party/formulanet/ggml ^
+ -shared -static-libgcc -static-libstdc++ -s -Wl,--gc-sections,--exclude-all-symbols,--nxcompat,--dynamicbase,--high-entropy-va,--no-insert-timestamp ^
+ -o build\sniplite_formula_avx2.dll third_party\formulanet\ppformulanet_ocr.cpp third_party\formulanet\core\gguf_loader.cpp ^
+ third_party\formulanet\formula.def build\ggml-import.a build\ggml-base-import.a build\ggml-cpu-import.a || exit /b 1
+g++ -std=c++17 -O3 -DNOMINMAX -DWIN32_LEAN_AND_MEAN -DSNIPLITE_VULKAN_PREFERRED ^
+ -ffunction-sections -fdata-sections -fno-ident -Ithird_party/formulanet -Ithird_party/formulanet/ggml ^
+ -shared -static-libgcc -static-libstdc++ -s -Wl,--gc-sections,--exclude-all-symbols,--nxcompat,--dynamicbase,--high-entropy-va,--no-insert-timestamp ^
+ -o build\sniplite_formula_vulkan.dll third_party\formulanet\ppformulanet_ocr.cpp third_party\formulanet\core\gguf_loader.cpp ^
+ third_party\formulanet\formula.def build\ggml-import.a build\ggml-base-import.a build\ggml-cpu-import.a || exit /b 1
+if exist build\formula\texo-distill-q8_0.gguf (
+ copy /y build\sniplite_formula.dll build\formula\sniplite_formula.dll >nul || exit /b 1
+ copy /y third_party\formulanet\LICENSE build\formula\LICENSE-FormulaEngine.txt >nul || exit /b 1
+)
+rem Build generic CPU, AVX2 CPU, and Vulkan-first OCR engines with corrected recognition strides.
+g++ -std=c++17 -O3 -DNOMINMAX -DWIN32_LEAN_AND_MEAN -DSNIPLITE_OCR_BUILD -DSNIPLITE_CPU_ONLY ^
+ -ffunction-sections -fdata-sections -fno-ident -Isrc -Ithird_party/ppocrv6 ^
+ -Ithird_party/formulanet -Ithird_party/formulanet/core -Ithird_party/formulanet/ggml ^
+ -shared -static-libgcc -static-libstdc++ -s -Wl,--gc-sections,--exclude-all-symbols,--nxcompat,--dynamicbase,--high-entropy-va,--no-insert-timestamp ^
+ -o build\sniplite_ocr.dll src\ocr_engine.cpp third_party\ppocrv6\ppocrv6_ocr.cpp ^
+ third_party\ppocrv6\ppocrv6_det.cpp third_party\ppocrv6\ocr_detect.cpp third_party\ppocrv6\ocr_crop.cpp ^
+ third_party\ppocrv6\text_angle.cpp third_party\formulanet\core\gguf_loader.cpp src\ocr_engine.def ^
+ build\ggml-import.a build\ggml-base-import.a build\ggml-cpu-import.a || exit /b 1
+g++ -std=c++17 -O3 -mavx2 -mfma -mf16c -DNOMINMAX -DWIN32_LEAN_AND_MEAN -DSNIPLITE_OCR_BUILD -DSNIPLITE_CPU_ONLY ^
+ -ffunction-sections -fdata-sections -fno-ident -Isrc -Ithird_party/ppocrv6 ^
+ -Ithird_party/formulanet -Ithird_party/formulanet/core -Ithird_party/formulanet/ggml ^
+ -shared -static-libgcc -static-libstdc++ -s -Wl,--gc-sections,--exclude-all-symbols,--nxcompat,--dynamicbase,--high-entropy-va,--no-insert-timestamp ^
+ -o build\sniplite_ocr_avx2.dll src\ocr_engine.cpp third_party\ppocrv6\ppocrv6_ocr.cpp ^
+ third_party\ppocrv6\ppocrv6_det.cpp third_party\ppocrv6\ocr_detect.cpp third_party\ppocrv6\ocr_crop.cpp ^
+ third_party\ppocrv6\text_angle.cpp third_party\formulanet\core\gguf_loader.cpp src\ocr_engine.def ^
+ build\ggml-import.a build\ggml-base-import.a build\ggml-cpu-import.a || exit /b 1
+g++ -std=c++17 -O3 -DNOMINMAX -DWIN32_LEAN_AND_MEAN -DSNIPLITE_OCR_BUILD -DSNIPLITE_VULKAN_PREFERRED ^
+ -ffunction-sections -fdata-sections -fno-ident -Isrc -Ithird_party/ppocrv6 ^
+ -Ithird_party/formulanet -Ithird_party/formulanet/core -Ithird_party/formulanet/ggml ^
+ -shared -static-libgcc -static-libstdc++ -s -Wl,--gc-sections,--exclude-all-symbols,--nxcompat,--dynamicbase,--high-entropy-va,--no-insert-timestamp ^
+ -o build\sniplite_ocr_vulkan.dll src\ocr_engine.cpp third_party\ppocrv6\ppocrv6_ocr.cpp ^
+ third_party\ppocrv6\ppocrv6_det.cpp third_party\ppocrv6\ocr_detect.cpp third_party\ppocrv6\ocr_crop.cpp ^
+ third_party\ppocrv6\text_angle.cpp third_party\formulanet\core\gguf_loader.cpp src\ocr_engine.def ^
+ build\ggml-import.a build\ggml-base-import.a build\ggml-cpu-import.a || exit /b 1
+if exist build\ocr\PP-OCRv6_tiny_rec-f16.gguf (
+ copy /y build\sniplite_ocr.dll build\ocr\sniplite_ocr.dll >nul || exit /b 1
+ copy /y third_party\ppocrv6\LICENSE build\ocr\LICENSE-OCREngine.txt >nul || exit /b 1
+)
+rem Build the native formula renderer and embed its resources in the main executable.
+where cmake >nul 2>nul || (echo cmake not found: use the project-local w64devkit or install CMake & exit /b 1)
+where ninja >nul 2>nul || (echo ninja not found: use the project-local w64devkit or install Ninja & exit /b 1)
+cmake -S src\microtex -B build\microtex -G Ninja -DCMAKE_BUILD_TYPE=Release ^
+ -DCMAKE_CXX_COMPILER=g++ || exit /b 1
+cmake --build build\microtex --config Release || exit /b 1
+copy /y build\microtex\sniplite_microtex.dll build\sniplite_microtex.dll >nul || exit /b 1
+copy /y third_party\microtex\LICENSE build\LICENSE-MicroTeX.txt >nul || exit /b 1
+copy /y third_party\tinyxml2\LICENSE.txt build\LICENSE-TinyXML2.txt >nul || exit /b 1
+if exist build\microtex-assets.zip del /q build\microtex-assets.zip
+"%SystemRoot%\System32\tar.exe" -a -c -f build\microtex-assets.zip -C third_party\microtex res LICENSE || exit /b 1
 
 rem src\start.S is the entry point (start); every program links only what it uses.
-set CF=-Isrc -Ires -Ithird_party/webview2 -std=c11 -Os -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers ^
+set CF=-Isrc -Ires -std=c11 -Os -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers ^
  -D_WIN32_WINNT=0x0A00 -DWINVER=0x0A00 -fno-math-errno -ffunction-sections -fdata-sections -fno-ident
 set APP_LDFLAGS=-nostdlib -nostartfiles -e start -s -Wl,--gc-sections -Wl,--nxcompat -Wl,--dynamicbase ^
  -Wl,--high-entropy-va
@@ -29,8 +89,6 @@ gcc %CF% -DCONSOLE -Wl,--subsystem,console -o build\sniplite.com src\start.S src
  src\ipc.c src\lang.c src\crt.c build\cli.res %APP_LDFLAGS% -lkernel32 -luser32 -lgdi32 -lgcc || exit /b 1
 
 rem Build the separate QR helper and ZXing-C++ core as a QR-only static executable.
-where cmake >nul 2>nul || (echo cmake not found: use the project-local w64devkit or install CMake & exit /b 1)
-where ninja >nul 2>nul || (echo ninja not found: use the project-local w64devkit or install Ninja & exit /b 1)
 cmake -S src\qr -B build\qr -G Ninja -DCMAKE_BUILD_TYPE=Release ^
  -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ || exit /b 1
 cmake --build build\qr --config Release || exit /b 1

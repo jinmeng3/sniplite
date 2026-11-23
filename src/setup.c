@@ -185,7 +185,7 @@ static const struct {
     const WCHAR *name;
 } kFiles[] = {{IDR_APP_EXE, L"sniplite.exe"}, {IDR_APP_COM, L"sniplite.com"},
               {IDR_APP_QR, L"sniplite_qr.exe"}, {IDR_QR_LICENSE, L"LICENSE-ZXing.txt"},
-              {IDR_WEBVIEW2_LICENSE, L"LICENSE-WebView2.txt"}, {IDR_WEBVIEW2_NOTICE, L"NOTICE-WebView2.txt"}};
+              {IDR_MICROTEX_LICENSE, L"LICENSE-MicroTeX.txt"}, {IDR_TINYXML2_LICENSE, L"LICENSE-TinyXML2.txt"}};
 static bool g_had[COUNTOF(kFiles)]; /* the file existed and was moved to *.old by swap() */
 
 static bool paths(int i, WCHAR *path, WCHAR *tmp, WCHAR *old)

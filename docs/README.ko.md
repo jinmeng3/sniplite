@@ -37,7 +37,7 @@
 
 [Releases](https://github.com/MrTangLuyao/sniplite/releases/latest)에서 최신 설치 파일을 받으세요.
 
-설치가 필요 없는 포터블 ZIP은 세 가지이며 모두 QR 인식을 포함합니다: `sniplite_<버전>_portable_QR_x64.zip`, `sniplite_<버전>_portable_QR_OCR_x64.zip`, `sniplite_<버전>_portable_QR_OCR_CrispEmbed_x64.zip`. Runtime이 없는 PC를 위해 고정 버전 WebView2를 포함한 `sniplite_<버전>_portable_QR_OCR_CrispEmbed_WebView2_x64.zip`도 있으며, `start-sniplite.bat`으로 실행합니다.
+설치가 필요 없는 포터블 ZIP은 7종입니다. QR 전용 1종, QR+OCR CPU·AVX2·Vulkan 버전 3종, QR+OCR+FormulaNet CPU·AVX2·Vulkan 버전 3종입니다. 파일 이름은 `_portable_QR_OCR_<CPU|AVX2|Vulkan>_x64.zip` 및 `_portable_QR_OCR_FormulaNet_<CPU|AVX2|Vulkan>_x64.zip` 형식을 사용합니다. Vulkan 버전은 Vulkan, AVX2, 일반 CPU 순서로 시도합니다. 모두 MicroTeX 네이티브 수식 미리 보기를 포함합니다.
 
 > [!TIP]
 > 아이콘은 작업 표시줄 오른쪽 끝에 있습니다. 보이지 않으면 그곳의 작은 화살표를 누르세요. 항상 보이게 하려면 Windows 설정에서 "기타 시스템 트레이 아이콘"을 검색해 sniplite를 켜세요.
@@ -89,7 +89,7 @@
 
 **스크린샷의 글자를 꺼내려면?**
 
-영역을 선택하고 텍스트 인식 버튼(Ctrl+O)을 누르면 선택 영역 옆의 패널에 글자가 나타나며, 선택하고 고치고 복사할 수 있습니다. 표는 열을 그대로 유지해서 스프레드시트에 셀로 붙여 넣을 수 있고, Markdown 형식으로 바꿀 수도 있습니다. Ctrl+Shift+C는 글자를 바로 복사합니다. 이 기능에는 텍스트 인식 모듈(12MB, 모델은 PaddleOCR PP-OCRv6, 런타임은 ONNX Runtime이며 모두 이 컴퓨터에서 동작)이 필요합니다. 설정의 OCR 탭에서 설치하거나, 설치 프로그램에서 선택하거나, OCR 포함 포터블 버전을 사용하세요. 설치하기 전에는 텍스트 버튼이 표시되지 않습니다. F4와 Shift+F4는 캡처한 뒤 바로 텍스트를 인식하거나 복사합니다.
+영역을 선택하고 텍스트 인식 버튼(Ctrl+O)을 누르면 선택 영역 옆의 패널에 글자가 나타나며, 선택하고 고치고 복사할 수 있습니다. 표는 열을 그대로 유지해서 스프레드시트에 셀로 붙여 넣을 수 있고, Markdown 형식으로 바꿀 수도 있습니다. Ctrl+Shift+C는 글자를 바로 복사합니다. CrispEmbed의 PP-OCRv6 tiny GGUF 검출 모델과 small GGUF 인식 모델을 사용하는 OCR 모듈이 필요합니다. 단독 설치는 약 81MB이며 수식 모듈이 있으면 추가 용량은 약 21MB입니다. 텍스트 인식은 CPU에서 실행하고 이미지 처리는 로컬에서 합니다. 설정의 OCR 탭에서 설치하거나, 설치 프로그램에서 선택하거나, OCR 포함 포터블 버전을 사용하세요. 설치하기 전에는 텍스트 버튼이 표시되지 않습니다. F4와 Shift+F4는 캡처한 뒤 바로 텍스트를 인식하거나 복사합니다.
 
 **긴 스크린샷은 어떻게 찍나요?**
 
@@ -141,9 +141,8 @@ Ctrl+S로 여는 저장 대화 상자는 마지막으로 저장한 폴더에서 
 
 ## 서드파티 오픈 소스
 
-sniplite 자체는 Windows에 기본으로 들어 있는 시스템 라이브러리만 씁니다. 선택 사항인 텍스트 인식 모듈은 다른 분들의 작업물이며, 수정 없이 라이선스와 함께 제공합니다(라이선스 또는 그 링크는 모듈의 `ocr` 폴더와 [모듈 릴리스 페이지](https://github.com/MrTangLuyao/sniplite/releases/tag/ocr-2)에 있습니다).
+sniplite 자체는 Windows에 기본으로 들어 있는 시스템 라이브러리만 씁니다. 선택 사항인 텍스트 인식 모듈은 다른 분들의 작업물이며, 수정 없이 라이선스와 함께 제공합니다(라이선스 또는 그 링크는 모듈의 `ocr` 폴더와 [모듈 릴리스 페이지](https://github.com/MrTangLuyao/sniplite/releases/tag/ocr-4)에 있습니다).
 
-- [ONNX Runtime](https://github.com/microsoft/onnxruntime) 1.26.0, Copyright (c) Microsoft Corporation, MIT 라이선스
-- ONNX Runtime에 필요한 [Microsoft Visual C++](https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files) 런타임 14.51.36247(`msvcp140.dll`, `msvcp140_1.dll`, `vcruntime140.dll`, `vcruntime140_1.dll`), Copyright (c) Microsoft Corporation, 오픈 소스가 아니며 Microsoft의 [라이선스 조건](https://visualstudio.microsoft.com/license-terms/)에 따라 재배포
-- [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR)의 PP-OCRv6 모델, Copyright (c) PaddlePaddle Authors, Apache License 2.0
-- 모델의 ONNX 형식은 [RapidOCR](https://github.com/RapidAI/RapidOCR)에서 제공, Apache License 2.0
+- [CrispEmbed](https://github.com/CrispStrobe/CrispEmbed) 런타임(MIT 라이선스). CrispEmbed, GGML 및 구성 요소의 저작권 표시는 OCR 모듈에 포함되어 있습니다
+- [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR)의 PP-OCRv6 모델, Copyright (c) PaddlePaddle Authors, Apache License 2.0. GGUF 버전은 CrispEmbed가 제공합니다
+- CrispEmbed/ggml에 필요한 [Microsoft Visual C++](https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files) 런타임 14.51.36247(`msvcp140.dll`, `msvcp140_1.dll`, `vcruntime140.dll`, `vcruntime140_1.dll`), Copyright (c) Microsoft Corporation. 오픈 소스가 아니며 Microsoft의 [라이선스 조건](https://visualstudio.microsoft.com/license-terms/)에 따라 재배포합니다
