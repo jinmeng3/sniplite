@@ -288,6 +288,22 @@ static bool apply_deconv2(const conv & c, const std::vector<float> & x, int h, i
     if (c.b && c.bf.empty()) c.bf = to_f32(c.b);
     const auto & ww = c.wf;
     const auto & bb = c.bf;
+#ifdef SNIPLITE_INFERENCE_ASM
+    if (h > 0 && w > 0 && c.ic > 0) {
+        const size_t plane = (size_t)h * w;
+        const size_t weight_stride = (size_t)c.oc * 4;
+        for (int oc = 0; oc < c.oc; ++oc) {
+            // Paddle Conv2DTranspose stores [in, out, kh, kw].
+            const float * weights = ww.data() + (size_t)oc * 4;
+            float * output = y.data() + (size_t)oc * plane * 4;
+#ifdef __FMA__
+            sniplite_deconv2_fma(x.data(), weights, output, w, plane, weight_stride, c.ic);
+#else
+            sniplite_deconv2_sse2(x.data(), weights, output, w, plane, weight_stride, c.ic);
+#endif
+        }
+    }
+#else
     for (int oc = 0; oc < c.oc; ++oc)
         for (int iy = 0; iy < h; ++iy)
             for (int ix = 0; ix < w; ++ix) {
@@ -298,6 +314,7 @@ static bool apply_deconv2(const conv & c, const std::vector<float> & x, int h, i
                             y[(size_t)oc * oh * ow + (iy * 2 + ky) * ow + ix * 2 + kx] +=
                                 x[(size_t)ic * h * w + iy * w + ix] * ww[((size_t)ic * c.oc + oc) * 4 + ky * 2 + kx];
             }
+#endif
     if (!bb.empty())
         for (int oc = 0; oc < c.oc; ++oc)
             for (int i = 0; i < oh * ow; ++i) y[(size_t)oc * oh * ow + i] += bb[oc];

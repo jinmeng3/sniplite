@@ -29,6 +29,10 @@
 
 #include "env_gate.h"
 
+#ifdef SNIPLITE_INFERENCE_ASM
+#include "inference_kernels.h"
+#endif
+
 #ifdef __AVX2__
 #include <immintrin.h>
 #endif
@@ -647,7 +651,7 @@ static inline void conv2d_depthwise_cpu(const float * in, float * out, const flo
 // interleaved as [k][c] (packed once per tile from the L2-resident col
 // buffer). oc / position remainders fall back to the dot-product consume.
 #if defined(__aarch64__)
-static inline void conv2d_mk_block(const float * wp, const float * xp, int K, float acc[4][4]) {
+static inline void conv2d_mk_block(const float * wp, const float * xp, int K, float * acc) {
     float32x4_t c0 = vdupq_n_f32(0.0f), c1 = vdupq_n_f32(0.0f);
     float32x4_t c2 = vdupq_n_f32(0.0f), c3 = vdupq_n_f32(0.0f);
     for (int k = 0; k < K; k++) {
@@ -658,14 +662,14 @@ static inline void conv2d_mk_block(const float * wp, const float * xp, int K, fl
         c2 = vfmaq_laneq_f32(c2, wv, xv, 2);
         c3 = vfmaq_laneq_f32(c3, wv, xv, 3);
     }
-    vst1q_f32(acc[0], c0); // acc[c][r] = sum_k w[r,k] * x[c,k]
-    vst1q_f32(acc[1], c1);
-    vst1q_f32(acc[2], c2);
-    vst1q_f32(acc[3], c3);
+    vst1q_f32(acc + 0, c0); // acc[c * 4 + r] = sum_k w[r,k] * x[c,k]
+    vst1q_f32(acc + 4, c1);
+    vst1q_f32(acc + 8, c2);
+    vst1q_f32(acc + 12, c3);
 }
 constexpr int CONV2D_MK_OCB = 4;
-#elif defined(__AVX2__) && defined(__FMA__)
-static inline void conv2d_mk_block8(const float * wp, const float * xp, int K, float acc[4][8]) {
+#elif defined(__AVX2__) && defined(__FMA__) && !defined(SNIPLITE_INFERENCE_ASM)
+static inline void conv2d_mk_block8(const float * wp, const float * xp, int K, float * acc) {
     __m256 c0 = _mm256_setzero_ps(), c1 = _mm256_setzero_ps();
     __m256 c2 = _mm256_setzero_ps(), c3 = _mm256_setzero_ps();
     for (int k = 0; k < K; k++) {
@@ -675,25 +679,33 @@ static inline void conv2d_mk_block8(const float * wp, const float * xp, int K, f
         c2 = _mm256_fmadd_ps(wv, _mm256_broadcast_ss(xp + 4 * (size_t)k + 2), c2);
         c3 = _mm256_fmadd_ps(wv, _mm256_broadcast_ss(xp + 4 * (size_t)k + 3), c3);
     }
-    _mm256_storeu_ps(acc[0], c0); // acc[c][r] = sum_k w[r,k] * x[c,k]
-    _mm256_storeu_ps(acc[1], c1);
-    _mm256_storeu_ps(acc[2], c2);
-    _mm256_storeu_ps(acc[3], c3);
+    _mm256_storeu_ps(acc + 0, c0);
+    _mm256_storeu_ps(acc + 8, c1);
+    _mm256_storeu_ps(acc + 16, c2);
+    _mm256_storeu_ps(acc + 24, c3);
 }
 constexpr int CONV2D_MK_OCB = 8;
 #else
-static inline void conv2d_mk_block(const float * wp, const float * xp, int K, float acc[4][4]) {
-    for (int c = 0; c < 4; c++)
-        for (int r = 0; r < 4; r++) acc[c][r] = 0.0f;
+static inline void conv2d_mk_block(const float * wp, const float * xp, int K, float * acc) {
+    std::fill_n(acc, 16, 0.0f);
     for (int k = 0; k < K; k++) {
         const float * wv = wp + 4 * (size_t)k;
         const float * xv = xp + 4 * (size_t)k;
         for (int c = 0; c < 4; c++)
-            for (int r = 0; r < 4; r++) acc[c][r] += wv[r] * xv[c];
+            for (int r = 0; r < 4; r++) acc[c * 4 + r] += wv[r] * xv[c];
     }
 }
 constexpr int CONV2D_MK_OCB = 4;
 #endif
+
+template<int OCB, int POS>
+static inline void conv2d_store_mk_block(const float * acc, const float * bias, float * out, size_t stride) {
+    for (int r = 0; r < OCB; r++) {
+        const float b = bias ? bias[r] : 0.0f;
+        float * row = out + (size_t)r * stride;
+        for (int c = 0; c < POS; c++) row[c] = b + acc[c * OCB + r];
+    }
+}
 
 // Callers reach this through conv2d_cpu's CRISPEMBED_CONV2D_GEMM gate
 // (threads via CRISPEMBED_CONV2D_THREADS); exposed separately so tests can
@@ -718,12 +730,18 @@ static inline void conv2d_im2col_cpu(const float * in, float * out, const float 
         (int)std::clamp((size_t)(512 * 1024 / sizeof(float)) / (size_t)std::max(K, 1), (size_t)16, (size_t)256);
     const size_t n_tiles = (n_pos + tile - 1) / tile;
 
-    // Micro-kernel weight packing: each CONV2D_MK_OCB-row block interleaved
+    // Micro-kernel weight packing: each ocb-row block interleaved
     // as [k][r], packed once per call and shared read-only by every thread.
     std::vector<float> wpack;
+#ifdef SNIPLITE_INFERENCE_ASM
+    // GCC's AVX2 check includes OS support for YMM state. Choose before packing.
+    const bool avx2_fma = micro_kernel && __builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma");
+    const int ocb = avx2_fma ? 8 : CONV2D_MK_OCB;
+#else
     const int ocb = CONV2D_MK_OCB;
-    if (micro_kernel && ch_per_group_out >= ocb) {
-        const int n_blk = ch_per_group_out / ocb;
+#endif
+    const int n_blk = micro_kernel && K > 0 ? ch_per_group_out / ocb : 0;
+    if (n_blk > 0) {
         wpack.resize((size_t)groups * n_blk * ocb * K);
         for (int g = 0; g < groups; g++) {
             const float * w_g = weight + (size_t)g * ch_per_group_out * K;
@@ -781,7 +799,6 @@ static inline void conv2d_im2col_cpu(const float * in, float * out, const float 
             // Consume: oc outside the position loop -- each weight row is
             // read once per tile and the streamed operand is the L2-resident
             // column buffer.
-            const int n_blk = (micro_kernel && !wpack.empty()) ? ch_per_group_out / ocb : 0;
             if (n_blk > 0) {
                 // Pack this tile's full 4-position blocks as [k][c].
                 const int n_pb = len / 4;
@@ -793,21 +810,33 @@ static inline void conv2d_im2col_cpu(const float * in, float * out, const float 
                     }
                 }
                 for (int blk = 0; blk < n_blk; blk++) {
-                    const float * wp = wpack.data() + ((size_t)g * (ch_per_group_out / ocb) + blk) * (size_t)ocb * K;
-                    for (int pb = 0; pb < n_pb; pb++) {
-#if !defined(__aarch64__) && defined(__AVX2__) && defined(__FMA__)
-                        float acc[4][8];
-                        conv2d_mk_block8(wp, xpack + (size_t)pb * 4 * K, K, acc);
-#else
-                        float acc[4][4];
-                        conv2d_mk_block(wp, xpack + (size_t)pb * 4 * K, K, acc);
-#endif
-                        for (int r = 0; r < ocb; r++) {
-                            const int oc = blk * ocb + r;
-                            const float b = bias ? bias[oc_off + oc] : 0.0f;
-                            float * orow = out + (size_t)(oc_off + oc) * n_pos + p0 + (size_t)pb * 4;
-                            for (int c = 0; c < 4; c++) orow[c] = b + acc[c][r];
+                    const float * wp = wpack.data() + ((size_t)g * n_blk + blk) * (size_t)ocb * K;
+                    const size_t oc = (size_t)oc_off + blk * ocb;
+                    const float * b = bias ? bias + oc : nullptr;
+                    float * dst = out + oc * n_pos + p0;
+#ifdef SNIPLITE_INFERENCE_ASM
+                    if (avx2_fma) {
+                        float acc[8 * 8];
+                        int pb = 0;
+                        for (; pb + 1 < n_pb; pb += 2) {
+                            sniplite_conv2d_mk_block8_pair(wp, xpack + (size_t)pb * 4 * K, K, acc);
+                            conv2d_store_mk_block<8, 8>(acc, b, dst + pb * 4, n_pos);
                         }
+                        if (pb < n_pb) {
+                            sniplite_conv2d_mk_block8(wp, xpack + (size_t)pb * 4 * K, K, acc);
+                            conv2d_store_mk_block<8, 4>(acc, b, dst + pb * 4, n_pos);
+                        }
+                    } else
+#endif
+                    for (int pb = 0; pb < n_pb; pb++) {
+                        const float * xp = xpack + (size_t)pb * 4 * K;
+                        float acc[4 * CONV2D_MK_OCB];
+#if !defined(__aarch64__) && defined(__AVX2__) && defined(__FMA__) && !defined(SNIPLITE_INFERENCE_ASM)
+                        conv2d_mk_block8(wp, xp, K, acc);
+#else
+                        conv2d_mk_block(wp, xp, K, acc);
+#endif
+                        conv2d_store_mk_block<CONV2D_MK_OCB, 4>(acc, b, dst + pb * 4, n_pos);
                     }
                     // Position tail of this tile for the block's rows.
                     for (int r = 0; r < ocb; r++) {
@@ -830,7 +859,7 @@ static inline void conv2d_im2col_cpu(const float * in, float * out, const float 
         }
     };
 
-    const size_t xpack_len = (micro_kernel && !wpack.empty()) ? (size_t)tile * K : 0;
+    const size_t xpack_len = n_blk > 0 ? (size_t)tile * K : 0;
     const int nt = (int)std::min((size_t)std::max(n_threads, 1), n_tiles);
     for (int g = 0; g < groups; g++) {
         if (nt <= 1) {

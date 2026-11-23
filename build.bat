@@ -9,19 +9,21 @@ cd /d "%~dp0"
 if exist "%~dp0w64devkit\bin\gcc.exe" set "PATH=%~dp0w64devkit\bin;%PATH%"
 where gcc >nul 2>nul || (echo gcc not found: put w64devkit in the project root or install MinGW-w64 on PATH & exit /b 1)
 if not exist build mkdir build
+gcc -c -o build\inference_kernels.o src\inference_kernels.S || exit /b 1
+set "INFERENCE_KERNELS=-Isrc -DSNIPLITE_INFERENCE_ASM build\inference_kernels.o"
 rem Build generic CPU, AVX2 CPU, and Vulkan-first formula inference engines.
 for %%n in (ggml ggml-base ggml-cpu) do dlltool -d third_party\formulanet\ggml\%%n.def -l build\%%n-import.a || exit /b 1
-g++ -std=c++17 -O3 -DNOMINMAX -DWIN32_LEAN_AND_MEAN ^
+g++ -std=c++17 -O3 -DNOMINMAX -DWIN32_LEAN_AND_MEAN %INFERENCE_KERNELS% ^
  -ffunction-sections -fdata-sections -fno-ident -Ithird_party/formulanet -Ithird_party/formulanet/ggml ^
  -shared -static-libgcc -static-libstdc++ -s -Wl,--gc-sections,--exclude-all-symbols,--nxcompat,--dynamicbase,--high-entropy-va,--no-insert-timestamp ^
  -o build\sniplite_formula.dll third_party\formulanet\ppformulanet_ocr.cpp third_party\formulanet\core\gguf_loader.cpp ^
  third_party\formulanet\formula.def build\ggml-import.a build\ggml-base-import.a build\ggml-cpu-import.a || exit /b 1
-g++ -std=c++17 -O3 -mavx2 -mfma -mf16c -DNOMINMAX -DWIN32_LEAN_AND_MEAN ^
+g++ -std=c++17 -O3 -mavx2 -mfma -mf16c -DNOMINMAX -DWIN32_LEAN_AND_MEAN %INFERENCE_KERNELS% ^
  -ffunction-sections -fdata-sections -fno-ident -Ithird_party/formulanet -Ithird_party/formulanet/ggml ^
  -shared -static-libgcc -static-libstdc++ -s -Wl,--gc-sections,--exclude-all-symbols,--nxcompat,--dynamicbase,--high-entropy-va,--no-insert-timestamp ^
  -o build\sniplite_formula_avx2.dll third_party\formulanet\ppformulanet_ocr.cpp third_party\formulanet\core\gguf_loader.cpp ^
  third_party\formulanet\formula.def build\ggml-import.a build\ggml-base-import.a build\ggml-cpu-import.a || exit /b 1
-g++ -std=c++17 -O3 -DNOMINMAX -DWIN32_LEAN_AND_MEAN -DSNIPLITE_VULKAN_PREFERRED ^
+g++ -std=c++17 -O3 -DNOMINMAX -DWIN32_LEAN_AND_MEAN -DSNIPLITE_VULKAN_PREFERRED %INFERENCE_KERNELS% ^
  -ffunction-sections -fdata-sections -fno-ident -Ithird_party/formulanet -Ithird_party/formulanet/ggml ^
  -shared -static-libgcc -static-libstdc++ -s -Wl,--gc-sections,--exclude-all-symbols,--nxcompat,--dynamicbase,--high-entropy-va,--no-insert-timestamp ^
  -o build\sniplite_formula_vulkan.dll third_party\formulanet\ppformulanet_ocr.cpp third_party\formulanet\core\gguf_loader.cpp ^
@@ -31,24 +33,24 @@ if exist build\formula\texo-distill-q8_0.gguf (
  copy /y third_party\formulanet\LICENSE build\formula\LICENSE-FormulaEngine.txt >nul || exit /b 1
 )
 rem Build generic CPU, AVX2 CPU, and Vulkan-first OCR engines with corrected recognition strides.
-g++ -std=c++17 -O3 -DNOMINMAX -DWIN32_LEAN_AND_MEAN -DSNIPLITE_OCR_BUILD -DSNIPLITE_CPU_ONLY ^
- -ffunction-sections -fdata-sections -fno-ident -Isrc -Ithird_party/ppocrv6 ^
+g++ -std=c++17 -O3 -DNOMINMAX -DWIN32_LEAN_AND_MEAN -DSNIPLITE_OCR_BUILD -DSNIPLITE_CPU_ONLY %INFERENCE_KERNELS% ^
+ -ffunction-sections -fdata-sections -fno-ident -Ithird_party/ppocrv6 ^
  -Ithird_party/formulanet -Ithird_party/formulanet/core -Ithird_party/formulanet/ggml ^
  -shared -static-libgcc -static-libstdc++ -s -Wl,--gc-sections,--exclude-all-symbols,--nxcompat,--dynamicbase,--high-entropy-va,--no-insert-timestamp ^
  -o build\sniplite_ocr.dll src\ocr_engine.cpp third_party\ppocrv6\ppocrv6_ocr.cpp ^
  third_party\ppocrv6\ppocrv6_det.cpp third_party\ppocrv6\ocr_detect.cpp third_party\ppocrv6\ocr_crop.cpp ^
  third_party\ppocrv6\text_angle.cpp third_party\formulanet\core\gguf_loader.cpp src\ocr_engine.def ^
  build\ggml-import.a build\ggml-base-import.a build\ggml-cpu-import.a || exit /b 1
-g++ -std=c++17 -O3 -mavx2 -mfma -mf16c -DNOMINMAX -DWIN32_LEAN_AND_MEAN -DSNIPLITE_OCR_BUILD -DSNIPLITE_CPU_ONLY ^
- -ffunction-sections -fdata-sections -fno-ident -Isrc -Ithird_party/ppocrv6 ^
+g++ -std=c++17 -O3 -mavx2 -mfma -mf16c -DNOMINMAX -DWIN32_LEAN_AND_MEAN -DSNIPLITE_OCR_BUILD -DSNIPLITE_CPU_ONLY %INFERENCE_KERNELS% ^
+ -ffunction-sections -fdata-sections -fno-ident -Ithird_party/ppocrv6 ^
  -Ithird_party/formulanet -Ithird_party/formulanet/core -Ithird_party/formulanet/ggml ^
  -shared -static-libgcc -static-libstdc++ -s -Wl,--gc-sections,--exclude-all-symbols,--nxcompat,--dynamicbase,--high-entropy-va,--no-insert-timestamp ^
  -o build\sniplite_ocr_avx2.dll src\ocr_engine.cpp third_party\ppocrv6\ppocrv6_ocr.cpp ^
  third_party\ppocrv6\ppocrv6_det.cpp third_party\ppocrv6\ocr_detect.cpp third_party\ppocrv6\ocr_crop.cpp ^
  third_party\ppocrv6\text_angle.cpp third_party\formulanet\core\gguf_loader.cpp src\ocr_engine.def ^
  build\ggml-import.a build\ggml-base-import.a build\ggml-cpu-import.a || exit /b 1
-g++ -std=c++17 -O3 -DNOMINMAX -DWIN32_LEAN_AND_MEAN -DSNIPLITE_OCR_BUILD -DSNIPLITE_VULKAN_PREFERRED ^
- -ffunction-sections -fdata-sections -fno-ident -Isrc -Ithird_party/ppocrv6 ^
+g++ -std=c++17 -O3 -DNOMINMAX -DWIN32_LEAN_AND_MEAN -DSNIPLITE_OCR_BUILD -DSNIPLITE_VULKAN_PREFERRED %INFERENCE_KERNELS% ^
+ -ffunction-sections -fdata-sections -fno-ident -Ithird_party/ppocrv6 ^
  -Ithird_party/formulanet -Ithird_party/formulanet/core -Ithird_party/formulanet/ggml ^
  -shared -static-libgcc -static-libstdc++ -s -Wl,--gc-sections,--exclude-all-symbols,--nxcompat,--dynamicbase,--high-entropy-va,--no-insert-timestamp ^
  -o build\sniplite_ocr_vulkan.dll src\ocr_engine.cpp third_party\ppocrv6\ppocrv6_ocr.cpp ^

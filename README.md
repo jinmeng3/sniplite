@@ -142,6 +142,9 @@ CrispEmbed 公式识别模块可在首选项的“公式识别”页面从本机
 原生渲染器还使用 TinyXML2 10.0.0，许可见 `third_party/tinyxml2/LICENSE.txt`。安装版及所有便携 ZIP 均在主程序旁提供 `LICENSE-TinyXML2.txt`。
 
 二维码识别使用 [ZXing-C++ v3.1.1](https://github.com/zxing-cpp/zxing-cpp)，仅启用 QR Code 解码，遵循 Apache License 2.0。详细实现和限制见[二维码识别文档](docs/qr-code-recognition.md)。
+OCR 与 FormulaNet 共用的原生 CPU 卷积会在微内核启用时检查 AVX2/FMA 和操作系统的 YMM 支持。通用、AVX2 和 Vulkan DLL 都能在支持的机器上使用这个汇编微内核。PP-OCRv6 检测器的原生 CPU 回退也使用汇编计算 2×2 转置卷积。
+
+卷积汇编同时处理 8 个输出通道和 8 个位置，按 K 维展开四次，并保留每个输出的串行 FMA 累加顺序；不足 8 个位置时使用 8×4 微内核及原有点积尾部。`CRISPEMBED_CONV2D_MK=0` 可关闭微内核，`=1` 可显式启用。转置卷积保留输入通道累加顺序及最后加偏置：通用/Vulkan 构建使用 SSE2 分离乘加，AVX2 构建使用 FMA。GGML 计算图继续使用其自身算子。
 
 ## 许可证
 
