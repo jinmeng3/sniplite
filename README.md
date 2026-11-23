@@ -146,6 +146,8 @@ OCR 与 FormulaNet 共用的原生 CPU 卷积会在微内核启用时检查 AVX2
 
 卷积汇编同时处理 8 个输出通道和 8 个位置，按 K 维展开四次，并保留每个输出的串行 FMA 累加顺序；不足 8 个位置时使用 8×4 微内核及原有点积尾部。`CRISPEMBED_CONV2D_MK=0` 可关闭微内核，`=1` 可显式启用。转置卷积保留输入通道累加顺序及最后加偏置：通用/Vulkan 构建使用 SSE2 分离乘加，AVX2 构建使用 FMA。GGML 计算图继续使用其自身算子。
 
+原生 CPU 公式解码还使用多输出行矩阵乘向量和单查询注意力汇编；保留默认及 `CRISPEMBED_DOT_WIDE=1` 的归约顺序。`CRISPEMBED_CONVDW_FAST=1` 的深度卷积路径为 3×3、5×5 和步长 1、2 使用专用汇编，边缘及其他形状保留原计算。OCR 的文本框采样、概率图阈值比较和 3×3 膨胀也使用汇编；裁剪保持逐点坐标与半值远离零取整，阈值保持严格大于比较和 NaN 为假，膨胀保持原有轮次及边界语义。这些 CPU 前后处理也服务于 GGML 图路径。
+
 ## 许可证
 
 本项目采用 [GNU Affero 通用公共许可证 v3.0（AGPL-3.0）](LICENSE-AGPL-3.0)。公式识别使用 CrispEmbed 和 Texo-Distill GGUF，许可文件随公式模块提供。文字 OCR 使用 CrispEmbed 的 PP-OCRv6 GGUF 模型和 GGML 运行库；MIT、Apache 2.0 许可证及第三方声明随 OCR 模块提供。公式预览使用 MicroTeX，其许可见 `third_party/microtex/LICENSE` 和发布包中的 `LICENSE-MicroTeX.txt`；字体许可随内嵌预览资源保留。其他第三方组件遵循各自的许可证。

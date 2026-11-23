@@ -377,12 +377,31 @@ static inline void rmsnorm_cpu(const float * in, float * out, int D, const float
 // ---------------------------------------------------------------------------
 // Convention: out[o] = sum_i(w[o*in_dim+i] * in[i]) + b[o]
 
+#ifdef SNIPLITE_INFERENCE_ASM
+static inline void matvec_cpu_asm(const float * in, const float * w, float * out, int n,
+                                  size_t row_stride, int rows) {
+#if defined(__AVX2__) && defined(__FMA__)
+    if (__builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma")) {
+        if (g_dot_wide) sniplite_matvec_wide_fma(in, w, out, n, row_stride, rows);
+        else sniplite_matvec_fma(in, w, out, n, row_stride, rows);
+        return;
+    }
+#endif
+    sniplite_matvec_sse2(in, w, out, n, row_stride, rows);
+}
+#endif
+
 static inline void linear_cpu(const float * in, float * out, int in_dim, int out_dim, const float * w,
                               const float * b) {
+#ifdef SNIPLITE_INFERENCE_ASM
+    matvec_cpu_asm(in, w, out, in_dim, (size_t)in_dim, out_dim);
+    for (int o = 0; o < out_dim; o++) out[o] += b ? b[o] : 0.0f;
+#else
     for (int o = 0; o < out_dim; o++) {
         float s = dot_product(in, w + o * in_dim, in_dim);
         out[o] = s + (b ? b[o] : 0.0f);
     }
+#endif
 }
 
 // Row-parallel linear: splits out_dim across nt fork-join threads. Each
@@ -402,10 +421,7 @@ static inline void linear_cpu_mt(const float * in, float * out, int in_dim, int 
     pool.reserve((size_t)nt - 1);
     const int chunk = (out_dim + nt - 1) / nt;
     auto run = [&](int o0, int o1) {
-        for (int o = o0; o < o1; o++) {
-            float s = dot_product(in, w + (size_t)o * in_dim, in_dim);
-            out[o] = s + (b ? b[o] : 0.0f);
-        }
+        linear_cpu(in, out + o0, in_dim, o1 - o0, w + (size_t)o0 * in_dim, b ? b + o0 : nullptr);
     };
     for (int t = 1; t < nt; t++) {
         const int o0 = t * chunk, o1 = std::min(out_dim, o0 + chunk);
@@ -564,6 +580,53 @@ static inline void conv2d_depthwise_cpu(const float * in, float * out, const flo
     const int out_H = (H + 2 * pad - kh) / stride + 1;
     const int out_W = (W + 2 * pad - kw) / stride + 1;
     if (out_H <= 0 || out_W <= 0) return;
+#ifdef SNIPLITE_INFERENCE_ASM
+    if ((kh == 3 || kh == 5) && kw == kh && (stride == 1 || stride == 2) && pad >= 0) {
+        // Only full windows enter the vector kernel. Borders retain skipped
+        // taps (including signed-zero weights) and the same ky/kx order.
+        const int left = std::clamp(pad / stride + (pad % stride != 0), 0, out_W);
+        const int last = W - kh + pad;
+        const int right = last < 0 ? 0 : std::clamp(last / stride + 1, 0, out_W);
+        for (int c = 0; c < channels; ++c) {
+            const float * src = in + (size_t)c * H * W;
+            float * dst = out + (size_t)c * out_H * out_W;
+            const float * wc = weight + (size_t)c * kh * kw;
+            const float bv = bias ? bias[c] : 0.0f;
+            for (int oy = 0; oy < out_H; ++oy) {
+                const int iy = oy * stride - pad;
+                const bool full_rows = iy >= 0 && iy + kh <= H && left < right;
+                int ox = 0;
+                while (ox < out_W) {
+                    if (full_rows && ox == left) {
+                        const SnipliteDepthwiseRow row{src + (size_t)iy * W + ox * stride - pad,
+                            dst + (size_t)oy * out_W + ox, wc, (size_t)W, right - left, stride, bv};
+#if defined(__AVX2__) && defined(__FMA__)
+                        if (kh == 3) sniplite_depthwise3_fma(&row);
+                        else sniplite_depthwise5_fma(&row);
+#else
+                        if (kh == 3) sniplite_depthwise3_sse2(&row);
+                        else sniplite_depthwise5_sse2(&row);
+#endif
+                        ox = right;
+                    } else {
+                        float acc = bv;
+                        for (int ky = 0; ky < kh; ++ky) {
+                            const int sy = iy + ky;
+                            if (sy < 0 || sy >= H) continue;
+                            for (int kx = 0; kx < kw; ++kx) {
+                                const int sx = ox * stride - pad + kx;
+                                const float wv = wc[ky * kw + kx];
+                                if (wv != 0.0f && sx >= 0 && sx < W) acc += wv * src[(size_t)sy * W + sx];
+                            }
+                        }
+                        dst[(size_t)oy * out_W + ox++] = acc;
+                    }
+                }
+            }
+        }
+        return;
+    }
+#endif
     const int taps = kh * kw;
 
     for (int c = 0; c < channels; c++) {
@@ -1192,8 +1255,15 @@ static inline void mha_1q_cpu(const float * q, const float * k, const float * v,
         int off = h * hd;
         // Q·K scores (SIMD via dot_product)
         float maxs = -1e30f;
+#ifdef SNIPLITE_INFERENCE_ASM
+        matvec_cpu_asm(q + off, k + off, scores, hd, (size_t)D, n_kv);
+#endif
         for (int ki = 0; ki < n_kv; ki++) {
+#ifdef SNIPLITE_INFERENCE_ASM
+            scores[ki] *= scale;
+#else
             scores[ki] = dot_product(q + off, k + ki * D + off, hd) * scale;
+#endif
             if (scores[ki] > maxs) maxs = scores[ki];
         }
         // Softmax
@@ -1206,6 +1276,13 @@ static inline void mha_1q_cpu(const float * q, const float * k, const float * v,
         for (int ki = 0; ki < n_kv; ki++) scores[ki] *= inv_sum;
         // Weighted V accumulation: out[off:off+hd] = sum(scores[ki] * V[ki][off:off+hd])
         float * dst = out + off;
+#ifdef SNIPLITE_INFERENCE_ASM
+#if defined(__AVX2__) && defined(__FMA__)
+        sniplite_weighted_v_fma(scores, v + off, dst, n_kv, (size_t)D, hd);
+#else
+        sniplite_weighted_v_sse2(scores, v + off, dst, n_kv, (size_t)D, hd);
+#endif
+#else
         for (int ki = 0; ki < n_kv; ki++) {
             float s = scores[ki];
             const float * vrow = v + ki * D + off;
@@ -1224,6 +1301,7 @@ static inline void mha_1q_cpu(const float * q, const float * k, const float * v,
             for (int d = 0; d < hd; d++) dst[d] += s * vrow[d];
 #endif
         }
+#endif
     }
 }
 

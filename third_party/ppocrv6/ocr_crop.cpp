@@ -2,6 +2,10 @@
 #include "text_angle.h"
 #include "core/env_gate.h"
 
+#if defined(SNIPLITE_INFERENCE_ASM)
+#include "ocr_crop_kernels.h"
+#endif
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -243,6 +247,17 @@ std::vector<uint8_t> extract_quad(const uint8_t * pixels, int width, int height,
     const int ow = std::max(1, (int)std::lround(std::max(dist(0, 1), dist(3, 2))) + 2 * pad);
     const int oh = std::max(1, (int)std::lround(std::max(dist(0, 3), dist(1, 2))) + 2 * pad);
     std::vector<uint8_t> result((size_t)ow * oh * channels);
+#if defined(SNIPLITE_INFERENCE_ASM)
+    const sniplite_ocr_crop_params params{
+        pixels, result.data(), width, height, channels, ow, oh, pad,
+        {x[0], x[1], x[2], x[3]}, {y[0], y[1], y[2], y[3]}
+    };
+#if defined(__FMA__)
+    sniplite_ocr_crop_fma(&params);
+#else
+    sniplite_ocr_crop_sse2(&params);
+#endif
+#else
     for (int oy = 0; oy < oh; ++oy) {
         const float v = std::clamp((oy - pad) / float(std::max(1, oh - 1 - 2 * pad)), 0.0f, 1.0f);
         for (int ox = 0; ox < ow; ++ox) {
@@ -255,6 +270,7 @@ std::vector<uint8_t> extract_quad(const uint8_t * pixels, int width, int height,
             std::memcpy(result.data() + ((size_t)oy * ow + ox) * channels, src, (size_t)channels);
         }
     }
+#endif
     if (out_width) *out_width = ow;
     if (out_height) *out_height = oh;
     return result;

@@ -16,6 +16,9 @@
 
 #include "ocr_detect.h"
 #include "core/gguf_loader.h"
+#if defined(SNIPLITE_INFERENCE_ASM)
+#include "ocr_detect_kernels.h"
+#endif
 
 #include "ggml.h"
 #include "ggml-alloc.h"
@@ -920,10 +923,14 @@ static std::vector<text_box> extract_boxes(const float * prob_map, int map_w, in
 
     // Binarize
     std::vector<uint8_t> binary(map_w * map_h, 0);
+#if defined(SNIPLITE_INFERENCE_ASM)
+    sniplite_detect_threshold_sse2(prob_map, binary.data(), binary.size(), prob_threshold);
+#else
     for (int i = 0; i < map_w * map_h; i++) {
         // prob_map is [W, H] in ggml layout (column-major: prob_map[x + y*W])
         if (prob_map[i] > prob_threshold) binary[i] = 1;
     }
+#endif
 
     // Pixels that passed prob_threshold before the morphology below. Upstream
     // PaddleOCR DBPostProcess (v2.7.0 ppocr/postprocess/db_postprocess.py,
@@ -939,11 +946,14 @@ static std::vector<text_box> extract_boxes(const float * prob_map, int map_w, in
     // is the inexpensive equivalent of the detector-side morphology used by
     // common DBNet pipelines. Keep it bounded: larger kernels tend to merge
     // adjacent lines and are better handled by the recognizer cropper.
+    std::vector<uint8_t> expanded(dilation > 0 ? binary.size() : 0);
     for (int pass = 0; pass < std::min(dilation, 2); pass++) {
-        std::vector<uint8_t> expanded = binary;
+#if defined(SNIPLITE_INFERENCE_ASM)
+        sniplite_detect_dilate3x3_sse2(binary.data(), expanded.data(), map_w, map_h);
+#else
         for (int y = 0; y < map_h; y++) {
             for (int x = 0; x < map_w; x++) {
-                if (binary[x + y * map_w]) continue;
+                expanded[x + y * map_w] = binary[x + y * map_w];
                 for (int dy = -1; dy <= 1 && !expanded[x + y * map_w]; dy++) {
                     for (int dx = -1; dx <= 1; dx++) {
                         int nx = x + dx, ny = y + dy;
@@ -955,6 +965,7 @@ static std::vector<text_box> extract_boxes(const float * prob_map, int map_w, in
                 }
             }
         }
+#endif
         binary.swap(expanded);
     }
 

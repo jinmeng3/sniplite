@@ -10,7 +10,12 @@ if exist "%~dp0w64devkit\bin\gcc.exe" set "PATH=%~dp0w64devkit\bin;%PATH%"
 where gcc >nul 2>nul || (echo gcc not found: put w64devkit in the project root or install MinGW-w64 on PATH & exit /b 1)
 if not exist build mkdir build
 gcc -c -o build\inference_kernels.o src\inference_kernels.S || exit /b 1
-set "INFERENCE_KERNELS=-Isrc -DSNIPLITE_INFERENCE_ASM build\inference_kernels.o"
+gcc -c -o build\inference_math.o src\inference_math.S || exit /b 1
+gcc -c -o build\inference_depthwise.o src\inference_depthwise.S || exit /b 1
+gcc -c -o build\ocr_crop_kernels.o src\ocr_crop_kernels.S || exit /b 1
+gcc -c -o build\ocr_detect_kernels.o src\ocr_detect_kernels.S || exit /b 1
+set "INFERENCE_KERNELS=-Isrc -DSNIPLITE_INFERENCE_ASM build\inference_kernels.o build\inference_math.o build\inference_depthwise.o build\ocr_crop_kernels.o build\ocr_detect_kernels.o"
+set "OCR_PIXEL_KERNELS=-DSNIPLITE_OCR_PREPROCESS build\pixel_ops.o src\ocr_preprocess.cpp"
 rem Build generic CPU, AVX2 CPU, and Vulkan-first formula inference engines.
 for %%n in (ggml ggml-base ggml-cpu) do dlltool -d third_party\formulanet\ggml\%%n.def -l build\%%n-import.a || exit /b 1
 g++ -std=c++17 -O3 -DNOMINMAX -DWIN32_LEAN_AND_MEAN %INFERENCE_KERNELS% ^
