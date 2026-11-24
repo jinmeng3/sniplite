@@ -12,7 +12,7 @@ struct box {
 };
 struct context;
 
-context * init(const char * path, int n_threads = 1);
+context * init(const char * path, int n_threads, bool prefer_vulkan);
 void free(context * ctx);
 std::vector<box> detect_raw(context * ctx, const uint8_t * pixels, int width, int height, int channels,
                             float threshold = 0.3f);

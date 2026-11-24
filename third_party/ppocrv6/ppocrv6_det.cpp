@@ -1013,28 +1013,34 @@ static void append_component(const std::vector<float> & prob, int h, int w, floa
         }
 }
 
-context * init(const char * path, int n_threads) {
+context * init(const char * path, int n_threads, bool prefer_vulkan) {
     auto * c = new context();
     c->n_threads = std::max(1, n_threads);
     // CPU builds load and compute on the CPU backend. Avoid initializing an
     // unused GPU while loading weights for the CPU detector graph.
 #if defined(SNIPLITE_VULKAN_PREFERRED)
     c->backend = nullptr;
-    for (size_t i = 0; i < ggml_backend_dev_count() && !c->backend; ++i) {
-        ggml_backend_dev_t dev = ggml_backend_dev_get(i);
-        const auto kind = ggml_backend_dev_type(dev);
-        const char * name = ggml_backend_dev_name(dev);
-        if ((kind == GGML_BACKEND_DEVICE_TYPE_GPU || kind == GGML_BACKEND_DEVICE_TYPE_IGPU) && name &&
-            ci_starts_with(name, "vulkan")) {
-            c->backend = ggml_backend_dev_init(dev, nullptr);
-            if (!c->backend) fprintf(stderr, "ppocrv6-det: Vulkan device init failed: %s\n", name);
+    if (prefer_vulkan) {
+        for (size_t i = 0; i < ggml_backend_dev_count() && !c->backend; ++i) {
+            ggml_backend_dev_t dev = ggml_backend_dev_get(i);
+            const auto kind = ggml_backend_dev_type(dev);
+            const char * name = ggml_backend_dev_name(dev);
+            if ((kind == GGML_BACKEND_DEVICE_TYPE_GPU || kind == GGML_BACKEND_DEVICE_TYPE_IGPU) && name &&
+                ci_starts_with(name, "vulkan")) {
+                c->backend = ggml_backend_dev_init(dev, nullptr);
+                if (!c->backend) fprintf(stderr, "ppocrv6-det: Vulkan device init failed: %s\n", name);
+            }
         }
-    }
-    if (!c->backend) {
-        fprintf(stderr, "ppocrv6-det: Vulkan unavailable; falling back to CPU\n");
+        if (!c->backend) {
+            fprintf(stderr, "ppocrv6-det: requested Vulkan backend is unavailable\n");
+            delete c;
+            return nullptr;
+        }
+    } else {
         c->backend = ggml_backend_cpu_init();
     }
 #else
+    (void)prefer_vulkan;
     c->backend = ggml_backend_cpu_init();
 #endif
     if (!c->backend) return nullptr;
@@ -1048,23 +1054,6 @@ context * init(const char * path, int n_threads) {
     c->variant = core_gguf::kv_str(meta, "ppocrv6.variant", "tiny");
     core_gguf::free_metadata(meta);
     if (!core_gguf::load_weights(path, c->backend, "ppocrv6", c->wl)) {
-#if defined(SNIPLITE_VULKAN_PREFERRED)
-        if (!ggml_backend_is_cpu(c->backend)) {
-            fprintf(stderr, "ppocrv6-det: Vulkan weight load failed; retrying on CPU\n");
-            core_gguf::free_weights(c->wl);
-            crispasr_free_gpu_backend(c->backend);
-            c->backend = ggml_backend_cpu_init();
-            if (c->backend) {
-                ggml_backend_cpu_set_n_threads(c->backend, std::max(1, n_threads));
-                if (core_gguf::load_weights(path, c->backend, "ppocrv6", c->wl)) goto weights_loaded;
-            }
-        }
-#endif
-        free(c);
-        return nullptr;
-    }
-weights_loaded:
-    if (!c->backend) {
         free(c);
         return nullptr;
     }

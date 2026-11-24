@@ -70,7 +70,7 @@ bool initialize(Context &ctx, bool vulkan) {
         _putenv_s("CRISPEMBED_PPOCRV6_GRAPH_ACCEPT", "1")) return false;
     crispasr_set_gpu_backend_pref(vulkan ? "vulkan" : "cpu");
     try {
-        ctx.detector.reset(ppocrv6_det::init(ctx.detector_path.c_str(), ctx.threads));
+        ctx.detector.reset(ppocrv6_det::init(ctx.detector_path.c_str(), ctx.threads, vulkan));
         if (!ctx.detector) return false;
         ctx.recognizer.reset(ppocrv6_ocr_init(ctx.recognizer_path.c_str(), ctx.threads));
         if (!ctx.recognizer) return false;
@@ -174,11 +174,12 @@ bool detector_succeeded(const Context &ctx) {
 }
 
 
-bool run(Context &ctx, const uint8_t *rgb, int width, int height) {
+enum class RunStatus { success, invalid_input, inference_failure };
+RunStatus run(Context &ctx, const uint8_t *rgb, int width, int height) {
     auto boxes = detect(ctx, rgb, width, height);
-    if (!detector_succeeded(ctx)) return false;
-    if (boxes.empty()) return true;
-    if (boxes.size() > static_cast<size_t>(std::numeric_limits<int>::max())) return false;
+    if (!detector_succeeded(ctx)) return RunStatus::inference_failure;
+    if (boxes.empty()) return RunStatus::success;
+    if (boxes.size() > static_cast<size_t>(std::numeric_limits<int>::max())) return RunStatus::invalid_input;
 
     constexpr size_t crop_batch_limit = 8;
     constexpr int text_capacity = 4096;
@@ -188,7 +189,7 @@ bool run(Context &ctx, const uint8_t *rgb, int width, int height) {
     const size_t result_count = ctx.results.size();
     auto fail = [&]() {
         ctx.results.resize(result_count);
-        return false;
+        return RunStatus::invalid_input;
     };
 
     for (auto &b : boxes) {
@@ -262,18 +263,19 @@ bool run(Context &ctx, const uint8_t *rgb, int width, int height) {
         }
         if (ppocrv6_ocr_recognize_raw_batch(ctx.recognizer.get(), pixels.data(), widths.data(), heights.data(),
                                             channels.data(), static_cast<int>(count), outputs.data(), capacities.data(),
-                                            lengths.data()) != static_cast<int>(count)) return fail();
+                                            lengths.data()) != static_cast<int>(count))
+            return RunStatus::inference_failure;
 
         for (size_t j = 0; j < count; ++j) {
             const size_t i = order[start + j];
             int length = lengths[j];
-            if (length < 0 || length >= text_capacity) return fail();
+            if (length < 0 || length >= text_capacity) return RunStatus::inference_failure;
             if (length == text_capacity - 1) {
                 // The vendor batch API truncates without reporting the full size.
                 // Recover a saturated line through its unbounded single-line API.
                 const char *text = ppocrv6_ocr_recognize_raw(ctx.recognizer.get(), pixels[j], widths[j], heights[j],
                                                             3, &length);
-                if (!text || length < 0) return fail();
+                if (!text || length < 0) return RunStatus::inference_failure;
                 ctx.texts[i].assign(text, static_cast<size_t>(length));
             } else {
                 ctx.texts[i].assign(outputs[j], static_cast<size_t>(length));
@@ -290,7 +292,7 @@ bool run(Context &ctx, const uint8_t *rgb, int width, int height) {
         ctx.results.push_back({b.x, b.y, b.w, b.h, b.score, ctx.texts[i].c_str(), length,
                                o.corrected ? 1 : 0, o.angle, o.confidence});
     }
-    return true;
+    return RunStatus::success;
 }
 
 bool load_bgra(Context &ctx, const uint8_t *pixels, int width, int height,
@@ -309,20 +311,26 @@ bool load_bgra(Context &ctx, const uint8_t *pixels, int width, int height,
     return true;
 }
 
-template <typename Job>
-const SnipliteOcrResult *run_request(void *context, int *count, const Job &job) {
+template <typename Prepare, typename Execute>
+const SnipliteOcrResult *run_request(void *context, int *count, const Prepare &prepare, const Execute &execute) {
     if (!count) return nullptr;
     *count = -1;
     if (!context) return nullptr;
     auto &ctx = *static_cast<Context *>(context);
     ctx.results.clear();
-    bool ok = false;
-    try { ok = job(ctx); } catch (...) {}
-    if (!ok && ctx.vulkan) {
+    bool prepared = false;
+    try { prepared = prepare(ctx); } catch (...) {}
+    if (!prepared) return nullptr;
+
+    RunStatus status = RunStatus::inference_failure;
+    try { status = execute(ctx); } catch (...) {}
+    if (status == RunStatus::inference_failure && ctx.vulkan) {
         fprintf(stderr, "sniplite OCR: Vulkan inference failed; retrying on CPU\n");
-        try { ok = initialize(ctx, false) && job(ctx); } catch (...) {}
+        try {
+            if (initialize(ctx, false)) status = execute(ctx);
+        } catch (...) {}
     }
-    if (!ok) {
+    if (status != RunStatus::success) {
         ctx.results.clear();
         return nullptr;
     }
@@ -370,16 +378,15 @@ extern "C" void sniplite_ocr_free(void *context) {
 }
 
 extern "C" const SnipliteOcrResult *sniplite_ocr_run(void *context, const char *bitmap_path, int *count) {
-    return run_request(context, count, [bitmap_path](Context &ctx) {
-        int width = 0, height = 0;
-        return load_bitmap(bitmap_path, ctx.rgb, width, height) && run(ctx, ctx.rgb.data(), width, height);
-    });
+    int width = 0, height = 0;
+    return run_request(context, count,
+        [bitmap_path, &width, &height](Context &ctx) { return load_bitmap(bitmap_path, ctx.rgb, width, height); },
+        [&width, &height](Context &ctx) { return run(ctx, ctx.rgb.data(), width, height); });
 }
 
 extern "C" const SnipliteOcrResult *sniplite_ocr_run_bgra(void *context, const unsigned char *pixels,
     int width, int height, size_t stride_bytes, size_t data_bytes, int *count) {
-    return run_request(context, count, [=](Context &ctx) {
-        return load_bgra(ctx, pixels, width, height, stride_bytes, data_bytes) &&
-               run(ctx, ctx.rgb.data(), width, height);
-    });
+    return run_request(context, count,
+        [=](Context &ctx) { return load_bgra(ctx, pixels, width, height, stride_bytes, data_bytes); },
+        [=](Context &ctx) { return run(ctx, ctx.rgb.data(), width, height); });
 }
