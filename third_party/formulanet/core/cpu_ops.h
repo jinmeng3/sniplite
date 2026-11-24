@@ -45,9 +45,19 @@ namespace core_cpu {
 // ---------------------------------------------------------------------------
 // FP16/quantized → F32 dequantization (GPU-safe)
 // ---------------------------------------------------------------------------
-// Uses ggml_backend_tensor_get() so this works whether the weight lives in a
-// CPU buffer or a GPU (Metal/CUDA) buffer where t->data is not a valid host
-// pointer.
+// Host buffers are read directly; device-only buffers are staged through
+// ggml_backend_tensor_get() before CPU conversion.
+
+static inline void fp16_to_fp32_cpu(const ggml_fp16_t * src, float * dst, int64_t n) {
+#ifdef SNIPLITE_INFERENCE_ASM
+    static const bool f16c = __builtin_cpu_supports("avx") && __builtin_cpu_supports("f16c");
+    if (f16c) {
+        sniplite_fp16_to_fp32_f16c(src, dst, static_cast<size_t>(n));
+        return;
+    }
+#endif
+    ggml_fp16_to_fp32_row(src, dst, n);
+}
 
 static inline std::vector<float> to_f32(const ggml_tensor * t) {
     if (!t) return {};
@@ -56,9 +66,13 @@ static inline std::vector<float> to_f32(const ggml_tensor * t) {
     if (t->type == GGML_TYPE_F32) {
         ggml_backend_tensor_get(t, out.data(), 0, n * sizeof(float));
     } else if (t->type == GGML_TYPE_F16) {
-        std::vector<ggml_fp16_t> tmp(n);
-        ggml_backend_tensor_get(t, tmp.data(), 0, n * sizeof(ggml_fp16_t));
-        for (int i = 0; i < n; i++) out[i] = ggml_fp16_to_fp32(tmp[i]);
+        if (t->buffer && ggml_backend_buffer_is_host(t->buffer)) {
+            fp16_to_fp32_cpu(static_cast<const ggml_fp16_t *>(t->data), out.data(), n);
+        } else {
+            std::vector<ggml_fp16_t> tmp(n);
+            ggml_backend_tensor_get(t, tmp.data(), 0, n * sizeof(ggml_fp16_t));
+            fp16_to_fp32_cpu(tmp.data(), out.data(), n);
+        }
     } else {
         // Quantized: read raw bytes then dequantize via type traits
         size_t raw_sz = ggml_nbytes(t);
@@ -582,8 +596,8 @@ static inline void conv2d_depthwise_cpu(const float * in, float * out, const flo
     if (out_H <= 0 || out_W <= 0) return;
 #ifdef SNIPLITE_INFERENCE_ASM
     if ((kh == 3 || kh == 5) && kw == kh && (stride == 1 || stride == 2) && pad >= 0) {
-        // Only full windows enter the vector kernel. Borders retain skipped
-        // taps (including signed-zero weights) and the same ky/kx order.
+        // Full horizontal windows use SIMD even on top/bottom padding rows.
+        // Skip absent rows and zero taps without changing the ky/kx order.
         const int left = std::clamp(pad / stride + (pad % stride != 0), 0, out_W);
         const int last = W - kh + pad;
         const int right = last < 0 ? 0 : std::clamp(last / stride + 1, 0, out_W);
@@ -594,12 +608,15 @@ static inline void conv2d_depthwise_cpu(const float * in, float * out, const flo
             const float bv = bias ? bias[c] : 0.0f;
             for (int oy = 0; oy < out_H; ++oy) {
                 const int iy = oy * stride - pad;
-                const bool full_rows = iy >= 0 && iy + kh <= H && left < right;
+                const int first_ky = std::max(0, -iy);
+                const int last_ky = std::min(kh, H - iy);
+                const bool vector_rows = first_ky < last_ky && left < right;
                 int ox = 0;
                 while (ox < out_W) {
-                    if (full_rows && ox == left) {
-                        const SnipliteDepthwiseRow row{src + (size_t)iy * W + ox * stride - pad,
-                            dst + (size_t)oy * out_W + ox, wc, (size_t)W, right - left, stride, bv};
+                    if (vector_rows && ox == left) {
+                        const SnipliteDepthwiseRow row{src + (size_t)(iy + first_ky) * W + ox * stride - pad,
+                            dst + (size_t)oy * out_W + ox, wc + first_ky * kw,
+                            (size_t)W, right - left, stride, bv, last_ky - first_ky};
 #if defined(__AVX2__) && defined(__FMA__)
                         if (kh == 3) sniplite_depthwise3_fma(&row);
                         else sniplite_depthwise5_fma(&row);
