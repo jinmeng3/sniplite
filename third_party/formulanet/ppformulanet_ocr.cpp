@@ -117,6 +117,10 @@ struct ppformulanet_ocr_context {
     bool decoder_step_vulkan_used = false;
     int decoder_step_argmax = 0;
     std::vector<uint8_t> enc_compute_meta;
+    std::unordered_map<const ggml_tensor *, ggml_tensor *> vulkan_resident;
+    std::vector<ggml_context *> vulkan_resident_ctxs;
+    std::vector<ggml_backend_buffer_t> vulkan_resident_bufs;
+
     std::string result_buf;
     std::vector<float> char_confidences; // per-token softmax probabilities
 
@@ -344,9 +348,65 @@ static std::vector<float> apply_conv(const conv_layer & cl, const float * in, in
 // ggml graph: HGNetv2 encoder
 // ---------------------------------------------------------------------------
 
-// Prep conv weight: reshape 2D→4D, cast to F16 for ggml_conv_2d.
-static ggml_tensor * ppfn_prep_conv(ggml_context * g, ggml_tensor * w, int IC, int KH, int KW) {
+// Keep Vulkan encoder weights on the device in the format used by its graph.
+static ggml_tensor * ppfn_graph_resident(ppformulanet_ocr_context * ctx, const ggml_tensor * src, ggml_type type,
+                                         int64_t ne0, int64_t ne1, int64_t ne2, int64_t ne3) {
+    if (!src || !ctx->enc_backend) return nullptr;
+    auto it = ctx->vulkan_resident.find(src);
+    if (it != ctx->vulkan_resident.end()) return it->second;
+
+    ggml_init_params ip = { ggml_tensor_overhead() + 64, nullptr, true };
+    ggml_context * wc = ggml_init(ip);
+    if (!wc) return nullptr;
+    ggml_tensor * dst = ggml_new_tensor_4d(wc, type, ne0, ne1, ne2, ne3);
+    ggml_backend_buffer_t buf = dst ? ggml_backend_alloc_ctx_tensors(wc, ctx->enc_backend) : nullptr;
+    if (!dst || !buf) {
+        if (buf) ggml_backend_buffer_free(buf);
+        ggml_free(wc);
+        return nullptr;
+    }
+
+    std::vector<float> data = to_f32(src);
+    if (data.size() != (size_t)ggml_nelements(dst)) {
+        ggml_backend_buffer_free(buf);
+        ggml_free(wc);
+        return nullptr;
+    }
+    if (type == GGML_TYPE_F16) {
+        std::vector<ggml_fp16_t> half(data.size());
+        ggml_fp32_to_fp16_row(data.data(), half.data(), (int64_t)half.size());
+        ggml_backend_tensor_set(dst, half.data(), 0, ggml_nbytes(dst));
+    } else if (type == GGML_TYPE_F32) {
+        ggml_backend_tensor_set(dst, data.data(), 0, ggml_nbytes(dst));
+    } else {
+        ggml_backend_buffer_free(buf);
+        ggml_free(wc);
+        return nullptr;
+    }
+    ctx->vulkan_resident[src] = dst;
+    ctx->vulkan_resident_ctxs.push_back(wc);
+    ctx->vulkan_resident_bufs.push_back(buf);
+    return dst;
+}
+
+static ggml_tensor * ppfn_prep_bias(ppformulanet_ocr_context * ctx, const ggml_tensor * b) {
+    if (!b) return nullptr;
+    if (ctx->enc_sched_is_vulkan) {
+        ggml_tensor * resident = ppfn_graph_resident(ctx, b, GGML_TYPE_F32, b->ne[0], 1, 1, 1);
+        if (resident) return resident;
+    }
+    return (ggml_tensor *)b;
+}
+
+// Prep conv weight in the graph format. Vulkan weights are converted and uploaded once.
+static ggml_tensor * ppfn_prep_conv(ppformulanet_ocr_context * ctx, ggml_context * g, ggml_tensor * w, int IC,
+                                    int KH, int KW) {
     if (!w) return nullptr;
+    if (ctx->enc_sched_is_vulkan) {
+        const int64_t OC = ggml_n_dims(w) == 2 ? w->ne[1] : w->ne[3];
+        ggml_tensor * resident = ppfn_graph_resident(ctx, w, GGML_TYPE_F16, KW, KH, IC, OC);
+        if (resident) return resident;
+    }
     if (ggml_n_dims(w) == 2) {
         if (w->type != GGML_TYPE_F32 && w->type != GGML_TYPE_F16) w = ggml_cont(g, ggml_cast(g, w, GGML_TYPE_F32));
         w = ggml_reshape_4d(g, w, KW, KH, IC, w->ne[1]);
@@ -356,8 +416,13 @@ static ggml_tensor * ppfn_prep_conv(ggml_context * g, ggml_tensor * w, int IC, i
 }
 
 // Prep depthwise conv weight: reshape 2D→4D with IC=1.
-static ggml_tensor * ppfn_prep_dw(ggml_context * g, ggml_tensor * w, int KH, int KW) {
+static ggml_tensor * ppfn_prep_dw(ppformulanet_ocr_context * ctx, ggml_context * g, ggml_tensor * w, int KH, int KW) {
     if (!w) return nullptr;
+    if (ctx->enc_sched_is_vulkan) {
+        const int64_t OC = ggml_n_dims(w) == 2 ? w->ne[1] : w->ne[3];
+        ggml_tensor * resident = ppfn_graph_resident(ctx, w, GGML_TYPE_F16, KW, KH, 1, OC);
+        if (resident) return resident;
+    }
     if (ggml_n_dims(w) == 2) {
         if (w->type != GGML_TYPE_F32 && w->type != GGML_TYPE_F16) w = ggml_cont(g, ggml_cast(g, w, GGML_TYPE_F32));
         int64_t OC = w->ne[1];
@@ -368,39 +433,45 @@ static ggml_tensor * ppfn_prep_dw(ggml_context * g, ggml_tensor * w, int KH, int
 }
 
 // Conv2D + bias + optional ReLU
-static ggml_tensor * ppfn_conv(ggml_context * g, ggml_tensor * x, const conv_layer & cl, int IC, int KH, int KW,
-                               int stride, bool relu) {
-    ggml_tensor * w = ppfn_prep_conv(g, cl.w, IC, KH, KW);
+static ggml_tensor * ppfn_conv(ppformulanet_ocr_context * ctx, ggml_context * g, ggml_tensor * x, const conv_layer & cl,
+                               int IC, int KH, int KW, int stride, bool relu) {
+    ggml_tensor * w = ppfn_prep_conv(ctx, g, cl.w, IC, KH, KW);
+    if (!w) return nullptr;
     x = ggml_conv_2d(g, w, x, stride, stride, (KH - 1) / 2, (KW - 1) / 2, 1, 1);
     if (cl.b) {
-        ggml_tensor * b = ggml_reshape_3d(g, cl.b, 1, 1, cl.b->ne[0]);
-        x = ggml_add(g, x, b);
+        ggml_tensor * bias = ppfn_prep_bias(ctx, cl.b);
+        if (!bias) return nullptr;
+        x = ggml_add(g, x, ggml_reshape_3d(g, bias, 1, 1, cl.b->ne[0]));
     }
     if (relu) x = ggml_relu(g, x);
     return x;
 }
 
 // Conv2D with explicit padding (for stem k=2 convs that need asymmetric pad)
-static ggml_tensor * ppfn_conv_nopad(ggml_context * g, ggml_tensor * x, const conv_layer & cl, int IC, int KH, int KW,
-                                     int stride, bool relu) {
-    ggml_tensor * w = ppfn_prep_conv(g, cl.w, IC, KH, KW);
+static ggml_tensor * ppfn_conv_nopad(ppformulanet_ocr_context * ctx, ggml_context * g, ggml_tensor * x,
+                                     const conv_layer & cl, int IC, int KH, int KW, int stride, bool relu) {
+    ggml_tensor * w = ppfn_prep_conv(ctx, g, cl.w, IC, KH, KW);
+    if (!w) return nullptr;
     x = ggml_conv_2d(g, w, x, stride, stride, 0, 0, 1, 1); // no auto-pad
     if (cl.b) {
-        ggml_tensor * b = ggml_reshape_3d(g, cl.b, 1, 1, cl.b->ne[0]);
-        x = ggml_add(g, x, b);
+        ggml_tensor * bias = ppfn_prep_bias(ctx, cl.b);
+        if (!bias) return nullptr;
+        x = ggml_add(g, x, ggml_reshape_3d(g, bias, 1, 1, cl.b->ne[0]));
     }
     if (relu) x = ggml_relu(g, x);
     return x;
 }
 
 // Depthwise Conv2D + bias (no ReLU by default for downsample)
-static ggml_tensor * ppfn_dw_conv(ggml_context * g, ggml_tensor * x, const conv_layer & cl, int CH, int KH, int KW,
-                                  int stride, bool relu) {
-    ggml_tensor * w = ppfn_prep_dw(g, cl.w, KH, KW);
+static ggml_tensor * ppfn_dw_conv(ppformulanet_ocr_context * ctx, ggml_context * g, ggml_tensor * x,
+                                  const conv_layer & cl, int CH, int KH, int KW, int stride, bool relu) {
+    ggml_tensor * w = ppfn_prep_dw(ctx, g, cl.w, KH, KW);
+    if (!w) return nullptr;
     x = ggml_conv_2d_dw(g, w, x, stride, stride, (KH - 1) / 2, (KW - 1) / 2, 1, 1);
     if (cl.b) {
-        ggml_tensor * b = ggml_reshape_3d(g, cl.b, 1, 1, cl.b->ne[0]);
-        x = ggml_add(g, x, b);
+        ggml_tensor * bias = ppfn_prep_bias(ctx, cl.b);
+        if (!bias) return nullptr;
+        x = ggml_add(g, x, ggml_reshape_3d(g, bias, 1, 1, cl.b->ne[0]));
     }
     if (relu) x = ggml_relu(g, x);
     return x;
@@ -423,7 +494,7 @@ static ggml_cgraph * build_ppfn_encoder_graph(ppformulanet_ocr_context * ctx, in
 
     // ---- Stem ----
     // stem1: Conv(3→32, k=3, s=2, p=1) + ReLU
-    x = ppfn_conv(g, x, ctx->stem[0], 3, 3, 3, 2, true);
+    x = ppfn_conv(ctx, g, x, ctx->stem[0], 3, 3, 3, 2, true);
     int cur_ch = 32;
 
     // F.pad(x, (0,1,0,1)) — pad right + bottom by 1 pixel
@@ -431,13 +502,13 @@ static ggml_cgraph * build_ppfn_encoder_graph(ppformulanet_ocr_context * ctx, in
     x = ggml_pad_ext(g, x, 0, 1, 0, 1, 0, 0, 0, 0);
 
     // stem2a: Conv(32→16, k=2, s=1, p=0) + ReLU
-    ggml_tensor * x2 = ppfn_conv_nopad(g, x, ctx->stem[1], 32, 2, 2, 1, true);
+    ggml_tensor * x2 = ppfn_conv_nopad(ctx, g, x, ctx->stem[1], 32, 2, 2, 1, true);
 
     // F.pad(x2, (0,1,0,1))
     x2 = ggml_pad_ext(g, x2, 0, 1, 0, 1, 0, 0, 0, 0);
 
     // stem2b: Conv(16→32, k=2, s=1, p=0) + ReLU
-    x2 = ppfn_conv_nopad(g, x2, ctx->stem[2], 16, 2, 2, 1, true);
+    x2 = ppfn_conv_nopad(ctx, g, x2, ctx->stem[2], 16, 2, 2, 1, true);
 
     // MaxPool2d(k=2, s=1) on the padded stem1 output (x still has padding)
     // Input is already padded by (0,1,0,1), so maxpool k=2 s=1 gives same spatial as stem2b
@@ -448,11 +519,11 @@ static ggml_cgraph * build_ppfn_encoder_graph(ppformulanet_ocr_context * ctx, in
     cur_ch = 64;
 
     // stem3: Conv(64→32, k=3, s=2) + ReLU
-    x = ppfn_conv(g, x, ctx->stem[3], 64, 3, 3, 2, true);
+    x = ppfn_conv(ctx, g, x, ctx->stem[3], 64, 3, 3, 2, true);
     cur_ch = 32;
 
     // stem4: Conv(32→48, k=1, s=1) + ReLU
-    x = ppfn_conv(g, x, ctx->stem[4], 32, 1, 1, 1, true);
+    x = ppfn_conv(ctx, g, x, ctx->stem[4], 32, 1, 1, 1, true);
     cur_ch = 48;
 
     // ---- 4 Stages ----
@@ -461,7 +532,7 @@ static ggml_cgraph * build_ppfn_encoder_graph(ppformulanet_ocr_context * ctx, in
 
         // Depthwise downsample (3×3, s=2, no ReLU)
         if (st.has_downsample) {
-            x = ppfn_dw_conv(g, x, st.downsample, cur_ch, 3, 3, 2, false);
+            x = ppfn_dw_conv(ctx, g, x, st.downsample, cur_ch, 3, 3, 2, false);
         }
 
         // HG_Blocks
@@ -481,11 +552,11 @@ static ggml_cgraph * build_ppfn_encoder_graph(ppformulanet_ocr_context * ctx, in
 
                 if (lay.is_light) {
                     // LightConvBNAct: conv1 (1×1, no ReLU) + conv2 (depthwise + ReLU)
-                    x = ppfn_conv(g, x, lay.conv1, in_c, 1, 1, 1, false);
-                    x = ppfn_dw_conv(g, x, lay.conv2, layer_out_ch, st.kernel_size, st.kernel_size, 1, true);
+                    x = ppfn_conv(ctx, g, x, lay.conv1, in_c, 1, 1, 1, false);
+                    x = ppfn_dw_conv(ctx, g, x, lay.conv2, layer_out_ch, st.kernel_size, st.kernel_size, 1, true);
                 } else {
                     // ConvBNAct: single conv + ReLU
-                    x = ppfn_conv(g, x, lay.conv, in_c, st.kernel_size, st.kernel_size, 1, true);
+                    x = ppfn_conv(ctx, g, x, lay.conv, in_c, st.kernel_size, st.kernel_size, 1, true);
                 }
 
                 // Concat this layer's output with running concat
@@ -501,8 +572,8 @@ static ggml_cgraph * build_ppfn_encoder_graph(ppformulanet_ocr_context * ctx, in
             // Aggregation: squeeze (1×1 + ReLU) → excite (1×1 + ReLU)
             int total_ch = cur_ch + st.n_layers * layer_out_ch;
             int squeeze_ch = st.out_ch / 2;
-            x = ppfn_conv(g, block_input, blk.agg_squeeze, total_ch, 1, 1, 1, true);
-            x = ppfn_conv(g, x, blk.agg_excite, squeeze_ch, 1, 1, 1, true);
+            x = ppfn_conv(ctx, g, block_input, blk.agg_squeeze, total_ch, 1, 1, 1, true);
+            x = ppfn_conv(ctx, g, x, blk.agg_excite, squeeze_ch, 1, 1, 1, true);
             cur_ch = st.out_ch;
 
             // Residual
@@ -1410,7 +1481,12 @@ ppformulanet_ocr_context * ppformulanet_ocr_init(const char * model_path, int n_
 
 void ppformulanet_ocr_free(ppformulanet_ocr_context * ctx) {
     if (!ctx) return;
+    for (auto * buf : ctx->vulkan_resident_bufs)
+        if (buf) ggml_backend_buffer_free(buf);
+    for (auto * resident_ctx : ctx->vulkan_resident_ctxs)
+        if (resident_ctx) ggml_free(resident_ctx);
     if (ctx->enc_sched) ggml_backend_sched_free(ctx->enc_sched);
+    if (ctx->enc_backend) ggml_backend_free(ctx->enc_backend);
     if (ctx->enc_cpu_backend) ggml_backend_free(ctx->enc_cpu_backend);
     if (ctx->backend) ggml_backend_free(ctx->backend);
     core_gguf::free_weights(ctx->wl);

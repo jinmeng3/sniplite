@@ -118,6 +118,7 @@ static const WCHAR *kHkKeys[HK_COUNT] = {NULL,           L"hotkey",     L"quick_
                                          L"toggle_hotkey", L"ocr_hotkey", L"ocr_copy_hotkey"};
 static const WCHAR *kThemes[] = {L"auto", L"light", L"dark"}; /* by THEME_* */
 static const WCHAR *kDetects[] = {L"controls", L"windows", L"elements"}; /* by DETECT_* */
+static const WCHAR *kInference[] = {L"auto", L"vulkan", L"avx2", L"cpu"}; /* by INFER_* */
 /* the file names: two or more of y M d H m s in a row stand for that part of the time */
 static const WCHAR *kNames[NAME_COUNT] = {L"sniplite_yyyy-MM-dd_HH-mm-ss",   L"sniplite_yyyyMMdd_HHmmss",
                                           L"Screenshot_yyyy-MM-dd_HH-mm-ss", L"Screenshot_yyyyMMdd_HHmmss",
@@ -228,6 +229,8 @@ bool config_load(Config *c)
     c->theme = ini_pick(path, L"theme", kThemes, COUNTOF(kThemes));
     c->detect = ini_pick(path, L"detect", kDetects, COUNTOF(kDetects));
     c->name = ini_pick(path, L"file_name", kNames, NAME_COUNT);
+    c->ocr_backend = ini_pick(path, L"ocr_backend", kInference, COUNTOF(kInference));
+    c->formula_backend = ini_pick(path, L"formula_backend", kInference, COUNTOF(kInference));
     char *text = ini_text(path);
     ini_utf8(text, "save_dir", c->save_dir, COUNTOF(c->save_dir));
     if (!c->save_dir[0]) /* as 1.4 called it */
@@ -258,8 +261,10 @@ bool config_save(const Config *c)
     str_addf(&s, L"capture=%s\r\ntray=%d\r\nauto_update=%d\r\npin_top=%d\r\nrack_bottom=%d\r\npin_text=%d\r\n",
              c->gdi ? L"gdi" : L"dxgi", c->tray ? 1 : 0, c->auto_update ? 1 : 0, c->pin_top ? 1 : 0,
              c->rack_bottom ? 1 : 0, c->pin_text ? 1 : 0);
-    str_addf(&s, L"exit_ask=%d\r\ntheme=%s\r\ndetect=%s\r\nalso_save=%d\r\nfile_name=%s\r\nsave_dir=", c->exit_ask ? 1 : 0,
-             kThemes[c->theme], kDetects[c->detect], c->also_save ? 1 : 0, kNames[c->name]);
+    str_addf(&s, L"exit_ask=%d\r\ntheme=%s\r\ndetect=%s\r\nalso_save=%d\r\nfile_name=%s\r\n"
+                L"ocr_backend=%s\r\nformula_backend=%s\r\nsave_dir=",
+             c->exit_ask ? 1 : 0, kThemes[c->theme], kDetects[c->detect], c->also_save ? 1 : 0, kNames[c->name],
+             kInference[c->ocr_backend], kInference[c->formula_backend]);
     str_add(&s, c->save_dir); /* by itself: str_addf stops at 1024 characters */
     str_add(&s, L"\r\nlast_dir=");
     str_add(&s, c->last_dir);

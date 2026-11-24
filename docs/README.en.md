@@ -10,13 +10,13 @@
 
 [![Version](https://img.shields.io/github/v/tag/jinmeng3/sniplite?sort=date&label=Version&style=flat-square&color=1677e5)](https://github.com/jinmeng3/sniplite/releases) [![System](https://img.shields.io/badge/System-Windows%2010%20%2F%2011-3b82f6?style=flat-square)](#system-requirements) [![License](https://img.shields.io/badge/License-MIT-3b82f6?style=flat-square)](../LICENSE)
 
-<img src="../pics/zh/demo-edit.png" alt="Annotate a screenshot with arrows, text, and marks" width="66%">
+<img src="../pics/demo-edit.png" alt="Annotate a screenshot with arrows, text, and marks" width="66%">
 <br>
-<img src="../pics/zh/demo-select.png" alt="Screenshot selection and magnifier" width="32.5%"> <img src="../pics/zh/demo-pin.png" alt="Keep a screenshot on top of other windows" width="32.5%">
+<img src="../pics/demo-select.png" alt="Screenshot selection and magnifier" width="32.5%"> <img src="../pics/demo-pin.png" alt="Keep a screenshot on top of other windows" width="32.5%">
 <br>
-<img src="../pics/zh/demo-ocr.png" alt="Recognize text while preserving table structure" width="66%">
+<img src="../pics/demo-ocr.png" alt="Recognize text while preserving table structure" width="66%">
 <br>
-<img src="../pics/zh/demo-long.png" alt="Scroll and stitch a long screenshot" width="66%">
+<img src="../pics/demo-long.png" alt="Select a scrollable page before stitching a long screenshot" width="66%">
 
 </div>
 
@@ -25,11 +25,27 @@
 - **Screenshots:** Detect windows and controls, with a magnifier and pixel-level selection adjustment.
 - **Annotations and pins:** Draw arrows, text, numbers, and mosaics; keep screenshots above other windows.
 - **QR recognition:** Press `Ctrl+Q` inside a screenshot selection. Results stay on your PC and can be copied.
-- **Formula recognition:** An optional CrispEmbed module converts screenshot selections to LaTeX locally with the Texo-Distill GGUF, running on CPU.
+- **Formula recognition:** An optional CrispEmbed module converts screenshot selections to LaTeX locally with the Texo-Distill GGUF. Preferences let you choose Auto, Vulkan, AVX2, or CPU; accelerated backends fall back to CPU.
 - **Text recognition:** An optional OCR module recognizes text and tables locally.
 - **Scrolling screenshots:** Scroll a page and automatically stitch the captured content.
 - **Lightweight:** Performance-sensitive capture, composition, and drawing code uses x86-64 assembly. The main program does not link the C runtime.
 - **Privacy:** Screenshots and recognition are processed locally. The app contains no ads.
+
+## Portable package performance
+
+Measured on one Windows PC. OCR and FormulaNet cases had one warm-up and five independent process runs; all wall-time values are medians.
+
+| Portable package | QR (ms; WS/commit MiB) | OCR one line (ms; WS/commit MiB) | FormulaNet (ms; WS/commit MiB) |
+| --- | ---: | ---: | ---: |
+| QR only | 34.5; 9.8/2.1 | — | — |
+| QR + OCR CPU | 30.8; 9.8/2.1 | 315.5; 156.1/305.3 | — |
+| QR + OCR AVX2 | 30.7; 9.8/2.1 | 237.2; 156.2/305.3 | — |
+| QR + OCR Vulkan | 30.5; 9.8/2.1 | 295.9; 84.7/390.2 | — |
+| QR + OCR + FormulaNet CPU | 31.7; 9.8/2.1 | 363.8; 156.1/305.3 | 1,428.5; 128.8/288.9 |
+| QR + OCR + FormulaNet AVX2 | 32.0; 9.8/2.1 | 249.4; 156.2/305.3 | 477.5; 128.9/288.9 |
+| QR + OCR + FormulaNet Vulkan | 31.3; 9.8/2.1 | 343.2; 84.7/390.2 | 386.9; 96.7/351.3 |
+
+QR used the same test code; OCR used a 1000×260 RGB image with one text line; FormulaNet used `x² + y² = 1` at 400×100. Wall time includes process startup, model initialization, preprocessing, and inference. Memory is peak working set/peak commit sampled through Windows PSAPI every 2 ms; dedicated VRAM is excluded, and OCR memory includes both detector and recognizer models. Results vary with the GPU, driver, and system state.
 
 ## Download
 
@@ -89,10 +105,10 @@ The QR tab in Preferences can install or remove the helper. After installation, 
 
 ### How do I extract text from a screenshot?
 
-Select an area and click the text recognition button or press `Ctrl+O`. Results appear in a panel beside the selection and can be edited and copied. Tables can preserve their columns or be converted to Markdown. The OCR module uses the user-supplied CrispEmbed PP-OCRv6 tiny FP16 GGUF detector and recognizer through a native OCR engine built from source, processing images locally. Both detector and recognizer use CPU in CPU packages. The Vulkan package prefers Vulkan for both models and falls back to CPU if the device is unavailable or initialization or inference fails; it also enables graph optimization.
+Select an area and click the text recognition button or press `Ctrl+O`. Results appear in a panel beside the selection and can be edited and copied. Tables can preserve their columns or be converted to Markdown. The OCR module uses the user-supplied CrispEmbed PP-OCRv6 tiny FP16 GGUF detector and recognizer through a native OCR engine built from source, processing images locally. The OCR tab in Preferences offers Auto, Vulkan, AVX2, and CPU; Auto tries Vulkan, AVX2, then generic CPU, and accelerated backends fall back to CPU when unavailable or when inference fails.
 ### How do I recognize a formula in a screenshot?
 
-Select the formula in the capture editor and click the “∫” button to recognize and copy LaTeX directly. The capture editor closes after the copy succeeds. The adjacent eye button opens sniplite’s native MicroTeX preview window, where LaTeX remains editable and changes render live. Edited formulas can be copied with the button or `Ctrl+Enter`; syntax errors are flagged in the preview. If the current capture or selection has no matching recognition result, the eye button recognizes it before opening; it does not open an empty page when no formula is found. The preview opens on the monitor containing the selection. Extra spaces around braces and operators are removed while word separators are preserved. The formula module is about 82 MB installed and uses the local Texo-Distill GGUF with a CPU formula engine derived from CrispEmbed.
+Select the formula in the capture editor and click the “∫” button to recognize and copy LaTeX directly. The capture editor closes after the copy succeeds. The adjacent eye button opens sniplite’s native MicroTeX preview window, where LaTeX remains editable and changes render live. Edited formulas can be copied with the button or `Ctrl+Enter`; syntax errors are flagged in the preview. If the current capture or selection has no matching recognition result, the eye button recognizes it before opening; it does not open an empty page when no formula is found. The preview opens on the monitor containing the selection. Extra spaces around braces and operators are removed while word separators are preserved. The formula module is about 82 MB installed and uses the local Texo-Distill GGUF with CrispEmbed; Preferences offer Auto, Vulkan, AVX2, or CPU, with CPU fallback when an accelerated backend fails.
 No progress dialog appears during recognition. Failures and incomplete output leave the clipboard unchanged. Solid-color blank selections are rejected.
 
 

@@ -28,6 +28,7 @@
 #include <vector>
 
 #include "env_gate.h"
+#include "conv2d_runtime.h"
 
 #ifdef SNIPLITE_INFERENCE_ASM
 #include "inference_kernels.h"
@@ -794,7 +795,7 @@ static inline void conv2d_store_mk_block(const float * acc, const float * bias, 
 // (CRISPEMBED_CONV2D_MK=1 via the dispatcher; implies the GEMM path).
 static inline void conv2d_im2col_cpu(const float * in, float * out, const float * weight, const float * bias, int in_ch,
                                      int out_ch, int H, int W, int kh, int kw, int stride, int pad, int groups = 1,
-                                     int n_threads = 1, bool micro_kernel = false) {
+                                     int n_threads = 1, bool micro_kernel = false, Conv2dRuntime * runtime = nullptr) {
     const int out_H = (H + 2 * pad - kh) / stride + 1;
     const int out_W = (W + 2 * pad - kw) / stride + 1;
     if (out_H <= 0 || out_W <= 0) return;
@@ -810,9 +811,10 @@ static inline void conv2d_im2col_cpu(const float * in, float * out, const float 
         (int)std::clamp((size_t)(512 * 1024 / sizeof(float)) / (size_t)std::max(K, 1), (size_t)16, (size_t)256);
     const size_t n_tiles = (n_pos + tile - 1) / tile;
 
-    // Micro-kernel weight packing: each ocb-row block interleaved
-    // as [k][r], packed once per call and shared read-only by every thread.
-    std::vector<float> wpack;
+    // Packed weights are retained only by an explicit immutable model context.
+    // Legacy callers and oversized packs retain their original local storage.
+    std::vector<float> local_wpack;
+    const float * wpack = nullptr;
 #ifdef SNIPLITE_INFERENCE_ASM
     // GCC's AVX2 check includes OS support for YMM state. Choose before packing.
     const bool avx2_fma = micro_kernel && __builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma");
@@ -821,12 +823,22 @@ static inline void conv2d_im2col_cpu(const float * in, float * out, const float 
     const int ocb = CONV2D_MK_OCB;
 #endif
     const int n_blk = micro_kernel && K > 0 ? ch_per_group_out / ocb : 0;
-    if (n_blk > 0) {
-        wpack.resize((size_t)groups * n_blk * ocb * K);
+    if (n_blk > 0 && runtime) {
+        wpack = runtime->packed_weights({weight, in_ch, out_ch, kh, kw, groups, ocb,
+#ifdef SNIPLITE_INFERENCE_ASM
+                                         avx2_fma ? 2 : 1
+#else
+                                         1
+#endif
+        });
+    }
+    if (n_blk > 0 && !wpack) {
+        local_wpack.resize((size_t)groups * n_blk * ocb * K);
+        wpack = local_wpack.data();
         for (int g = 0; g < groups; g++) {
             const float * w_g = weight + (size_t)g * ch_per_group_out * K;
             for (int blk = 0; blk < n_blk; blk++) {
-                float * wp = wpack.data() + ((size_t)g * n_blk + blk) * ocb * K;
+                float * wp = local_wpack.data() + ((size_t)g * n_blk + blk) * ocb * K;
                 for (int r = 0; r < ocb; r++) {
                     const float * wrow = w_g + (size_t)(blk * ocb + r) * K;
                     for (int k = 0; k < K; k++) wp[(size_t)k * ocb + r] = wrow[k];
@@ -890,7 +902,7 @@ static inline void conv2d_im2col_cpu(const float * in, float * out, const float 
                     }
                 }
                 for (int blk = 0; blk < n_blk; blk++) {
-                    const float * wp = wpack.data() + ((size_t)g * n_blk + blk) * (size_t)ocb * K;
+                    const float * wp = wpack + ((size_t)g * n_blk + blk) * (size_t)ocb * K;
                     const size_t oc = (size_t)oc_off + blk * ocb;
                     const float * b = bias ? bias + oc : nullptr;
                     float * dst = out + oc * n_pos + p0;
@@ -940,7 +952,27 @@ static inline void conv2d_im2col_cpu(const float * in, float * out, const float 
     };
 
     const size_t xpack_len = n_blk > 0 ? (size_t)tile * K : 0;
-    const int nt = (int)std::min((size_t)std::max(n_threads, 1), n_tiles);
+    int nt = (int)std::min((size_t)std::max(n_threads, 1), n_tiles);
+    if (runtime) {
+        struct TileContext {
+            decltype(run_tiles) * run;
+            size_t n_tiles, col_floats;
+        } context{&run_tiles, n_tiles, (size_t)tile * K};
+        const auto job = [](void * opaque, size_t begin, size_t end, float * scratch) {
+            auto & c = *static_cast<TileContext *>(opaque);
+            while (begin < end) {
+                const int group = (int)(begin / c.n_tiles);
+                const size_t first = begin % c.n_tiles;
+                const size_t count = std::min(end - begin, c.n_tiles - first);
+                (*c.run)(group, first, first + count, scratch, scratch + c.col_floats);
+                begin += count;
+            }
+        };
+        if (runtime->run(job, &context, (size_t)groups * n_tiles, nt, context.col_floats + xpack_len)) return;
+        // An unusually large single lane uses the original temporary buffer,
+        // without creating a separate throwaway thread pool for this layer.
+        nt = 1;
+    }
     for (int g = 0; g < groups; g++) {
         if (nt <= 1) {
             std::vector<float> col((size_t)tile * K + xpack_len);
@@ -968,6 +1000,7 @@ struct conv2d_engine_prefs_t {
     bool im2col = false;
     bool mk = false;
     int threads = 1;
+    Conv2dRuntime * runtime = nullptr;
 };
 
 inline conv2d_engine_prefs_t & conv2d_engine_prefs() {
@@ -977,8 +1010,8 @@ inline conv2d_engine_prefs_t & conv2d_engine_prefs() {
 
 struct conv2d_prefs_scope {
     conv2d_engine_prefs_t saved;
-    conv2d_prefs_scope(bool mk, int threads) : saved(conv2d_engine_prefs()) {
-        conv2d_engine_prefs() = { true, mk, threads < 1 ? 1 : threads };
+    conv2d_prefs_scope(bool mk, int threads, Conv2dRuntime * runtime = nullptr) : saved(conv2d_engine_prefs()) {
+        conv2d_engine_prefs() = { true, mk, threads < 1 ? 1 : threads, runtime };
     }
     ~conv2d_prefs_scope() { conv2d_engine_prefs() = saved; }
     conv2d_prefs_scope(const conv2d_prefs_scope &) = delete;
@@ -1041,7 +1074,7 @@ static inline void conv2d_cpu(const float * in, float * out, const float * weigh
         if (im2col) {
             int nt = nt_env ? atoi(nt_env) : prefs.threads;
             if (nt < 1) nt = 1;
-            conv2d_im2col_cpu(in, out, weight, bias, in_ch, out_ch, H, W, kh, kw, stride, pad, groups, nt, mk);
+            conv2d_im2col_cpu(in, out, weight, bias, in_ch, out_ch, H, W, kh, kw, stride, pad, groups, nt, mk, prefs.runtime);
             return;
         }
     }

@@ -1,5 +1,6 @@
 #pragma GCC optimize("O2")
 #include "formula.h"
+#include "config.h"
 
 #define FORMULA_MAX_PIXELS 16000000u
 #define FORMULA_OUTPUT_CAP 65536
@@ -17,6 +18,7 @@ static struct {
     CrispRecognize recognize;
     bool ready, bad;
     WCHAR err[200];
+    int backend;
 } F;
 
 const WCHAR *formula_error(void) { return F.err; }
@@ -50,6 +52,13 @@ static void unload(void)
     F.recognize = NULL;
     F.ready = false;
 }
+void formula_set_backend(int backend)
+{
+    if ((unsigned)backend >= INFER_COUNT) backend = INFER_AUTO;
+    if (F.backend == backend) return;
+    unload();
+    F.backend = backend;
+}
 
 static bool load(void)
 {
@@ -63,8 +72,10 @@ static bool load(void)
                 runtime_path(L"cpu-avx2\\sniplite_formula.dll", avx2_path, COUNTOF(avx2_path));
     bool cpu_generic = runtime_path(L"cpu-generic\\sniplite_formula.dll", cpu_generic_path, COUNTOF(cpu_generic_path));
     bool cpu = cpu_generic || runtime_path(L"sniplite_formula.dll", cpu_path, COUNTOF(cpu_path));
-    if (vulkan) candidate[count++] = vulkan_path;
-    if (avx2) candidate[count++] = avx2_path;
+    bool try_vulkan = F.backend == INFER_AUTO || F.backend == INFER_VULKAN;
+    bool try_avx2 = F.backend == INFER_AUTO || F.backend == INFER_AVX2;
+    if (try_vulkan && vulkan) candidate[count++] = vulkan_path;
+    if (try_avx2 && avx2) candidate[count++] = avx2_path;
     if (cpu) candidate[count++] = cpu_generic ? cpu_generic_path : cpu_path;
     if (!count) {
         error(L"Formula runtime is not installed");
@@ -194,6 +205,7 @@ static int formula_service(void)
         FormulaRequest req;
         if (!read_exact(in, &req, sizeof req) || !req.w || !req.h || (uint64_t)req.w * req.h > 16000000)
             break;
+        if (req.backend >= INFER_COUNT) req.backend = INFER_AUTO;
         size_t bytes = (size_t)req.w * req.h * sizeof(uint32_t);
         if (bytes > cap) {
             uint32_t *next = mem_alloc(bytes);
@@ -205,6 +217,7 @@ static int formula_service(void)
         }
         if (!read_exact(in, pixels, (uint32_t)bytes))
             break;
+        formula_set_backend((int)req.backend);
         Str latex = {0};
         bool ok = formula_run(pixels, (int)req.w, (int)req.h, &latex);
         int n = ok ? WideCharToMultiByte(CP_UTF8, 0, latex.p, latex.n, NULL, 0, NULL, NULL) : 0;
@@ -232,6 +245,9 @@ static bool parse_dimension(const WCHAR *s,int *value)
 }
 int formula_helper(int argc,WCHAR **argv)
 {
+    Config config;
+    config_load(&config);
+    formula_set_backend(config.formula_backend);
     if (argc >= 2 && arg_eq(argv[1], L"--formula-worker")) return formula_service();
     if(argc<4||!arg_eq(argv[1],L"--formula-raw"))return 1;
     int w,h;if(!parse_dimension(argv[2],&w)||!parse_dimension(argv[3],&h)||(uint64_t)w*h>16000000)return 1;

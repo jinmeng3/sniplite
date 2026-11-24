@@ -5,6 +5,7 @@
 /* the last two are for text: taken from the system only while the text recognition module is there */
 enum { HK_CAPTURE = 1, HK_QUICK, HK_PIN, HK_TOGGLE, HK_OCR, HK_OCRCOPY, HK_COUNT };
 enum { THEME_AUTO, THEME_LIGHT, THEME_DARK }; /* the capture's bars: as Windows is set, or always one */
+enum { INFER_AUTO, INFER_VULKAN, INFER_AVX2, INFER_CPU, INFER_COUNT };
 enum { NAME_COUNT = 7, NAME_CAP = 32 };       /* the file names to choose from; room for the longest, with its 0 */
 
 typedef struct {
@@ -21,6 +22,8 @@ typedef struct {
     int theme;                        /* THEME_* */
     int detect;                       /* DETECT_* (ov_layout.inc) */
     int name;                         /* which of the NAME_COUNT file names (name_format) */
+    int ocr_backend;                 /* INFER_* */
+    int formula_backend;             /* INFER_* */
     WCHAR save_dir[MAX_PATH];         /* default save location; empty: the desktop */
     WCHAR last_dir[MAX_PATH];         /* the folder of the file last saved through the save dialog */
     WCHAR block_apps[256];            /* no hotkeys while a program of these is in front: file names, | between them */

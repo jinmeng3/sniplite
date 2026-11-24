@@ -25,6 +25,7 @@
  * sniplite.exe --ocr-file <picture> [--tab] prints a picture's text instead (UTF-8,
  * on standard output): for scripts. */
 #include "ocr.h"
+#include "config.h"
 #include "image.h"
 #include "lang.h"
 #include "settings.h"
@@ -112,6 +113,7 @@ typedef struct {
     uint64_t map;   /* its file mapping, a handle of the helper's own */
     RECT at;        /* what it shows, on the screen: the panel goes beside it, a notice into its middle */
     uint64_t owner; /* OP_PANEL: the window the panel belongs to */
+    uint32_t backend;
 } Wire;
 
 /* ---- the background program's side ------------------------------------------------- */
@@ -231,8 +233,13 @@ typedef struct {
 
 static bool job_send(uint32_t op, const Pic *pic, const RECT *at, HWND owner)
 {
-    Wire wire = {op, 0, 0, 0, {0, 0, 0, 0}, (uint64_t)(UINT_PTR)owner};
+    Wire wire = {op, 0, 0, 0, {0, 0, 0, 0}, (uint64_t)(UINT_PTR)owner, INFER_AUTO};
     HANDLE map = NULL;
+    if (op != OP_HIDE) {
+        Config config;
+        config_load(&config);
+        wire.backend = (uint32_t)config.ocr_backend;
+    }
     if (at)
         wire.at = *at;
     if (pic) {
@@ -1177,6 +1184,7 @@ static void job_pump(void)
     HANDLE th = NULL;
     if (r) {
         r->wire = *U.next;
+        ocr_set_backend((int)U.next->backend);
         th = CreateThread(NULL, 0, read_thread, r, 0, NULL);
     }
     if (th) {
@@ -1309,6 +1317,9 @@ static int ocr_file(int argc, WCHAR **argv)
 /* sniplite.exe --ocr: load the module, then do what comes down the pipe */
 int ocr_helper(int argc, WCHAR **argv)
 {
+    Config config;
+    config_load(&config);
+    ocr_set_backend(config.ocr_backend);
     if (argc > 1 && arg_eq(argv[1], L"--ocr-file"))
         return ocr_file(argc, argv);
     WNDCLASSW wc = {0};

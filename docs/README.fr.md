@@ -89,7 +89,7 @@ Les parties qui doivent aller vite (capture, composition, dessin et écran de ca
 
 **Comment récupérer le texte d'une capture ?**
 
-Sélectionnez une zone et cliquez sur le bouton de texte (Ctrl+O) : le texte apparaît dans un panneau à côté de la sélection, où vous pouvez le sélectionner, le modifier et le copier. Un tableau garde ses colonnes et se colle dans un tableur cellule par cellule, ou en Markdown si vous préférez. Ctrl+Shift+C copie le texte directement. Le module OCR utilise le détecteur PP-OCRv6 tiny GGUF et le modèle de reconnaissance small GGUF avec CrispEmbed/GGML sur CPU ; les images sont traitées localement. Il ajoute environ 81 Mo seul, ou 21 Mo si le module Formules est déjà installé. Installez-le depuis l'onglet OCR des préférences, cochez-le dans l'installeur, ou prenez la version portable avec OCR.
+Sélectionnez une zone et cliquez sur le bouton de texte (Ctrl+O) : le texte apparaît dans un panneau à côté de la sélection, où vous pouvez le sélectionner, le modifier et le copier. Un tableau garde ses colonnes et se colle dans un tableur cellule par cellule, ou en Markdown si vous préférez. Ctrl+Shift+C copie le texte directement. Le module OCR utilise le détecteur PP-OCRv6 tiny GGUF et le modèle small GGUF avec CrispEmbed/GGML ; le traitement reste local. L’onglet OCR des préférences propose Auto, Vulkan, AVX2 et CPU. Auto essaie Vulkan, AVX2 puis le CPU générique ; les backends accélérés reviennent au CPU s’ils sont indisponibles ou échouent. Le module ajoute environ 81 Mo seul, ou 21 Mo si le module Formules est déjà installé. Installez-le depuis les préférences, l’installeur ou la version portable avec OCR.
 
 **Comment faire une capture défilante ?**
 

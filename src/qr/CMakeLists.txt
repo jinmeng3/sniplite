@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(sniplite_qr LANGUAGES C CXX)
+project(sniplite_qr LANGUAGES C CXX ASM)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -21,7 +21,10 @@ set(ZXING_ENABLE_QRCODE ON CACHE BOOL "" FORCE)
 add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../../third_party/zxing-cpp/core"
                  "${CMAKE_CURRENT_BINARY_DIR}/zxing")
 
-add_executable(sniplite_qr "${CMAKE_CURRENT_LIST_DIR}/../qr_main.c")
+add_executable(sniplite_qr
+    "${CMAKE_CURRENT_LIST_DIR}/../qr_main.c"
+    "${CMAKE_CURRENT_LIST_DIR}/../pixel_ops.S"
+)
 target_link_libraries(sniplite_qr PRIVATE ZXing::ZXing ole32 uuid windowscodecs)
 set_target_properties(sniplite_qr PROPERTIES LINKER_LANGUAGE CXX)
 

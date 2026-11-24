@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "../third_party/zxing-cpp/core/src/ZXingC.h"
+#include "pixel_ops.h"
 
 #define MAX_PIXELS (16u * 1024u * 1024u)
 
@@ -101,13 +102,7 @@ static int decode_image(const Image *im)
         fwprintf(stderr, L"QR decoder could not allocate image buffers.\n");
         return 1;
     }
-    for (UINT y = 0; y < im->height; y++) {
-        for (UINT x = 0; x < im->width; x++) {
-            uint32_t p = im->pixels[(size_t)y * im->width + x];
-            unsigned b = p & 255, g = (p >> 8) & 255, r = (p >> 16) & 255;
-            gray[(size_t)y * im->width + x] = (uint8_t)((77 * r + 150 * g + 29 * b) >> 8);
-        }
-    }
+    pixel_bgra_to_gray(gray, (const unsigned char *)im->pixels, count);
 
     ZXing_ImageView *view = ZXing_ImageView_new_checked(gray, (int)count,
             (int)im->width, (int)im->height, ZXing_ImageFormat_Lum, (int)im->width, 1);

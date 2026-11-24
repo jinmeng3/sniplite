@@ -4,6 +4,8 @@
 #include <windows.h>
 
 #include "ocr_engine.h"
+#include "pixel_ops.h"
+#include "ocr_preprocess.h"
 #include "ocr_crop.h"
 #include "ppocrv6_det.h"
 #include "ppocrv6_ocr.h"
@@ -47,9 +49,11 @@ struct Context {
     std::unique_ptr<ppocrv6_ocr_context, RecognizerDeleter> recognizer;
     std::vector<std::string> texts;
     std::vector<SnipliteOcrResult> results;
+    std::vector<uint8_t> rgb;
     std::string detector_path, recognizer_path;
     int threads = 1;
     bool vulkan = false;
+    OcrResizePlan resize_plan;
 };
 
 bool initialize(Context &ctx, bool vulkan) {
@@ -126,11 +130,7 @@ bool load_bitmap(const char *path, std::vector<uint8_t> &rgb, int &width, int &h
     for (int y = height - 1; y >= 0; --y) {
         if (!read_exact(file.handle, row.data(), static_cast<DWORD>(row.size()))) return false;
         uint8_t *dst = rgb.data() + static_cast<size_t>(y) * width * 3;
-        for (int x = 0; x < width; ++x) {
-            dst[3 * x] = row[4 * x + 2];
-            dst[3 * x + 1] = row[4 * x + 1];
-            dst[3 * x + 2] = row[4 * x];
-        }
+        pixel_bgra_to_rgb(dst, row.data(), static_cast<std::size_t>(width));
     }
     return true;
 }
@@ -145,24 +145,8 @@ std::vector<ppocrv6_det::box> detect(Context &ctx, const uint8_t *rgb, int w, in
     const uint8_t *input = rgb;
     if (rw != w || rh != h) {
         resized.resize(static_cast<size_t>(rw) * rh * 3);
-        for (int y = 0; y < rh; ++y) {
-            const float fy = std::max(0.0f, (y + 0.5f) * h / rh - 0.5f);
-            const int y0 = std::min(h - 1, int(fy)), y1 = std::min(h - 1, y0 + 1);
-            const float wy = fy - y0;
-            for (int x = 0; x < rw; ++x) {
-                const float fx = std::max(0.0f, (x + 0.5f) * w / rw - 0.5f);
-                const int x0 = std::min(w - 1, int(fx)), x1 = std::min(w - 1, x0 + 1);
-                const float wx = fx - x0;
-                for (int c = 0; c < 3; ++c) {
-                    const float a = rgb[(static_cast<size_t>(y0) * w + x0) * 3 + c] * (1 - wx) +
-                                    rgb[(static_cast<size_t>(y0) * w + x1) * 3 + c] * wx;
-                    const float b = rgb[(static_cast<size_t>(y1) * w + x0) * 3 + c] * (1 - wx) +
-                                    rgb[(static_cast<size_t>(y1) * w + x1) * 3 + c] * wx;
-                    resized[(static_cast<size_t>(y) * rw + x) * 3 + c] =
-                        static_cast<uint8_t>(std::clamp(a * (1 - wy) + b * wy, 0.0f, 255.0f));
-                }
-            }
-        }
+        ocr_resize_prepare(ctx.resize_plan, w, rw);
+        ocr_resize_rgb(resized.data(), rgb, w, h, rw, rh, ctx.resize_plan.columns.data());
         input = resized.data();
     }
     auto boxes = ppocrv6_det::detect_raw(ctx.detector.get(), input, rw, rh, 3, 0.2f);
@@ -188,33 +172,12 @@ bool detector_succeeded(const Context &ctx) {
     return true;
 }
 
-void set_graph_acceptance(Context &ctx, size_t regions) {
-    // The original region budget protects Metal planning. CPU batch graphs do
-    // not incur that dispatch cost and must remain available on full pages.
-    if (core_env::on("CRISPEMBED_PPOCRV6_FORCE_CPU") && core_env::on("CRISPEMBED_PPOCRV6_BATCH_GRAPH")) {
-        ppocrv6_ocr_set_graph_accept(ctx.recognizer.get(), 1);
-    } else if (core_env::on("CRISPEMBED_PPOCRV6_GRAPH_ACCEPT")) {
-        long limit = 8;
-        if (const char *value = std::getenv("CRISPEMBED_PPOCRV6_GRAPH_MAX_REGIONS")) {
-            char *end = nullptr;
-            const long parsed = std::strtol(value, &end, 10);
-            if (end != value && *end == '\0' && parsed >= 0) limit = parsed;
-        }
-        ppocrv6_ocr_set_graph_accept(ctx.recognizer.get(), regions <= static_cast<size_t>(limit) ? 1 : 0);
-    } else {
-        ppocrv6_ocr_set_graph_accept(ctx.recognizer.get(), -1);
-    }
-}
 
-bool run(Context &ctx, const char *path) {
-    std::vector<uint8_t> rgb;
-    int width = 0, height = 0;
-    if (!load_bitmap(path, rgb, width, height)) return false;
-    auto boxes = detect(ctx, rgb.data(), width, height);
+bool run(Context &ctx, const uint8_t *rgb, int width, int height) {
+    auto boxes = detect(ctx, rgb, width, height);
     if (!detector_succeeded(ctx)) return false;
     if (boxes.empty()) return true;
     if (boxes.size() > static_cast<size_t>(std::numeric_limits<int>::max())) return false;
-    set_graph_acceptance(ctx, boxes.size());
 
     std::vector<std::vector<uint8_t>> crops;
     std::vector<int> widths, heights;
@@ -233,8 +196,8 @@ bool run(Context &ctx, const char *path) {
                 b.qx[k] > width || b.qy[k] > height) return false;
         int cw = 0, ch = 0;
         const bool quad = std::hypot(b.qx[1] - b.qx[0], b.qy[1] - b.qy[0]) > 1.0f;
-        auto crop = quad ? ocr_crop::extract_quad(rgb.data(), width, height, 3, b.qx, b.qy, 2, &cw, &ch)
-                         : ocr_crop::extract(rgb.data(), width, height, 3, int(b.x), int(b.y), int(b.w), int(b.h),
+        auto crop = quad ? ocr_crop::extract_quad(rgb, width, height, 3, b.qx, b.qy, 2, &cw, &ch)
+                         : ocr_crop::extract(rgb, width, height, 3, int(b.x), int(b.y), int(b.w), int(b.h),
                                              2, &cw, &ch);
         if (crop.empty() || cw <= 0 || ch <= 0) return false;
         auto orientation = ocr_crop::orient_180_rgb_info(crop, cw, ch);
@@ -282,6 +245,43 @@ bool run(Context &ctx, const char *path) {
     return true;
 }
 
+bool load_bgra(Context &ctx, const uint8_t *pixels, int width, int height,
+               size_t stride_bytes, size_t data_bytes) {
+    if (!pixels || width <= 0 || height <= 0 || width > 32768 || height > 32768) return false;
+    const size_t row_bytes = static_cast<size_t>(width) * 4;
+    const size_t rows = static_cast<size_t>(height - 1);
+    const uint64_t pixel_count = uint64_t(width) * height;
+    if (pixel_count > uint64_t(std::numeric_limits<int>::max()) / 3 || stride_bytes < row_bytes ||
+        rows > (std::numeric_limits<size_t>::max() - row_bytes) / stride_bytes ||
+        data_bytes < rows * stride_bytes + row_bytes) return false;
+    ctx.rgb.resize(static_cast<size_t>(pixel_count) * 3);
+    for (int y = 0; y < height; ++y)
+        pixel_bgra_to_rgb(ctx.rgb.data() + static_cast<size_t>(y) * width * 3,
+                          pixels + static_cast<size_t>(y) * stride_bytes, static_cast<size_t>(width));
+    return true;
+}
+
+template <typename Job>
+const SnipliteOcrResult *run_request(void *context, int *count, const Job &job) {
+    if (!count) return nullptr;
+    *count = -1;
+    if (!context) return nullptr;
+    auto &ctx = *static_cast<Context *>(context);
+    ctx.results.clear();
+    bool ok = false;
+    try { ok = job(ctx); } catch (...) {}
+    if (!ok && ctx.vulkan) {
+        fprintf(stderr, "sniplite OCR: Vulkan inference failed; retrying on CPU\n");
+        try { ok = initialize(ctx, false) && job(ctx); } catch (...) {}
+    }
+    if (!ok) {
+        ctx.results.clear();
+        return nullptr;
+    }
+    *count = static_cast<int>(ctx.results.size());
+    return ctx.results.empty() ? nullptr : ctx.results.data();
+}
+
 } // namespace
 
 extern "C" void *sniplite_ocr_init(const char *det, const char *rec, int threads) {
@@ -322,21 +322,16 @@ extern "C" void sniplite_ocr_free(void *context) {
 }
 
 extern "C" const SnipliteOcrResult *sniplite_ocr_run(void *context, const char *bitmap_path, int *count) {
-    if (!count) return nullptr;
-    *count = -1;
-    if (!context) return nullptr;
-    auto &ctx = *static_cast<Context *>(context);
-    ctx.results.clear();
-    bool ok = false;
-    try { ok = run(ctx, bitmap_path); } catch (...) {}
-    if (!ok && ctx.vulkan) {
-        fprintf(stderr, "sniplite OCR: Vulkan inference failed; retrying on CPU\n");
-        try { ok = initialize(ctx, false) && run(ctx, bitmap_path); } catch (...) {}
-    }
-    if (!ok) {
-        ctx.results.clear();
-        return nullptr;
-    }
-    *count = static_cast<int>(ctx.results.size());
-    return ctx.results.empty() ? nullptr : ctx.results.data();
+    return run_request(context, count, [bitmap_path](Context &ctx) {
+        int width = 0, height = 0;
+        return load_bitmap(bitmap_path, ctx.rgb, width, height) && run(ctx, ctx.rgb.data(), width, height);
+    });
+}
+
+extern "C" const SnipliteOcrResult *sniplite_ocr_run_bgra(void *context, const unsigned char *pixels,
+    int width, int height, size_t stride_bytes, size_t data_bytes, int *count) {
+    return run_request(context, count, [=](Context &ctx) {
+        return load_bgra(ctx, pixels, width, height, stride_bytes, data_bytes) &&
+               run(ctx, ctx.rgb.data(), width, height);
+    });
 }

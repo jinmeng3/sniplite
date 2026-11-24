@@ -1,5 +1,6 @@
 /* PP-OCRv6 OCR: prefer Vulkan, retry on CPU when the accelerator fails. */
 #include "ocr.h"
+#include "config.h"
 #include "ocr_engine.h"
 #include "resource.h"
 
@@ -15,8 +16,9 @@ static struct {
     void *ctx;
     SnipliteOcrInit init;
     SnipliteOcrFree free;
-    SnipliteOcrRun run;
+    SnipliteOcrRunBgra run;
     WCHAR err[200];
+    int backend;
 } G;
 
 const WCHAR *ocr_error(void) { return G.err; }
@@ -104,6 +106,13 @@ static void unload(void)
     G.free = NULL;
     G.run = NULL;
 }
+void ocr_set_backend(int backend)
+{
+    if ((unsigned)backend >= INFER_COUNT) backend = INFER_AUTO;
+    if (G.backend == backend) return;
+    unload();
+    G.backend = backend;
+}
 
 /* Existing model installations receive the current embedded engine on first use.
  * Compare bytes before publishing so read-only, up-to-date portable folders work. */
@@ -170,7 +179,7 @@ static bool load_backend(const WCHAR *engine, const WCHAR *runtime_dir, const WC
     }
     G.init = (SnipliteOcrInit)(void *)GetProcAddress(G.dll, "sniplite_ocr_init");
     G.free = (SnipliteOcrFree)(void *)GetProcAddress(G.dll, "sniplite_ocr_free");
-    G.run = (SnipliteOcrRun)(void *)GetProcAddress(G.dll, "sniplite_ocr_run");
+    G.run = (SnipliteOcrRunBgra)(void *)GetProcAddress(G.dll, "sniplite_ocr_run_bgra");
     if (!G.init || !G.free || !G.run) {
         unload();
         return false;
@@ -198,7 +207,9 @@ bool ocr_load(const WCHAR *dir, int threads)
           !path_in(dir, L"sniplite_ocr.dll", engine_path, COUNTOF(engine_path)))) ||
         !extract_engine_file(dir, L"LICENSE-OCREngine.txt", IDR_OCR_ENGINE_LICENSE)) return false;
     bool shared = default_dir && sibling_dir(L"formula", formula, COUNTOF(formula));
-    bool avx2 = default_dir && IsProcessorFeaturePresent(PF_AVX2_INSTRUCTIONS_AVAILABLE);
+    bool try_vulkan = G.backend == INFER_AUTO || G.backend == INFER_VULKAN;
+    bool try_avx2 = G.backend == INFER_AUTO || G.backend == INFER_AVX2;
+    bool avx2 = try_avx2 && default_dir && IsProcessorFeaturePresent(PF_AVX2_INSTRUCTIONS_AVAILABLE);
     if (avx2) {
         if (lstrlenW(dir) + 10 >= COUNTOF(avx2_dir)) avx2 = false;
         else wsprintfW(avx2_dir, L"%s\\cpu-avx2", dir);
@@ -208,7 +219,7 @@ bool ocr_load(const WCHAR *dir, int threads)
                  !path_in(avx2_dir, L"ggml-base.dll", path, COUNTOF(path)) ||
                  !path_in(avx2_dir, L"ggml-cpu.dll", path, COUNTOF(path)))) avx2 = false;
     int selected = -1;
-    if (vulkan_engine && load_backend(engine_path, dir, formula, shared, true)) selected = 2;
+    if (try_vulkan && vulkan_engine && load_backend(engine_path, dir, formula, shared, true)) selected = 2;
     if (selected < 0 && avx2 && load_backend(avx2_engine, avx2_dir, formula, false, false)) selected = 1;
     if (selected < 0) {
         if (vulkan_engine &&
@@ -249,59 +260,6 @@ bool ocr_load(const WCHAR *dir, int threads)
     return true;
 }
 
-static void put16(uint8_t *p, uint16_t v) { p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8); }
-static void put32(uint8_t *p, uint32_t v)
-{
-    p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8); p[2] = (uint8_t)(v >> 16); p[3] = (uint8_t)(v >> 24);
-}
-
-static bool write_all(HANDLE file, const void *data, DWORD bytes)
-{
-    const uint8_t *p = data;
-    while (bytes) {
-        DWORD wrote = 0;
-        if (!WriteFile(file, p, bytes, &wrote, NULL) || !wrote) return false;
-        p += wrote;
-        bytes -= wrote;
-    }
-    return true;
-}
-
-static bool save_bmp(const uint32_t *px, int stride, int w, int h, WCHAR *path, int cap)
-{
-    uint64_t data_bytes = (uint64_t)w * h * 4;
-    if (!px || w <= 0 || h <= 0 || stride < w || (uint64_t)w * 4 > MAXDWORD || data_bytes > MAXDWORD - 54)
-        return fail(L"The OCR image dimensions are invalid");
-    WCHAR temp[MAX_PATH];
-    DWORD n = GetTempPathW(COUNTOF(temp), temp);
-    if (!n || n >= COUNTOF(temp) || !GetTempFileNameW(temp, L"sno", 0, path))
-        return fail(L"Could not create a temporary OCR image");
-    if (lstrlenW(path) >= cap) {
-        DeleteFileW(path);
-        return fail(L"Could not create a temporary OCR image");
-    }
-    HANDLE file = CreateFileW(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_TEMPORARY, NULL);
-    if (file == INVALID_HANDLE_VALUE) {
-        DeleteFileW(path);
-        return fail(L"Could not write a temporary OCR image");
-    }
-    uint8_t header[54] = {0};
-    header[0] = 'B'; header[1] = 'M';
-    put32(header + 2, (uint32_t)data_bytes + 54);
-    put32(header + 10, 54); put32(header + 14, 40);
-    put32(header + 18, (uint32_t)w); put32(header + 22, (uint32_t)h);
-    put16(header + 26, 1); put16(header + 28, 32); put32(header + 34, (uint32_t)data_bytes);
-    bool good = write_all(file, header, sizeof header);
-    DWORD row_bytes = (DWORD)((uint64_t)w * 4);
-    for (int y = h - 1; good && y >= 0; y--)
-        good = write_all(file, px + (size_t)y * stride, row_bytes);
-    CloseHandle(file);
-    if (!good) {
-        DeleteFileW(path);
-        return fail(L"Could not write a temporary OCR image");
-    }
-    return true;
-}
 
 static bool append_result(OcrOut *out, const SnipliteOcrResult *r, int w, int h, WCHAR *text, int cap)
 {
@@ -339,18 +297,13 @@ static bool run_band(const uint32_t *px, int stride, int w, int h, OcrOut *out)
     memset(out, 0, sizeof *out);
     if (w < 1 || h < 1) return true;
     if (!G.ctx && !ocr_load(NULL, 0)) return false;
-    WCHAR image[MAX_PATH];
-    if (!save_bmp(px, stride, w, h, image, COUNTOF(image))) return false;
-    char *image8 = NULL;
-    if (!path_utf8(image, &image8)) {
-        DeleteFileW(image);
-        return false;
-    }
+    if (!px || stride < w) return fail(L"The OCR image dimensions are invalid");
+    const size_t stride_bytes = (size_t)stride * sizeof *px;
+    const size_t data_bytes = ((size_t)(h - 1) * stride + w) * sizeof *px;
     double start = now_ms();
     int count = 0;
-    const SnipliteOcrResult *results = G.run(G.ctx, image8, &count);
-    mem_free(image8);
-    DeleteFileW(image);
+    const SnipliteOcrResult *results = G.run(G.ctx, (const unsigned char *)px, w, h,
+                                           stride_bytes, data_bytes, &count);
     if (count < 0 || count > OCR_MAX_LINES || (count && !results)) {
         return fail(L"The native engine returned an invalid OCR result");
     }

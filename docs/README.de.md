@@ -89,7 +89,7 @@ Die Teile, die schnell sein müssen (Aufnahme, Komposition, Zeichnen und Aufnahm
 
 **Wie bekomme ich den Text aus einem Screenshot?**
 
-Einen Bereich auswählen und auf die Text-Schaltfläche klicken (Ctrl+O): Der Text erscheint in einem Feld neben der Auswahl und lässt sich markieren, bearbeiten und kopieren. Eine Tabelle behält ihre Spalten und landet in einer Tabellenkalkulation Zelle für Zelle, auf Wunsch auch als Markdown. Ctrl+Shift+C kopiert den Text sofort. Das OCR-Modul nutzt den PP-OCRv6-tiny-GGUF-Detektor und die small-GGUF-Texterkennung mit CrispEmbed/GGML auf der CPU; Bilder werden lokal verarbeitet. Es benötigt allein etwa 81 MB oder zusätzlich etwa 21 MB, wenn das Formelerkennungsmodul bereits installiert ist. Installieren Sie es auf der OCR-Seite der Einstellungen, im Installer oder mit der portablen Version mit OCR.
+Einen Bereich auswählen und auf die Text-Schaltfläche klicken (Ctrl+O): Der Text erscheint in einem Feld neben der Auswahl und lässt sich markieren, bearbeiten und kopieren. Eine Tabelle behält ihre Spalten und lässt sich zellenweise in eine Tabellenkalkulation einfügen oder als Markdown ausgeben. Ctrl+Shift+C kopiert den Text sofort. Das OCR-Modul nutzt den PP-OCRv6-tiny-GGUF-Detektor und das small-GGUF-Erkennungsmodell mit CrispEmbed/GGML; die Verarbeitung erfolgt lokal. Auf der OCR-Seite der Einstellungen können Sie Auto, Vulkan, AVX2 oder CPU wählen. Auto versucht Vulkan, AVX2 und dann die allgemeine CPU-Version; beschleunigte Backends wechseln bei Nichtverfügbarkeit oder Fehlern zur CPU. Es benötigt allein etwa 81 MB oder zusätzlich etwa 21 MB, wenn das Formelmodul bereits installiert ist. Installation über Einstellungen, Installer oder die portable Version mit OCR.
 
 **Wie mache ich eine Scrollaufnahme?**
 

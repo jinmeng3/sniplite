@@ -183,7 +183,9 @@ BEGIN
     PUSHBUTTON      "", IDC_O_REMOVE, 124, 26, 60, 15
     CONTROL         "", IDC_O_BAR, "msctls_progress32", 0, 8, 47, 204, 7
     LTEXT           "", IDC_O_STATUS, 8, 58, 204, 10
-    LTEXT           "", IDC_HINT, 8, 74, 204, 62
+    LTEXT           "", IDC_O_BACKEND_LABEL, 8, 74, 64, 10
+    COMBOBOX        IDC_O_BACKEND, 74, 70, 138, 64, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "", IDC_HINT, 8, 96, 204, 70
 END
 IDD_PAGE_QR DIALOGEX 0, 0, 220, 166
 STYLE DS_SHELLFONT | DS_CONTROL | WS_CHILD
@@ -205,7 +207,9 @@ BEGIN
     PUSHBUTTON      "", IDC_F_REMOVE, 124, 26, 60, 15
     CONTROL         "", IDC_F_BAR, "msctls_progress32", 0, 8, 47, 204, 7
     LTEXT           "", IDC_F_STATUS, 8, 58, 204, 10
-    LTEXT           "", IDC_F_HINT, 8, 74, 204, 62
+    LTEXT           "", IDC_F_BACKEND_LABEL, 8, 74, 64, 10
+    COMBOBOX        IDC_F_BACKEND, 74, 70, 138, 64, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "", IDC_F_HINT, 8, 96, 204, 58
 END
 
 IDD_PAGE_RACK DIALOGEX 0, 0, 220, 166

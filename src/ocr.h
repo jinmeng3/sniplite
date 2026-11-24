@@ -30,6 +30,7 @@ bool ocr_unpack(void);
 int ocr_size_mb(void);
 /* dir: module folder, NULL for adjacent "ocr"; threads: 0 selects a suitable default. */
 bool ocr_load(const WCHAR *dir, int threads);
+void ocr_set_backend(int backend); /* INFER_*; apply while no recognition is running */
 bool ocr_run(const uint32_t *px, int stride, int w, int h, float screen, OcrOut *out);
 
 /* ocr_ui.c, the background program's side: what the user asks for. All of it is done

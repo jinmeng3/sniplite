@@ -10,6 +10,9 @@
 #include "core/gpu_backend_pref.h"
 #include "ggml-cpu.h"
 #include "core/env_gate.h"
+#if defined(SNIPLITE_OCR_PREPROCESS)
+#include "ocr_preprocess.h"
+#endif
 
 #include <algorithm>
 #include <chrono>
@@ -58,6 +61,8 @@ struct context {
     core_gguf::WeightLoad wl;
     ggml_backend_t backend = nullptr;
     int n_threads = 1;
+    core_cpu::Conv2dRuntime conv_runtime;
+    bool capture_stages = false;
     std::string variant;
     int neck = 0;
     int stage_channels[4] = {};
@@ -78,7 +83,6 @@ struct context {
         ggml_cgraph * graph = nullptr;
         ggml_tensor * input = nullptr;
         ggml_tensor * output = nullptr;
-        std::vector<uint8_t> meta;
         std::unordered_map<const ggml_tensor *, ggml_tensor *> resident;
         std::vector<ggml_context *> resident_ctxs;
         std::vector<ggml_backend_buffer_t> resident_bufs;
@@ -88,6 +92,8 @@ struct context {
         bool attempted = false;
         bool ready = false;
         bool probability_output = false;
+        bool capture_stages = false;
+        policy::failed_shapes failed;
     } graph;
 };
 
@@ -406,7 +412,8 @@ static bool run_block(const block & b, std::vector<float> & x, int & h, int & w,
         std::vector<float> pooled(b.dw.ic, 0.0f);
         for (int c = 0; c < b.dw.ic; ++c)
             for (int i = 0; i < oh * ow; ++i) pooled[c] += y[(size_t)c * oh * ow + i] / float(oh * ow);
-        const std::vector<float> pooled_before = pooled;
+        std::vector<float> pooled_before;
+        if (debug && !prefix.empty()) pooled_before = pooled;
         std::vector<float> gate;
         if (!run_se(b.gate, pooled, b.dw.ic, debug && !prefix.empty() ? &gate : nullptr)) return false;
         if (debug && !prefix.empty()) {
@@ -535,36 +542,47 @@ static void graph_clear_shape(context * c) {
     g.output = nullptr;
     g.taps.clear();
     g.named_taps.clear();
-    std::vector<uint8_t>().swap(g.meta);
     g.h = g.w = 0;
     g.attempted = g.ready = g.probability_output = false;
 }
 
 static bool graph_build(context * c, int h, int w) {
     // Rebuild the single retained detector graph when input dimensions change.
-    const bool rebuild_graph = core_env::on("CRISPEMBED_PPOCRV6_DET_GRAPH_REBUILD");
+    if (core_env::on("CRISPEMBED_PPOCRV6_DET_SCALAR") || c->graph.failed.contains(h, w)) return false;
+    const bool rebuild_graph = !core_env::explicitly_off("CRISPEMBED_PPOCRV6_DET_GRAPH_REBUILD");
     const auto action =
         policy::graph_shape(c->graph.attempted, c->graph.ready, c->graph.h, c->graph.w, h, w, rebuild_graph);
-    if (action == policy::shape_action::reuse) return true;
+    if (action == policy::shape_action::reuse && c->graph.capture_stages == c->capture_stages) return true;
     if (action == policy::shape_action::fallback) return false;
     if (action == policy::shape_action::rebuild) graph_clear_shape(c);
+    if (c->graph.ready && c->graph.capture_stages != c->capture_stages) graph_clear_shape(c);
+    // Every failed build releases shape resources, including partial scheduler
+    // allocation; immutable resident weights remain owned by this context.
+    struct build_guard {
+        context * c;
+        int h, w;
+        ~build_guard() {
+            if (!c->graph.ready) {
+                c->graph.failed.remember(h, w);
+                graph_clear_shape(c);
+            }
+        }
+    } guard{ c, h, w };
+    c->graph.capture_stages = c->capture_stages;
     c->graph.attempted = true;
-    // Remember failures by shape, so an unsupported shape is not retried on
-    // every frame; a later different shape may still be attempted.
+    // Failed shapes are remembered separately from the currently retained graph.
     c->graph.h = h;
     c->graph.w = w;
-    // Graph is the default since 2026-08-04: after the insert-SE double-scale
-    // fix it matches the scalar path to probability cosine ~1e-8, runs 186 ms
-    // vs 315 ms scalar on synth_00_clean (CPU backend), and the 25-fixture CER
-    // gate came out net-better (labelled mean 0.06394 vs 0.06410; receipt
-    // 0.0000). CRISPEMBED_PPOCRV6_DET_SCALAR=1 restores the scalar reference.
+    // GGML remains the default detector. Its insert-SE double-scale fix
+    // matched scalar probability cosine ~1e-8 and passed the 25-fixture CER
+    // gate (labelled mean 0.06394 vs 0.06410).
+    // CRISPEMBED_PPOCRV6_DET_SCALAR=1 selects the native CPU reference.
     // medium's RepLKFPN neck graph validated 2026-08-04: every med_* tap at
     // cosine 0.99999998-1.0 vs scalar on synth + receipt, probability
     // 0.99999999 with equal norms, same box counts, and 6.9 s -> 1.0 s /
     // 41.4 s -> 8.7 s detector time on synth_00_clean / german_official_print
     // (the CPU-scalar medium detector was why the medium tier timed out in
     // every benchmark). German CER graph 0.04856 vs scalar 0.04955.
-    if (core_env::on("CRISPEMBED_PPOCRV6_DET_SCALAR")) return false;
     c->graph.backend = c->backend;
     if (!c->graph.backend) return false;
     if (ggml_backend_is_cpu(c->graph.backend)) {
@@ -572,6 +590,7 @@ static bool graph_build(context * c, int h, int w) {
         c->graph.sched = ggml_backend_sched_new(backends, nullptr, 1, 4096, false, false);
     } else {
         c->graph.cpu_backend = ggml_backend_cpu_init();
+        if (!c->graph.cpu_backend) return false;
         // Mirror the init-time thread fix: the sched's CPU fallback should run
         // at the caller's thread count too.
         ggml_backend_cpu_set_n_threads(c->graph.cpu_backend, std::max(1, c->n_threads));
@@ -580,8 +599,8 @@ static bool graph_build(context * c, int h, int w) {
     }
     if (!c->graph.sched) return false;
     const size_t meta_size = ggml_tensor_overhead() * 4096 + ggml_graph_overhead_custom(4096, false);
-    c->graph.meta.resize(meta_size);
-    ggml_init_params ip = { meta_size, c->graph.meta.data(), true };
+    // GGML initializes its own metadata; avoid zero-filling an external arena.
+    ggml_init_params ip = { meta_size, nullptr, true };
     c->graph.graph_ctx = ggml_init(ip);
     if (!c->graph.graph_ctx) return false;
     c->graph.graph = ggml_new_graph_custom(c->graph.graph_ctx, 4096, false);
@@ -754,7 +773,7 @@ static bool graph_build(context * c, int h, int w) {
     c->graph.probability_output = true;
     c->graph.output = x;
     c->graph.taps = stage_out;
-    if (core_env::on("CRISPEMBED_PPOCRV6_DET_GRAPH_COMPARE")) {
+    if (c->capture_stages) {
         for (ggml_tensor * tap : c->graph.taps) ggml_set_output(tap);
         for (const auto & tap : c->graph.named_taps) ggml_set_output(tap.second);
     }
@@ -775,10 +794,22 @@ static bool graph_run(context * c, const std::vector<float> & input, int h, int 
                       int & ow) {
     if (!graph_build(c, h, w)) return false;
     ggml_backend_tensor_set(c->graph.input, input.data(), 0, input.size() * sizeof(float));
-    if (ggml_backend_sched_graph_compute(c->graph.sched, c->graph.graph) != GGML_STATUS_SUCCESS) return false;
+    if (ggml_backend_sched_graph_compute(c->graph.sched, c->graph.graph) != GGML_STATUS_SUCCESS) {
+        c->graph.failed.remember(h, w);
+        graph_clear_shape(c);
+        return false;
+    }
     out.resize(ggml_nelements(c->graph.output));
     ggml_backend_tensor_get(c->graph.output, out.data(), 0, out.size() * sizeof(float));
-    if (core_env::on("CRISPEMBED_PPOCRV6_DET_GRAPH_COMPARE")) {
+    ow = (int)c->graph.output->ne[0];
+    oh = (int)c->graph.output->ne[1];
+    if (!policy::valid_probability(out, oh, ow)) {
+        c->graph.failed.remember(h, w);
+        graph_clear_shape(c);
+        out.clear();
+        return false;
+    }
+    if (c->capture_stages) {
         for (size_t i = 0; i < c->graph.taps.size(); ++i) {
             std::vector<float> tap(ggml_nelements(c->graph.taps[i]));
             ggml_backend_tensor_get(c->graph.taps[i], tap.data(), 0, tap.size() * sizeof(float));
@@ -790,8 +821,6 @@ static bool graph_run(context * c, const std::vector<float> & input, int h, int 
             c->last_stages["graph_" + tap.first] = std::move(data);
         }
     }
-    ow = (int)c->graph.output->ne[0];
-    oh = (int)c->graph.output->ne[1];
     return true;
 }
 
@@ -801,7 +830,7 @@ static bool run_stem(context * c, const std::vector<float> & input, int h, int w
     int H = h, W = w;
     if (!apply_conv(c->stem[0], x, H, W, y, oh, ow)) return false;
     relu(y);
-    c->last_stages["stem1"] = y;
+    if (c->capture_stages) c->last_stages["stem1"] = y;
     x.swap(y);
     H = oh;
     W = ow;
@@ -814,10 +843,10 @@ static bool run_stem(context * c, const std::vector<float> & input, int h, int w
     if (!apply_conv(c->stem[2], padded, oh + 1, ow + 1, y, oh, ow)) return false;
     relu(y);
     branch.swap(y);
-    c->last_stages["stem2b"] = branch;
+    if (c->capture_stages) c->last_stages["stem2b"] = branch;
     std::vector<float> pooled;
     maxpool2_stride1(embedding_padded, c->stem[0].oc, H + 1, W + 1, pooled);
-    c->last_stages["stem_pooled"] = pooled;
+    if (c->capture_stages) c->last_stages["stem_pooled"] = pooled;
     const int cat_h = H, cat_w = W;
     std::vector<float> cat(pooled.size() + branch.size());
     std::memcpy(cat.data(), pooled.data(), pooled.size() * sizeof(float));
@@ -825,12 +854,12 @@ static bool run_stem(context * c, const std::vector<float> & input, int h, int w
     if (!apply_conv(c->stem[3], cat, cat_h, cat_w, y, oh, ow)) return false;
     relu(y);
     x.swap(y);
-    c->last_stages["stem3"] = x;
+    if (c->capture_stages) c->last_stages["stem3"] = x;
     H = oh;
     W = ow;
     if (!apply_conv(c->stem[4], x, H, W, out, oh, ow)) return false;
     relu(out);
-    c->last_stages["stem4"] = out;
+    if (c->capture_stages) c->last_stages["stem4"] = out;
     return true;
 }
 
@@ -899,7 +928,8 @@ static bool run_medium_neck(context * c, const std::vector<std::vector<float>> &
     std::vector<int> ah(4), aw(4);
     for (int i = 0; i < 4; ++i)
         if (!apply_conv(c->med_adjust[i], stages[i], hs[i], ws[i], adjusted[i], ah[i], aw[i])) return false;
-    for (int i = 0; i < 4; ++i) c->last_stages["med_adjust" + std::to_string(i)] = adjusted[i];
+    if (c->capture_stages)
+        for (int i = 0; i < 4; ++i) c->last_stages["med_adjust" + std::to_string(i)] = adjusted[i];
     top[3] = adjusted[3];
     for (int i = 2; i >= 0; --i) {
         std::vector<float> up;
@@ -907,12 +937,14 @@ static bool run_medium_neck(context * c, const std::vector<std::vector<float>> &
         top[i] = adjusted[i];
         add_inplace(top[i], up);
     }
-    for (int i = 0; i < 4; ++i) c->last_stages["med_top" + std::to_string(i)] = top[i];
+    if (c->capture_stages)
+        for (int i = 0; i < 4; ++i) c->last_stages["med_top" + std::to_string(i)] = top[i];
     for (int i = 0; i < 4; ++i) {
         const auto & source = i < 3 ? top[i] : adjusted[3];
         if (!apply_conv(c->med_project[i], source, ah[i], aw[i], projected[i], ah[i], aw[i])) return false;
     }
-    for (int i = 0; i < 4; ++i) c->last_stages["med_project" + std::to_string(i)] = projected[i];
+    if (c->capture_stages)
+        for (int i = 0; i < 4; ++i) c->last_stages["med_project" + std::to_string(i)] = projected[i];
     bottom[0] = projected[0];
     for (int i = 1; i < 4; ++i) {
         std::vector<float> down;
@@ -923,7 +955,8 @@ static bool run_medium_neck(context * c, const std::vector<std::vector<float>> &
         bottom[i] = projected[i];
         add_inplace(bottom[i], resized);
     }
-    for (int i = 0; i < 4; ++i) c->last_stages["med_bottom" + std::to_string(i)] = bottom[i];
+    if (c->capture_stages)
+        for (int i = 0; i < 4; ++i) c->last_stages["med_bottom" + std::to_string(i)] = bottom[i];
     for (int i = 0; i < 4; ++i) {
         const auto & source = i == 0 ? projected[0] : bottom[i];
         int sh = ah[i], sw = aw[i];
@@ -932,8 +965,10 @@ static bool run_medium_neck(context * c, const std::vector<std::vector<float>> &
         if (!run_medium_ic(c->med_ic[i], refined[i], sh, sw)) return false;
     }
     for (int i = 0; i < 4; ++i) {
-        c->last_stages["med_lateral" + std::to_string(i)] = lateral[i];
-        c->last_stages["med_refined" + std::to_string(i)] = refined[i];
+        if (c->capture_stages) {
+            c->last_stages["med_lateral" + std::to_string(i)] = lateral[i];
+            c->last_stages["med_refined" + std::to_string(i)] = refined[i];
+        }
     }
     nh = ah[0];
     nw = aw[0];
@@ -981,27 +1016,8 @@ static void append_component(const std::vector<float> & prob, int h, int w, floa
 context * init(const char * path, int n_threads) {
     auto * c = new context();
     c->n_threads = std::max(1, n_threads);
-    // The production detector path runs its graph on the CPU backend (default
-    // since 2026-08-04; CRISPEMBED_PPOCRV6_DET_SCALAR restores scalar and
-    // CRISPEMBED_PPOCRV6_DET_GPU_LOAD is the explicit GPU opt-in), so this
-    // backend normally does nothing but pull the GGUF through
-    // core_gguf::load_weights, and asking for a GPU one spins up Metal for a
-    // device the detector never computes on. That drops the detector's own load
-    // from ~7.3 s to 146 ms.
-    //
-    // It is a smaller net win than that sounds, because the recognizer graph
-    // (default since 2026-08-02) needs Metal anyway, so this moves the init
-    // rather than removing it. Same-binary A/B over three rounds, median-of-3
-    // CPU-seconds against a stable 0.47-0.49 s control: 4.43/3.93/3.57 with the
-    // GPU load versus 3.80/3.68/3.04 with the CPU load -- consistently 7-14%
-    // better, so it ships on. CRISPEMBED_PPOCRV6_DET_GPU_LOAD restores the old
-    // path; the detector graph implies it, since that path genuinely computes
-    // on the device.
-    //
-    // (Measured with CPU time, not wall time, on purpose: this box carries
-    // several concurrent agent builds and wall clock swung 10x between runs
-    // while user+sys stayed stable. An earlier cross-run wall comparison
-    // reported the opposite result.)
+    // CPU builds load and compute on the CPU backend. Avoid initializing an
+    // unused GPU while loading weights for the CPU detector graph.
 #if defined(SNIPLITE_VULKAN_PREFERRED)
     c->backend = nullptr;
     for (size_t i = 0; i < ggml_backend_dev_count() && !c->backend; ++i) {
@@ -1173,13 +1189,19 @@ std::vector<box> detect_raw(context * c, const uint8_t * px, int w, int h, int c
     // sniplite: a failed run must not expose the previous probability map.
     c->last_prob.clear();
     c->last_h = c->last_w = 0;
-    if (!px) return {};
+    c->last_stages.clear();
+    const bool compare_graph = core_env::on("CRISPEMBED_PPOCRV6_DET_GRAPH_COMPARE");
+    c->capture_stages = compare_graph || core_env::on("CRISPEMBED_PPOCRV6_DET_CAPTURE_STAGES");
+    if (!px || w <= 0 || h <= 0 || channels <= 0) return {};
     const bool bench = core_env::on("CRISPEMBED_PPOCRV6_DET_BENCH");
     const detprof::report prof_report;
     const auto started = std::chrono::steady_clock::now();
+    std::vector<float> input((size_t)3 * h * w);
+#if defined(SNIPLITE_OCR_PREPROCESS)
+    ocr_normalize_rgb(input.data(), px, (size_t)h * w, channels);
+#else
     static constexpr float mean[3] = { 0.485f, 0.456f, 0.406f };
     static constexpr float stdev[3] = { 0.229f, 0.224f, 0.225f };
-    std::vector<float> input((size_t)3 * h * w);
     for (int y = 0; y < h; y++)
         for (int x = 0; x < w; x++)
             for (int ch = 0; ch < 3; ch++) {
@@ -1188,6 +1210,7 @@ std::vector<box> detect_raw(context * c, const uint8_t * px, int w, int h, int c
                     (px[((size_t)y * w + x) * channels + std::min(src_ch, channels - 1)] / 255.0f - mean[ch]) /
                     stdev[ch];
             }
+#endif
     std::vector<float> x;
     std::vector<float> graph_probability;
     std::vector<box> graph_boxes;
@@ -1195,7 +1218,6 @@ std::vector<box> detect_raw(context * c, const uint8_t * px, int w, int h, int c
     const auto preprocessed = std::chrono::steady_clock::now();
     bool graph_done = graph_run(c, input, h, w, x, H, W);
     const auto graph_finished = std::chrono::steady_clock::now();
-    const bool compare_graph = core_env::on("CRISPEMBED_PPOCRV6_DET_GRAPH_COMPARE");
     if (graph_done && c->graph.probability_output) {
         if (compare_graph) graph_probability = x;
         c->last_prob = x;
@@ -1229,7 +1251,7 @@ std::vector<box> detect_raw(context * c, const uint8_t * px, int w, int h, int c
         // CRISPEMBED_PPOCRV6_DET_SCALAR disables the graph entirely upstream.
 
         // Accept an empty detection only for a complete, finite probability map.
-        const bool accept_empty = core_env::on("CRISPEMBED_PPOCRV6_DET_ACCEPT_EMPTY");
+        const bool accept_empty = !core_env::explicitly_off("CRISPEMBED_PPOCRV6_DET_ACCEPT_EMPTY");
         if (policy::accept_graph(compare_graph, accept_empty, out.size(), x, H, W)) {
             if (bench) {
                 const auto ms = [](auto a, auto b) { return std::chrono::duration<double, std::milli>(b - a).count(); };
@@ -1247,7 +1269,7 @@ std::vector<box> detect_raw(context * c, const uint8_t * px, int w, int h, int c
     // adopt the R6 im2col+mk consume with the engine's thread count (measured
     // −34% M1 / −40% x86 process CPU on exactly this path; env vars override
     // in both directions, so CRISPEMBED_CONV2D_MK=0 restores the reference).
-    core_cpu::conv2d_prefs_scope conv_prefs(/*mk=*/true, c->n_threads);
+    core_cpu::conv2d_prefs_scope conv_prefs(/*mk=*/true, c->n_threads, &c->conv_runtime);
     if (!graph_done && !run_stem(c, input, h, w, x, H, W)) return {};
     std::vector<std::vector<float>> stages;
     std::vector<int> hs, ws;
@@ -1260,11 +1282,12 @@ std::vector<box> detect_raw(context * c, const uint8_t * px, int w, int h, int c
     for (size_t si = first_stage; si < c->stages.size(); ++si) {
         auto & ss = c->stages[si];
         for (size_t bi = 0; bi < ss.size(); ++bi)
-            if (!run_block(ss[bi], x, H, W, c, si == 0 && bi == 0 ? "block0" : "")) return {};
+            if (!run_block(ss[bi], x, H, W, c->capture_stages ? c : nullptr,
+                           c->capture_stages && si == 0 && bi == 0 ? "block0" : "")) return {};
         stages.push_back(x);
         hs.push_back(H);
         ws.push_back(W);
-        c->last_stages["backbone_stage" + std::to_string(stages.size() - 1)] = x;
+        if (c->capture_stages) c->last_stages["backbone_stage" + std::to_string(stages.size() - 1)] = x;
     }
     if (c->variant == "medium") {
         std::vector<float> neck;
@@ -1274,15 +1297,17 @@ std::vector<box> detect_raw(context * c, const uint8_t * px, int w, int h, int c
         int oh, ow;
         if (!apply_conv(c->head_down, neck, nh, nw, y, oh, ow)) return {};
         relu(y);
-        c->last_stages["head_down"] = y;
+        if (c->capture_stages) c->last_stages["head_down"] = y;
         if (!apply_deconv2(c->head_up, y, oh, ow, z, oh, ow)) return {};
-        c->last_stages["head_up_pre"] = z;
+        if (c->capture_stages) c->last_stages["head_up_pre"] = z;
         relu(z);
-        c->last_stages["head_up"] = z;
+        if (c->capture_stages) c->last_stages["head_up"] = z;
         if (!apply_deconv2(c->head_final, z, oh, ow, y, oh, ow)) return {};
-        c->last_stages["head_final_pre"] = y;
-        c->last_stages["head_final"] = y;
-        c->last_stages["neck_output"] = neck;
+        if (c->capture_stages) {
+            c->last_stages["head_final_pre"] = y;
+            c->last_stages["head_final"] = y;
+            c->last_stages["neck_output"] = neck;
+        }
         for (float & v : y) v = 1 / (1 + std::exp(-v));
         c->last_prob = y;
         c->last_h = oh;
@@ -1344,7 +1369,7 @@ std::vector<box> detect_raw(context * c, const uint8_t * px, int w, int h, int c
             for (int j = 0; j < fh[i] * fw[i]; j++)
                 fused[i][(size_t)k * fh[i] * fw[i] + j] +=
                     fused[i][(size_t)k * fh[i] * fw[i] + j] * std::clamp(0.2f * p[k] + 0.5f, 0.f, 1.f);
-        c->last_stages["fused" + std::to_string(i)] = fused[i];
+        if (c->capture_stages) c->last_stages["fused" + std::to_string(i)] = fused[i];
     }
     for (int i = 2; i >= 0; i--) {
         std::vector<float> u;
@@ -1373,7 +1398,7 @@ std::vector<box> detect_raw(context * c, const uint8_t * px, int w, int h, int c
             for (int j = 0; j < qa * qb; ++j) q[(size_t)ch * qa * qb + j] += q[(size_t)ch * qa * qb + j] * scale;
         }
         proc[i] = q;
-        c->last_stages["proc" + std::to_string(i)] = proc[i];
+        if (c->capture_stages) c->last_stages["proc" + std::to_string(i)] = proc[i];
         ph[i] = qa;
         pw[i] = qb;
     }
@@ -1387,19 +1412,21 @@ std::vector<box> detect_raw(context * c, const uint8_t * px, int w, int h, int c
         u.swap(resized);
         neck.insert(neck.end(), u.begin(), u.end());
     }
-    c->last_stages["neck_output"] = neck;
+    if (c->capture_stages) c->last_stages["neck_output"] = neck;
     std::vector<float> y, z;
     int oh, ow;
     if (!apply_conv(c->head_down, neck, nh, nw, y, oh, ow)) return {};
     relu(y);
-    c->last_stages["head_down"] = y;
+    if (c->capture_stages) c->last_stages["head_down"] = y;
     if (!apply_deconv2(c->head_up, y, oh, ow, z, oh, ow)) return {};
-    c->last_stages["head_up_pre"] = z;
+    if (c->capture_stages) c->last_stages["head_up_pre"] = z;
     relu(z);
-    c->last_stages["head_up"] = z;
+    if (c->capture_stages) c->last_stages["head_up"] = z;
     if (!apply_deconv2(c->head_final, z, oh, ow, y, oh, ow)) return {};
-    c->last_stages["head_final_pre"] = y;
-    c->last_stages["head_final"] = y;
+    if (c->capture_stages) {
+        c->last_stages["head_final_pre"] = y;
+        c->last_stages["head_final"] = y;
+    }
     for (float & v : y) v = 1 / (1 + std::exp(-v));
     c->last_prob = y;
     c->last_h = oh;

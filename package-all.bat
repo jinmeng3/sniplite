@@ -37,7 +37,7 @@ for %%f in (vcruntime140.dll vcruntime140_1.dll msvcp140_1.dll msvcp140.dll) do 
 set OCR_VULKAN_RUNTIME=build\ocr-vulkan-runtime
 if exist "%OCR_VULKAN_RUNTIME%" rmdir /s /q "%OCR_VULKAN_RUNTIME%"
 mkdir "%OCR_VULKAN_RUNTIME%" || exit /b 1
-copy /y "%CRISP_DIR%\ggml-vulkan.dll" "%OCR_VULKAN_RUNTIME%\ggml-vulkan.dll" >nul || exit /b 1
+for %%f in (ggml.dll ggml-base.dll ggml-cpu.dll ggml-vulkan.dll) do copy /y "%CRISP_DIR%\%%f" "%OCR_VULKAN_RUNTIME%\%%f" >nul || exit /b 1
 copy /y res\ocr-notice.txt "%OCR_DIR%\NOTICE.txt" >nul || exit /b 1
 set OCR_ZIP=build\sniplite_ocr.zip
 if exist "%OCR_ZIP%" del /q "%OCR_ZIP%"

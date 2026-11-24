@@ -59,6 +59,9 @@ static const int kIcon[BT_COUNT] = {IC_OCR, IC_OCRCOPY, IC_PIN, IC_SAVE, IC_CLOS
 
 extern uint8_t O[]; /* the capture's state (ov_layout.inc) */
 extern const uint32_t *ui_pal; /* the bars' colors, by P_* (ov_base.S, main.c) */
+extern void scroll_thumb_rows(uint32_t *dst, const uint32_t *canvas, int width, int thumb_width, int first, int end);
+/* Positive dimensions, eight in-bounds strips; output is [height][STRIPS]. */
+extern void scroll_hash_rows(uint32_t *out, const uint32_t *pixels, int width, int height, int x0, int strip_width);
 
 static struct {
     bool on, first, lost, full;
@@ -91,31 +94,9 @@ static int px(float v) { return (int)lroundf(v * L.s); }
 
 /* ---- rows ---- */
 
-static inline uint32_t strip_hash(const uint32_t *p, int n)
-{
-    uint64_t a = 0x9E3779B97F4A7C15ull, b = 0xC2B2AE3D27D4EB4Full, v;
-    int i = 0;
-    for (; i + 4 <= n; i += 4) { /* two chains: the multiplies overlap */
-        memcpy(&v, p + i, 8);
-        a = (a ^ v) * 0xFF51AFD7ED558CCDull;
-        memcpy(&v, p + i + 2, 8);
-        b = (b ^ v) * 0xC4CEB9FE1A85EC53ull;
-    }
-    for (; i < n; i++)
-        a = (a ^ p[i]) * 0xFF51AFD7ED558CCDull;
-    a = (a ^ (b >> 32 | b << 32)) * 0x9E3779B97F4A7C15ull;
-    uint32_t h = (uint32_t)(a >> 32);
-    return h + !h; /* 0 marks a free slot */
-}
-
 static void hash_frame(void)
 {
-    for (int y = 0; y < L.h; y++) {
-        const uint32_t *row = L.shot.px + (size_t)y * L.w + L.x0;
-        uint32_t *out = L.fhash + (size_t)y * STRIPS;
-        for (int s = 0; s < STRIPS; s++)
-            out[s] = strip_hash(row + s * L.sw, L.sw);
-    }
+    scroll_hash_rows(L.fhash, L.shot.px, L.w, L.h, L.x0, L.sw);
 }
 
 static inline Slot *slot_of(uint32_t key)
@@ -234,21 +215,9 @@ static void thumb_update(void)
     int rows = MINI(L.tcap, (int)(((int64_t)(L.rows + 1) * tw - 1) / w));
     if (!commit_to(L.thumb, &L.thumb_committed, (size_t)rows * tw * sizeof(uint32_t)))
         return;
-    for (; L.trows < rows; L.trows++) {
-        int y0 = L.trows * w / tw, y1 = (L.trows + 1) * w / tw;
-        uint32_t *d = L.thumb + (size_t)L.trows * tw;
-        for (int x = 0; x < tw; x++) {
-            int xa = x * w / tw, xb = (x + 1) * w / tw;
-            unsigned b = 0, g = 0, r = 0, n = (unsigned)((xb - xa) * (y1 - y0));
-            for (int y = y0; y < y1; y++) {
-                const uint32_t *p = L.canvas + (size_t)y * w;
-                for (int i = xa; i < xb; i++) {
-                    uint32_t v = p[i];
-                    b += v & 255, g += v >> 8 & 255, r += v >> 16 & 255;
-                }
-            }
-            d[x] = (r / n) << 16 | (g / n) << 8 | b / n;
-        }
+    if (L.trows < rows) {
+        scroll_thumb_rows(L.thumb + (size_t)L.trows * tw, L.canvas, w, tw, L.trows, rows);
+        L.trows = rows;
     }
 }
 

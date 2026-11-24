@@ -1258,6 +1258,17 @@ static void page_command(HWND page, int id, int code, HWND ctl)
             set_language(lang);
         return;
     }
+    int *backend = id == IDC_O_BACKEND ? &S.cfg.ocr_backend
+                   : id == IDC_F_BACKEND ? &S.cfg.formula_backend
+                                          : NULL;
+    if (backend) {
+        int i = (int)SendMessageW(ctl, CB_GETCURSEL, 0, 0);
+        if (code == CBN_SELCHANGE && i >= 0 && i < INFER_COUNT) {
+            *backend = i;
+            apply();
+        }
+        return;
+    }
     int *choice = id == IDC_THEME ? &S.cfg.theme : id == IDC_DETECT ? &S.cfg.detect : id == IDC_NAME ? &S.cfg.name : NULL;
     if (choice) { /* a list of a setting's values, in their order */
         int i = (int)SendMessageW(ctl, CB_GETCURSEL, 0, 0);
@@ -1505,7 +1516,7 @@ static const struct {
 /* The controls with a text of their own (the .rc has the places and sizes only). */
 static const struct {
     unsigned char page;
-    unsigned char id; /* IDC_... */
+    unsigned short id; /* IDC_... */
     unsigned short s; /* S_... */
 } kTexts[] = {
     {PG_GENERAL, IDC_AUTOSTART, S_G_AUTOSTART},
@@ -1546,6 +1557,8 @@ static const struct {
     {PG_QR, IDC_Q_REMOVE, S_O_REMOVE_BTN},
     {PG_QR, IDC_Q_HINT, S_Q_HINT},
     {PG_FORMULA, IDC_F_REMOVE, S_O_REMOVE_BTN},
+    {PG_OCR, IDC_O_BACKEND_LABEL, S_BACKEND_LABEL},
+    {PG_FORMULA, IDC_F_BACKEND_LABEL, S_BACKEND_LABEL},
     {PG_FORMULA, IDC_F_HINT, S_F_HINT},
     {PG_RACK, IDC_RACK_POS_LABEL, S_RACK_POS_LABEL},
     {PG_RACK, IDC_RACK_TOP, S_RACK_TOP},
@@ -1557,6 +1570,14 @@ static const struct {
 };
 _Static_assert(PG_COUNT <= 256, "kTexts keeps page numbers in a byte");
 _Static_assert(S_COUNT <= 65536, "kTexts keeps text numbers in 16 bits");
+static void backend_fill(HWND page, int id, int selected)
+{
+    static const unsigned short text[] = {S_BACKEND_AUTO, S_BACKEND_VULKAN, S_BACKEND_AVX2, S_BACKEND_CPU};
+    HWND combo = GetDlgItem(page, id);
+    for (int i = 0; i < COUNTOF(text); i++)
+        SendMessageW(combo, CB_ADDSTRING, 0, (LPARAM)g_tr[text[i]]);
+    SendMessageW(combo, CB_SETCURSEL, (WPARAM)selected, 0);
+}
 
 /* The two ways to capture say what they cost when the mouse rests on them. */
 static void mode_tips(HWND page)
@@ -1637,6 +1658,8 @@ static INT_PTR CALLBACK main_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
                          S.cfg.rack_bottom ? IDC_RACK_BOTTOM : IDC_RACK_TOP);
         show_save_dir();
         show_names();
+        backend_fill(S.page[PG_OCR], IDC_O_BACKEND, S.cfg.ocr_backend);
+        backend_fill(S.page[PG_FORMULA], IDC_F_BACKEND, S.cfg.formula_backend);
         CheckDlgButton(c, IDC_ALSO_SAVE, S.cfg.also_save ? BST_CHECKED : BST_UNCHECKED);
         SetDlgItemTextW(S.page[PG_ABOUT], IDC_VERSION,
                         S.portable ? L"sniplite " SNIPLITE_VERSION L" portable" : L"sniplite " SNIPLITE_VERSION);

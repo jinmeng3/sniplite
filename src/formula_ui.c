@@ -1,6 +1,7 @@
 /* The screenshot editor's CrispEmbed formula command uses an isolated helper process,
  * keeping the model runtime out of the capture process. The helper exits after 60 s idle. */
 #include "common.h"
+#include "config.h"
 #include "formula.h"
 #include "image.h"
 #include "lang.h"
@@ -53,6 +54,7 @@ typedef struct {
     uint32_t *pixels;
     DWORD bytes, used, code;
     int w, h;
+    int backend;
     bool wrote, response, too_long;
     char text[FORMULA_OUTPUT_CAP];
 } FormulaJob;
@@ -161,7 +163,7 @@ void formula_preview(void)
 static DWORD WINAPI formula_worker(void *ctx)
 {
     FormulaJob *j = ctx;
-    FormulaRequest req = {(uint32_t)j->w, (uint32_t)j->h};
+    FormulaRequest req = {(uint32_t)j->w, (uint32_t)j->h, (uint32_t)j->backend};
     j->wrote = formula_pipe_write(formula_host.input, &req, sizeof req) &&
                formula_pipe_write(formula_host.input, j->pixels, j->bytes);
     VirtualFree(j->pixels, 0, MEM_RELEASE);
@@ -239,6 +241,9 @@ bool formula_scan(void)
     current_job = j;
     j->w = w;
     j->h = h;
+    Config config;
+    config_load(&config);
+    j->backend = config.formula_backend;
     j->bytes = (DWORD)((size_t)w * h * 4);
     j->pixels = VirtualAlloc(NULL, j->bytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     bool failed = true;

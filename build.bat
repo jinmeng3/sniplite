@@ -16,6 +16,7 @@ gcc -c -o build\inference_convert.o src\inference_convert.S || exit /b 1
 gcc -c -o build\ocr_crop_kernels.o src\ocr_crop_kernels.S || exit /b 1
 gcc -c -o build\ocr_detect_kernels.o src\ocr_detect_kernels.S || exit /b 1
 set "INFERENCE_KERNELS=-Isrc -DSNIPLITE_INFERENCE_ASM build\inference_kernels.o build\inference_math.o build\inference_depthwise.o build\inference_convert.o build\ocr_crop_kernels.o build\ocr_detect_kernels.o"
+gcc -c -o build\pixel_ops.o src\pixel_ops.S || exit /b 1
 set "OCR_PIXEL_KERNELS=-DSNIPLITE_OCR_PREPROCESS build\pixel_ops.o src\ocr_preprocess.cpp"
 rem Build generic CPU, AVX2 CPU, and Vulkan-first formula inference engines.
 for %%n in (ggml ggml-base ggml-cpu) do dlltool -d third_party\formulanet\ggml\%%n.def -l build\%%n-import.a || exit /b 1
@@ -39,7 +40,7 @@ if exist build\formula\texo-distill-q8_0.gguf (
  copy /y third_party\formulanet\LICENSE build\formula\LICENSE-FormulaEngine.txt >nul || exit /b 1
 )
 rem Build generic CPU, AVX2 CPU, and Vulkan-first OCR engines with corrected recognition strides.
-g++ -std=c++17 -O3 -DNOMINMAX -DWIN32_LEAN_AND_MEAN -DSNIPLITE_OCR_BUILD -DSNIPLITE_CPU_ONLY %INFERENCE_KERNELS% ^
+g++ -std=c++17 -O3 -DNOMINMAX -DWIN32_LEAN_AND_MEAN -DSNIPLITE_OCR_BUILD -DSNIPLITE_CPU_ONLY %INFERENCE_KERNELS% %OCR_PIXEL_KERNELS% ^
  -ffunction-sections -fdata-sections -fno-ident -Ithird_party/ppocrv6 ^
  -Ithird_party/formulanet -Ithird_party/formulanet/core -Ithird_party/formulanet/ggml ^
  -shared -static-libgcc -static-libstdc++ -s -Wl,--gc-sections,--exclude-all-symbols,--nxcompat,--dynamicbase,--high-entropy-va,--no-insert-timestamp ^
@@ -47,7 +48,7 @@ g++ -std=c++17 -O3 -DNOMINMAX -DWIN32_LEAN_AND_MEAN -DSNIPLITE_OCR_BUILD -DSNIPL
  third_party\ppocrv6\ppocrv6_det.cpp third_party\ppocrv6\ocr_detect.cpp third_party\ppocrv6\ocr_crop.cpp ^
  third_party\ppocrv6\text_angle.cpp third_party\formulanet\core\gguf_loader.cpp src\ocr_engine.def ^
  build\ggml-import.a build\ggml-base-import.a build\ggml-cpu-import.a || exit /b 1
-g++ -std=c++17 -O3 -mavx2 -mfma -mf16c -DNOMINMAX -DWIN32_LEAN_AND_MEAN -DSNIPLITE_OCR_BUILD -DSNIPLITE_CPU_ONLY %INFERENCE_KERNELS% ^
+g++ -std=c++17 -O3 -mavx2 -mfma -mf16c -DNOMINMAX -DWIN32_LEAN_AND_MEAN -DSNIPLITE_OCR_BUILD -DSNIPLITE_CPU_ONLY %INFERENCE_KERNELS% %OCR_PIXEL_KERNELS% ^
  -ffunction-sections -fdata-sections -fno-ident -Ithird_party/ppocrv6 ^
  -Ithird_party/formulanet -Ithird_party/formulanet/core -Ithird_party/formulanet/ggml ^
  -shared -static-libgcc -static-libstdc++ -s -Wl,--gc-sections,--exclude-all-symbols,--nxcompat,--dynamicbase,--high-entropy-va,--no-insert-timestamp ^
@@ -55,7 +56,7 @@ g++ -std=c++17 -O3 -mavx2 -mfma -mf16c -DNOMINMAX -DWIN32_LEAN_AND_MEAN -DSNIPLI
  third_party\ppocrv6\ppocrv6_det.cpp third_party\ppocrv6\ocr_detect.cpp third_party\ppocrv6\ocr_crop.cpp ^
  third_party\ppocrv6\text_angle.cpp third_party\formulanet\core\gguf_loader.cpp src\ocr_engine.def ^
  build\ggml-import.a build\ggml-base-import.a build\ggml-cpu-import.a || exit /b 1
-g++ -std=c++17 -O3 -DNOMINMAX -DWIN32_LEAN_AND_MEAN -DSNIPLITE_OCR_BUILD -DSNIPLITE_VULKAN_PREFERRED %INFERENCE_KERNELS% ^
+g++ -std=c++17 -O3 -DNOMINMAX -DWIN32_LEAN_AND_MEAN -DSNIPLITE_OCR_BUILD -DSNIPLITE_VULKAN_PREFERRED %INFERENCE_KERNELS% %OCR_PIXEL_KERNELS% ^
  -ffunction-sections -fdata-sections -fno-ident -Ithird_party/ppocrv6 ^
  -Ithird_party/formulanet -Ithird_party/formulanet/core -Ithird_party/formulanet/ggml ^
  -shared -static-libgcc -static-libstdc++ -s -Wl,--gc-sections,--exclude-all-symbols,--nxcompat,--dynamicbase,--high-entropy-va,--no-insert-timestamp ^
@@ -90,6 +91,7 @@ windres --input-format=rc -O coff -I res -DSNIPLITE_CLI res/sniplite.rc build/cl
 
 gcc %CF% -Wl,--subsystem,windows -o build\sniplite.exe src\start.S src\main.c src\ov_base.S src\ov_edit.S ^
  src\ov_paint.S src\ov_show.S src\ov_input.S src\present.S src\shot.S src\draw.S src\pin.c src\image.S ^
+ src\scroll_thumb.S src\scroll_hash.S ^
  src\config.c src\settings.c src\update.c src\uninstall.c src\util.c src\ipc.c src\lang.c src\crt.c ^
  src\ocr.c src\ocr_ui.c src\ocr_table.c src\ocr_get.c src\formula.c src\formula_get.c src\formula_ui.c src\formula_preview.c src\scroll.c src\snap.c build\sniplite.res ^
  %APP_LDFLAGS% -lkernel32 -luser32 -lgdi32 -ldwmapi -limm32 -luuid -lole32 -lshell32 -lshlwapi -lgcc || exit /b 1

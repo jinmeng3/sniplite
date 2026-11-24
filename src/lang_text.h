@@ -1061,18 +1061,23 @@ X(Q_HINT,
   "Module facultatif. Télécharge l'assistant QR et sa licence depuis les versions GitHub de sniplite. Une fois installé, utilisez le bouton QR ou Ctrl+Q dans l’éditeur.",
   "Optionales Modul. Lädt den QR-Helfer samt Lizenz aus den GitHub-Veröffentlichungen von sniplite. Danach erkennt die QR-Schaltfläche oder Ctrl+Q den ausgewählten Bereich.",
   "Módulo opcional. Descarga el asistente QR y su licencia desde las versiones de sniplite en GitHub. Una vez instalado, usa el botón QR o Ctrl+Q en el editor.")
+X(BACKEND_LABEL, "推理后端：", "推論後端：", "Inference backend:", "推論バックエンド:", "추론 백엔드:", "Backend d’inférence :", "Inference-Backend:", "Backend de inferencia:")
+X(BACKEND_AUTO, "自动", "自動", "Auto", "自動", "자동", "Auto", "Automatisch", "Automático")
+X(BACKEND_VULKAN, "Vulkan", "Vulkan", "Vulkan", "Vulkan", "Vulkan", "Vulkan", "Vulkan", "Vulkan")
+X(BACKEND_AVX2, "AVX2", "AVX2", "AVX2", "AVX2", "AVX2", "AVX2", "AVX2", "AVX2")
+X(BACKEND_CPU, "CPU", "CPU", "CPU", "CPU", "CPU", "CPU", "CPU", "CPU")
 X(F_TITLE, "公式识别", "公式辨識", "Formula recognition", "数式認識", "수식 인식", "Reconnaissance de formules", "Formelerkennung", "Reconocimiento de fórmulas")
 X(F_STATE_NONE, "公式识别模块：未安装", "公式辨識模組：未安裝", "Formula recognition module: not installed", "数式認識モジュール: 未インストール", "수식 인식 모듈: 설치되지 않음", "Module de reconnaissance de formules : non installé", "Formelerkennungsmodul: nicht installiert", "Módulo de reconocimiento de fórmulas: no instalado")
 X(F_STATE_OK, "公式识别模块：已安装（%d MB）", "公式辨識模組：已安裝（%d MB）", "Formula recognition module: installed (%d MB)", "数式認識モジュール: インストール済み (%d MB)", "수식 인식 모듈: 설치됨 (%d MB)", "Module de reconnaissance de formules : installé (%d Mo)", "Formelerkennungsmodul: installiert (%d MB)", "Módulo de reconocimiento de fórmulas: instalado (%d MB)")
 X(F_HINT,
-  "可选模块，安装约 82 MB。截图编辑时点击公式按钮，将选区识别为 LaTeX 并复制到剪贴板。使用本机 Texo-Distill GGUF 和基于 CrispEmbed 的 CPU 公式引擎。许可信息见模块目录中的文件。",
-  "選用模組，安裝約 82 MB。截圖編輯時點擊公式按鈕，將選取範圍辨識為 LaTeX 並複製到剪貼簿。使用本機 Texo-Distill GGUF 與基於 CrispEmbed 的 CPU 公式引擎。授權資訊見模組資料夾中的檔案。",
-  "Optional module, about 82 MB installed. Click Formula in the capture editor to recognize the selection as LaTeX and copy it. Uses the local Texo-Distill GGUF with a CPU formula engine derived from CrispEmbed. See the module folder for license notices.",
-  "オプションのモジュールです。インストール容量は約 82 MB。キャプチャ編集画面で数式ボタンを押すと、選択範囲を LaTeX に変換してコピーします。ローカルの Texo-Distill GGUF と CrispEmbed ベースの CPU 数式エンジンを使います。ライセンス情報はモジュールフォルダー内のファイルをご覧ください。",
-  "선택 모듈이며 설치 용량은 약 82MB입니다. 캡처 편집 화면에서 수식 버튼을 누르면 선택 영역을 LaTeX로 인식해 복사합니다. 로컬 Texo-Distill GGUF와 CrispEmbed 기반 CPU 수식 엔진을 사용합니다. 라이선스 정보는 모듈 폴더의 파일을 확인하세요.",
-  "Module facultatif, environ 82 Mo installé. Dans l’éditeur de capture, cliquez sur Formule pour reconnaître la sélection en LaTeX et la copier. Utilise le GGUF Texo-Distill local et un moteur de formules CPU dérivé de CrispEmbed. Consultez les fichiers de licence du module.",
-  "Optionales Modul, etwa 82 MB installiert. Die Formel-Schaltfläche erkennt die Auswahl als LaTeX und kopiert sie. Verwendet das lokale Texo-Distill-GGUF und eine von CrispEmbed abgeleitete CPU-Formelerkennung. Lizenzhinweise stehen im Modulordner.",
-  "Módulo opcional, unos 82 MB instalado. En el editor de capturas, pulsa Fórmulas para reconocer la selección como LaTeX y copiarla. Usa el GGUF local de Texo-Distill y un motor de fórmulas en CPU derivado de CrispEmbed. Consulta los avisos de licencia del módulo.")
+  "可选模块（约 82 MB）。使用本机 Texo-Distill 识别并复制 LaTeX；后端可在上方选择。",
+  "選用模組（約 82 MB）。使用本機 Texo-Distill 辨識並複製 LaTeX；可在上方選擇後端。",
+  "Optional module (about 82 MB). Recognizes and copies LaTeX locally with Texo-Distill; choose a backend above.",
+  "オプション（約 82 MB）。ローカルの Texo-Distill で数式を認識してコピーします。バックエンドは上で選べます。",
+  "선택 모듈(약 82MB)입니다. 로컬 Texo-Distill로 수식을 인식해 복사합니다. 위에서 백엔드를 선택하세요.",
+  "Module facultatif (environ 82 Mo). Reconnaît et copie les formules localement avec Texo-Distill ; choisissez le backend ci-dessus.",
+  "Optionales Modul (etwa 82 MB). Erkennt und kopiert Formeln lokal mit Texo-Distill; Backend oben auswählen.",
+  "Módulo opcional (unos 82 MB). Reconoce y copia fórmulas localmente con Texo-Distill; elige el backend arriba.")
 X(F_CHECK_FAILED, "公式识别模块文件校验失败，请重试。", "公式辨識模組檔案驗證失敗，請重試。", "Formula module files failed verification. Try again.", "数式認識モジュールの検証に失敗しました。もう一度お試しください。", "수식 모듈 파일 검증에 실패했습니다. 다시 시도하세요.", "La vérification du module de formules a échoué. Réessayez.", "Die Prüfung der Formelmoduldateien ist fehlgeschlagen. Bitte erneut versuchen.", "Falló la verificación de los archivos del módulo de fórmulas. Inténtalo de nuevo.")
 X(F_FILES_MISSING, "缺少本机 Texo-Distill 模型或 CrispEmbed Vulkan 运行库文件。", "缺少本機 Texo-Distill 模型或 CrispEmbed Vulkan 執行庫檔案。", "The local Texo-Distill model or CrispEmbed Vulkan runtime files are missing.", "ローカルの Texo-Distill モデルまたは CrispEmbed Vulkan ランタイムが見つかりません。", "로컬 Texo-Distill 모델 또는 CrispEmbed Vulkan 런타임 파일이 없습니다.", "Le modèle Texo-Distill local ou le runtime Vulkan de CrispEmbed est introuvable.", "Das lokale Texo-Distill-Modell oder die CrispEmbed-Vulkan-Laufzeit fehlt.", "Falta el modelo local Texo-Distill o el runtime Vulkan de CrispEmbed.")
 X(F_NO_RESULT, "选区里没有识别到公式。", "選取範圍內沒有辨識到公式。", "No formula was recognized in the selection.", "選択範囲から数式を認識できませんでした。", "선택 영역에서 수식을 인식하지 못했습니다.", "Aucune formule reconnue dans la sélection.", "In der Auswahl wurde keine Formel erkannt.", "No se reconoció ninguna fórmula en la selección.")
@@ -1091,14 +1096,14 @@ X(O_WRITE_FAILED, "无法写入程序所在的文件夹。", "無法寫入程式
   "프로그램 폴더에 쓸 수 없습니다.", "Impossible d'écrire dans le dossier du programme.",
   "In den Programmordner kann nicht geschrieben werden.", "No se puede escribir en la carpeta del programa.")
 X(O_HINT,
-  "可选模块，下载约 38 MB，独立安装约 81 MB；若已安装公式模块，只需额外约 21 MB。用来识别截图里的文字和表格，全部在本机完成，不联网。\n使用 PP-OCRv6 tiny 检测模型、small 识别模型及 CrispEmbed/GGML，文字识别固定在 CPU 上运行。",
-  "選用模組，下載約 38 MB，獨立安裝約 81 MB；若已安裝公式模組，只需額外約 21 MB。用來辨識截圖裡的文字和表格，全部在本機完成，不連網。\n使用 PP-OCRv6 tiny 偵測模型、small 辨識模型及 CrispEmbed/GGML，文字辨識固定在 CPU 上執行。",
-  "Optional: about 38 MB to download, 81 MB installed; about 21 MB extra when the Formula module is installed. It reads text and tables locally.\nUses the PP-OCRv6 tiny detector and small recognizer with CrispEmbed/GGML. Text recognition runs on CPU.",
-  "オプション: ダウンロード約 38 MB、単独でのインストール容量は約 81 MB。数式モジュール導入済みなら追加分は約 21 MB。文字と表をローカルで読み取ります。\nPP-OCRv6 tiny 検出モデルと small 認識モデル、CrispEmbed/GGML を使用し、文字認識は CPU で実行します。",
-  "선택 모듈: 다운로드 약 38MB, 단독 설치 약 81MB. 수식 모듈이 있으면 추가 용량은 약 21MB입니다. 글자와 표를 로컬에서 읽습니다.\nPP-OCRv6 tiny 검출 모델과 small 인식 모델, CrispEmbed/GGML을 사용하며 텍스트 인식은 CPU에서 실행합니다.",
-  "Facultatif : environ 38 Mo à télécharger, 81 Mo installés, ou 21 Mo supplémentaires avec le module Formules. Texte et tableaux sont lus localement.\nDétecteur PP-OCRv6 tiny et reconnaissance small avec CrispEmbed/GGML. La reconnaissance fonctionne sur CPU.",
-  "Optional: etwa 38 MB Download, 81 MB installiert; mit dem Formelmodul zusätzlich etwa 21 MB. Text und Tabellen werden lokal erkannt.\nPP-OCRv6 tiny zur Erkennung der Textbereiche und small zum Lesen mit CrispEmbed/GGML. Texterkennung läuft auf der CPU.",
-  "Opcional: unos 38 MB de descarga, 81 MB instalado; unos 21 MB adicionales con el módulo de fórmulas. Texto y tablas se procesan localmente.\nDetector PP-OCRv6 tiny y reconocimiento small con CrispEmbed/GGML. El reconocimiento se ejecuta en CPU.")
+  "可选模块：下载约 38 MB，独立安装约 81 MB；已装公式模块时额外约 21 MB。文字和表格在本机识别；自动依次尝试 Vulkan、AVX2、CPU。",
+  "選用模組：下載約 38 MB，單獨安裝約 81 MB；已裝公式模組時額外約 21 MB。文字和表格在本機辨識；自動依序嘗試 Vulkan、AVX2、CPU。",
+  "Optional module: 38 MB download, 81 MB standalone, or 21 MB extra with Formula installed. Text and tables are recognized locally; Auto tries Vulkan, AVX2, then CPU.",
+  "オプション（ダウンロード約 38 MB、単独で約 81 MB、数式モジュール導入済みなら追加約 21 MB）。文字と表をローカル認識します。自動では Vulkan、AVX2、CPU の順に試します。",
+  "선택 모듈입니다(다운로드 약 38MB, 단독 설치 약 81MB, 수식 모듈이 있으면 추가 약 21MB). 글자와 표를 로컬에서 인식하며 자동은 Vulkan, AVX2, CPU 순으로 시도합니다.",
+  "Module facultatif : 38 Mo à télécharger, 81 Mo seul ou 21 Mo supplémentaires avec Formules. Reconnaît texte et tableaux localement ; Auto essaie Vulkan, AVX2 puis CPU.",
+  "Optionales Modul: 38 MB Download, 81 MB allein oder 21 MB zusätzlich mit Formeln. Erkennt Text und Tabellen lokal; Auto versucht Vulkan, AVX2 und dann CPU.",
+  "Módulo opcional: 38 MB de descarga, 81 MB independiente o 21 MB adicionales con Fórmulas. Reconoce texto y tablas localmente; Auto prueba Vulkan, AVX2 y luego CPU.")
 
 /* ---- the save dialog (image.S); | stands for the separator between filter parts ---- */
 X(SAVE_FILTER,
