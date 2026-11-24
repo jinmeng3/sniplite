@@ -645,6 +645,74 @@ static int cmd_start(int argc, WCHAR **argv, bool json, Str *out)
     return hotkeys_ok() ? EXIT_OK : EXIT_HOTKEY;
 }
 
+/* Write the selected pixels straight into the final 24bpp clipboard DIB. The
+ * normal Img path would hold a second full-size 32bpp copy during capture. */
+static bool clip_put_shot(HWND owner, const Shot *sh, RECT r, int w, int h)
+{
+    if (w <= 0 || h <= 0)
+        return false;
+    SIZE_T row_bytes = ((SIZE_T)w * 3 + 3) & ~(SIZE_T)3;
+    SIZE_T image_bytes = row_bytes * (SIZE_T)h;
+    HGLOBAL dib = GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT,
+                              sizeof(BITMAPINFOHEADER) + image_bytes);
+    if (!dib)
+        return false;
+    BITMAPINFOHEADER *header = GlobalLock(dib);
+    if (!header) {
+        GlobalFree(dib);
+        return false;
+    }
+    header->biSize = sizeof(*header);
+    header->biWidth = w;
+    header->biHeight = h;
+    header->biPlanes = 1;
+    header->biBitCount = 24;
+    header->biCompression = BI_RGB;
+    header->biSizeImage = (DWORD)image_bytes;
+
+    uint32_t *row = mem_alloc((size_t)w * sizeof(*row));
+    if (!row) {
+        GlobalUnlock(dib);
+        GlobalFree(dib);
+        return false;
+    }
+    uint8_t *pixels = (uint8_t *)(header + 1);
+    for (int y = 0; y < h; ++y) {
+        RECT source = {r.left, r.top + y, r.right, r.top + y + 1};
+        shot_copy(sh, source, row, w);
+        uint8_t *dest = pixels + (SIZE_T)(h - 1 - y) * row_bytes;
+        for (int x = 0; x < w; ++x) {
+            uint32_t pixel = row[x];
+            dest[3 * x] = (uint8_t)pixel;
+            dest[3 * x + 1] = (uint8_t)(pixel >> 8);
+            dest[3 * x + 2] = (uint8_t)(pixel >> 16);
+        }
+    }
+    mem_free(row);
+    GlobalUnlock(dib);
+
+    bool opened = false;
+    for (int attempt = 0; attempt < 25; ++attempt) {
+        if (OpenClipboard(owner)) {
+            opened = true;
+            break;
+        }
+        Sleep(8);
+    }
+    if (!opened) {
+        GlobalFree(dib);
+        return false;
+    }
+    EmptyClipboard();
+    HANDLE transferred = SetClipboardData(CF_DIB, dib);
+    CloseClipboard();
+    if (!transferred) {
+        GlobalFree(dib);
+        return false;
+    }
+    return true;
+}
+
 static int capture_now(RECT sr, const WCHAR *path, bool clip, bool pin, bool json, Str *out)
 {
     Shot sh;
@@ -662,23 +730,28 @@ static int capture_now(RECT sr, const WCHAR *path, bool clip, bool pin, bool jso
     RECT cr = {r.left - sh.vx, r.top - sh.vy, r.right - sh.vx, r.bottom - sh.vy};
     int w = r.right - r.left, h = r.bottom - r.top;
     double grab = sh.grab_ms;
-    Img im;
-    if (!img_create(&im, w, h)) {
-        shot_free(&sh);
-        str_add(out, T(NO_MEMORY));
-        return EXIT_FAIL;
-    }
-    shot_copy(&sh, cr, im.px, w);
-    shot_free(&sh);
     bool saved = false, copied = false, pinned = false;
-    if (path)
-        saved = image_save(path, im.px, w, w, h);
-    if (clip)
-        copied = clip_put_image(D.hwnd, im.px, w, w, h);
-    if (pin)
-        pinned = pin_add(&im, r.left, r.top, false);
-    else
-        img_destroy(&im);
+    if (clip && !path && !pin) {
+        copied = clip_put_shot(D.hwnd, &sh, cr, w, h);
+        shot_free(&sh);
+    } else {
+        Img im;
+        if (!img_create(&im, w, h)) {
+            shot_free(&sh);
+            str_add(out, T(NO_MEMORY));
+            return EXIT_FAIL;
+        }
+        shot_copy(&sh, cr, im.px, w);
+        shot_free(&sh);
+        if (path)
+            saved = image_save(path, im.px, w, w, h);
+        if (clip)
+            copied = clip_put_image(D.hwnd, im.px, w, w, h);
+        if (pin)
+            pinned = pin_add(&im, r.left, r.top, false);
+        else
+            img_destroy(&im);
+    }
     bool ok = (!path || saved) && (!clip || copied) && (!pin || pinned);
     if (json) {
         str_addf(out, L"{\"ok\":%s,\"x\":%d,\"y\":%d,\"width\":%d,\"height\":%d,\"grab_ms\":", ok ? L"true" : L"false",
