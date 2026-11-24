@@ -60,12 +60,12 @@ QR 使用同一张测试码；OCR 使用 1000×260 RGB 单行文本；FormulaNet
 
 ## 下载与安装
 
-前往 [GitHub Releases](https://github.com/jinmeng3/sniplite/releases) 下载当前版本。v1.5.1.6 提供安装程序和七种便携 ZIP：
+前往 [GitHub Releases](https://github.com/jinmeng3/sniplite/releases) 下载当前版本。v1.5.1.7 提供安装程序和七种便携 ZIP：
 
-- [Windows 安装程序](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.6/sniplite_win_setup_amd64.exe)
-- [二维码便携版](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.6/sniplite_1.5.1.6_portable_QR_x64.zip)
-- 二维码 + OCR： [CPU](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.6/sniplite_1.5.1.6_portable_QR_OCR_CPU_x64.zip) · [AVX2](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.6/sniplite_1.5.1.6_portable_QR_OCR_AVX2_x64.zip) · [Vulkan](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.6/sniplite_1.5.1.6_portable_QR_OCR_Vulkan_x64.zip)
-- 二维码 + OCR + FormulaNet： [CPU](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.6/sniplite_1.5.1.6_portable_QR_OCR_FormulaNet_CPU_x64.zip) · [AVX2](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.6/sniplite_1.5.1.6_portable_QR_OCR_FormulaNet_AVX2_x64.zip) · [Vulkan](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.6/sniplite_1.5.1.6_portable_QR_OCR_FormulaNet_Vulkan_x64.zip)
+- [Windows 安装程序](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.7/sniplite_win_setup_amd64.exe)
+- [二维码便携版](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.7/sniplite_1.5.1.7_portable_QR_x64.zip)
+- 二维码 + OCR： [CPU](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.7/sniplite_1.5.1.7_portable_QR_OCR_CPU_x64.zip) · [AVX2](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.7/sniplite_1.5.1.7_portable_QR_OCR_AVX2_x64.zip) · [Vulkan](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.7/sniplite_1.5.1.7_portable_QR_OCR_Vulkan_x64.zip)
+- 二维码 + OCR + FormulaNet： [CPU](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.7/sniplite_1.5.1.7_portable_QR_OCR_FormulaNet_CPU_x64.zip) · [AVX2](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.7/sniplite_1.5.1.7_portable_QR_OCR_FormulaNet_AVX2_x64.zip) · [Vulkan](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.7/sniplite_1.5.1.7_portable_QR_OCR_FormulaNet_Vulkan_x64.zip)
 
 便携版解压后运行 `sniplite.exe`。二维码 ZIP 已包含命令行程序 `sniplite-cli.com`。OCR 和公式识别模块可在首选项对应页面安装或删除；FormulaNet 模块也可从本机模型与运行库文件安装。安装版和便携版均包含 MicroTeX 原生公式预览。
 

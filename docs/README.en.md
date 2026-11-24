@@ -49,16 +49,16 @@ QR used the same test code; OCR used a 1000×260 RGB image with one text line; F
 
 ## Download
 
-Get the current version from [GitHub Releases](https://github.com/jinmeng3/sniplite/releases). Version 1.5.1.6 provides an installer and seven portable ZIPs:
+Get the current version from [GitHub Releases](https://github.com/jinmeng3/sniplite/releases). Version 1.5.1.7 provides an installer and seven portable ZIPs:
 
-- [Windows installer](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.6/sniplite_win_setup_amd64.exe)
-- [QR portable package](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.6/sniplite_1.5.1.6_portable_QR_x64.zip)
-- [QR + OCR CPU](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.6/sniplite_1.5.1.6_portable_QR_OCR_CPU_x64.zip)
-- [QR + OCR AVX2](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.6/sniplite_1.5.1.6_portable_QR_OCR_AVX2_x64.zip)
-- [QR + OCR Vulkan](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.6/sniplite_1.5.1.6_portable_QR_OCR_Vulkan_x64.zip)
-- [QR + OCR + FormulaNet CPU](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.6/sniplite_1.5.1.6_portable_QR_OCR_FormulaNet_CPU_x64.zip)
-- [QR + OCR + FormulaNet AVX2](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.6/sniplite_1.5.1.6_portable_QR_OCR_FormulaNet_AVX2_x64.zip)
-- [QR + OCR + FormulaNet Vulkan](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.6/sniplite_1.5.1.6_portable_QR_OCR_FormulaNet_Vulkan_x64.zip)
+- [Windows installer](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.7/sniplite_win_setup_amd64.exe)
+- [QR portable package](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.7/sniplite_1.5.1.7_portable_QR_x64.zip)
+- [QR + OCR CPU](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.7/sniplite_1.5.1.7_portable_QR_OCR_CPU_x64.zip)
+- [QR + OCR AVX2](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.7/sniplite_1.5.1.7_portable_QR_OCR_AVX2_x64.zip)
+- [QR + OCR Vulkan](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.7/sniplite_1.5.1.7_portable_QR_OCR_Vulkan_x64.zip)
+- [QR + OCR + FormulaNet CPU](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.7/sniplite_1.5.1.7_portable_QR_OCR_FormulaNet_CPU_x64.zip)
+- [QR + OCR + FormulaNet AVX2](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.7/sniplite_1.5.1.7_portable_QR_OCR_FormulaNet_AVX2_x64.zip)
+- [QR + OCR + FormulaNet Vulkan](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.7/sniplite_1.5.1.7_portable_QR_OCR_FormulaNet_Vulkan_x64.zip)
 
 Extract the ZIP and run `sniplite.exe`. The `sniplite-cli.com` companion provides command-line features; it is included in the QR ZIPs and is a separate download for single-file portable builds. Keep it beside the app. Portable builds can download or remove OCR from the OCR tab in Preferences. After checking for updates in the Update tab, portable builds can download and replace existing program files locally; optional OCR and formula model folders are preserved. The QR helper can also be installed or removed from the QR tab. Portable builds can enable “Start with Windows” in Preferences. The shortcut points to the current program location, so do not move or rename its directory afterward. If you move it, turn the option off and on again to update the shortcut.
 
