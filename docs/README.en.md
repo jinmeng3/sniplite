@@ -122,7 +122,7 @@ In Preferences > Pin rack, choose the top or bottom edge. When the rack has stor
 
 Click a thumbnail to restore its pin. Drag a card onto another card to reorder; right-click a card to restore or close that pin. Click a card to focus the rack, then use the arrow keys, `Home`/`End`, `Enter` to restore, or `Delete` to close. Use the wheel or `<` and `>` buttons to browse more thumbnails. Closing the rack restores every collected pin. `Shift+F3` hides or shows the rack together with uncollected pins. Collection lasts for the current session; exiting the app releases all images.
 
-The rack uses a transparent, curved clothesline with cards held by small clips. Each card shows the original image dimensions; the footer shows the visible range.
+The rack is a transparent overlay with a curved clothesline across the monitor. Pins appear as aspect-preserving cards held by small clips; each card shows its original dimensions, and navigation and close controls sit on the opposite edge.
 
 ![Pin rack](../pics/ui/pin-rack-en.png)
 
