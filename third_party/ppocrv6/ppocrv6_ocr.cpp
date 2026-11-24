@@ -58,12 +58,13 @@ struct pp_svtr {
 
 struct pp_graph_state {
     ggml_backend_t backend = nullptr;
-    ggml_backend_t cpu_backend = nullptr;
     ggml_backend_sched_t sched = nullptr;
     ggml_context * graph_ctx = nullptr;
     ggml_cgraph * graph = nullptr;
     ggml_tensor * input = nullptr;
     ggml_tensor * output = nullptr;
+    ggml_tensor * output_ids = nullptr;
+    std::vector<int32_t> token_ids;
     bool logits_output = false;
     bool svtr_prefix_output = false;
     bool svtr_decoder_output = false;
@@ -71,12 +72,7 @@ struct pp_graph_state {
     // whichever path runs the SVTR blocks + neck norm.
     ggml_tensor * svtr_skip = nullptr;
     std::vector<float> svtr_skip_host;
-    std::vector<uint8_t> graph_meta;
-    std::unordered_map<const ggml_tensor *, ggml_tensor *> resident;
-    std::vector<ggml_context *> resident_ctxs;
-    std::vector<ggml_backend_buffer_t> resident_bufs;
     std::vector<std::pair<const char *, ggml_tensor *>> debug_taps;
-    bool attempted = false;
     bool ready = false;
     // The recognizer graph has fixed crop dimensions. Keep its scheduler
     // allocation alive across line crops; rebuilding the allocation for every
@@ -85,12 +81,27 @@ struct pp_graph_state {
     bool allocated = false;
     int width = 0;
     int batch = 1;
+    uint32_t config = 0;
+    bool reusable = false;
+};
+
+// Resident tensors and the fallback backend outlive every execution shape.
+// Shape swaps move only activation ownership; model leaves are never copied.
+struct pp_graph_weights {
+    ggml_backend_t cpu_backend = nullptr;
+    ggml_tensor * ctc_rank = nullptr;
+    std::unordered_map<const ggml_tensor *, ggml_tensor *> resident;
+    std::vector<ggml_context *> resident_ctxs;
+    std::vector<ggml_backend_buffer_t> resident_bufs;
+    uint32_t config = 0;
+    bool configured = false;
 };
 
 struct ppocrv6_ocr_context {
     core_gguf::WeightLoad wl;
     ggml_backend_t backend = nullptr;
     int n_threads = 1;
+    core_cpu::Conv2dRuntime conv_runtime;
     std::vector<std::string> vocab;
     std::string result;
     std::vector<float> scratch;
@@ -116,6 +127,8 @@ struct ppocrv6_ocr_context {
     std::vector<float> svtr_norm_wf, svtr_norm_bf, svtr_head_wf, svtr_head_bf;
     std::unique_ptr<crispembed_diff::Ref> diff;
     pp_graph_state graph;
+    pp_graph_state cached_graph;
+    pp_graph_weights graph_weights;
 };
 
 static ggml_tensor * get(const core_gguf::tensor_map & m, const std::string & n) {
@@ -428,10 +441,6 @@ static bool map_model(ppocrv6_ocr_context * c) {
     c->fc1_b = get(m, "rec.head.fc1.bias");
     c->fc2_w = get(m, "rec.head.fc2.weight");
     c->fc2_b = get(m, "rec.head.fc2.bias");
-    c->fc1_wf = to_f32(c->fc1_w);
-    c->fc1_bf = to_f32(c->fc1_b);
-    c->fc2_wf = to_f32(c->fc2_w);
-    c->fc2_bf = to_f32(c->fc2_b);
     c->norm1_w = get(m, "rec.head.norm1.weight");
     c->norm1_b = get(m, "rec.head.norm1.bias");
     c->norm1_mean = get(m, "rec.head.norm1.running_mean");
@@ -492,8 +501,8 @@ static bool map_model(ppocrv6_ocr_context * c) {
 static ggml_tensor * pp_graph_resident(ppocrv6_ocr_context * c, const ggml_tensor * src, ggml_type type, int64_t ne0,
                                        int64_t ne1, int64_t ne2, int64_t ne3) {
     if (!src || !c->graph.backend) return nullptr;
-    auto it = c->graph.resident.find(src);
-    if (it != c->graph.resident.end()) return it->second;
+    auto it = c->graph_weights.resident.find(src);
+    if (it != c->graph_weights.resident.end()) return it->second;
     ggml_init_params ip = { ggml_tensor_overhead() + 64, nullptr, true };
     ggml_context * wc = ggml_init(ip);
     if (!wc) return nullptr;
@@ -515,9 +524,13 @@ static ggml_tensor * pp_graph_resident(ppocrv6_ocr_context * c, const ggml_tenso
         // = the CTC blank, and every crop decoded to the empty string
         // (CUDA-rec "boxes=38 results=0" — Metal only dodged it because it
         // was always validated on the f16 artifact).
-        std::vector<uint8_t> raw(ggml_nbytes(src));
-        ggml_backend_tensor_get(src, raw.data(), 0, raw.size());
-        ggml_backend_tensor_set(dst, raw.data(), 0, ggml_nbytes(dst));
+        if (src->buffer && ggml_backend_buffer_is_host(src->buffer)) {
+            ggml_backend_tensor_set(dst, src->data, 0, ggml_nbytes(dst));
+        } else {
+            std::vector<uint8_t> raw(ggml_nbytes(src));
+            ggml_backend_tensor_get(src, raw.data(), 0, raw.size());
+            ggml_backend_tensor_set(dst, raw.data(), 0, ggml_nbytes(dst));
+        }
     } else if (type == GGML_TYPE_F16) {
         std::vector<float> data = to_f32(src);
         std::vector<ggml_fp16_t> half(data.size());
@@ -528,40 +541,22 @@ static ggml_tensor * pp_graph_resident(ppocrv6_ocr_context * c, const ggml_tenso
         std::vector<float> data = to_f32(src);
         ggml_backend_tensor_set(dst, data.data(), 0, ggml_nbytes(dst));
     }
-    c->graph.resident[src] = dst;
-    c->graph.resident_ctxs.push_back(wc);
-    c->graph.resident_bufs.push_back(buf);
+    c->graph_weights.resident[src] = dst;
+    c->graph_weights.resident_ctxs.push_back(wc);
+    c->graph_weights.resident_bufs.push_back(buf);
     return dst;
 }
 
-// GGUF preserves the converter's contiguous Paddle [OC, IC/G, KH, KW]
-// convolution bytes, while ggml_conv_2d consumes [KW, KH, IC/G, OC]. The
-// dimensions alone cannot express this layout change; materialize the
-// reordered tensor once on the selected graph backend.
+// Paddle [OC, IC/G, KH, KW] and ggml [KW, KH, IC/G, OC] have the
+// same contiguous byte order. Only the metadata shape changes; avoid
+// materializing an identity permutation or round-tripping F16 through F32.
 static ggml_tensor * pp_graph_resident_conv(ppocrv6_ocr_context * c, const pp_conv & p, ggml_type type) {
     if (!p.w || !c->graph.backend) return nullptr;
-    auto it = c->graph.resident.find(p.w);
-    if (it != c->graph.resident.end()) return it->second;
+    auto it = c->graph_weights.resident.find(p.w);
+    if (it != c->graph_weights.resident.end()) return it->second;
     const int icg = p.in_ch / std::max(1, p.groups);
     const size_t n = (size_t)p.kw * p.kh * icg * p.out_ch;
-    const std::vector<float> src = to_f32(p.w);
-    if (src.size() < n) return nullptr;
-    std::vector<float> data(n);
-    if (p.groups == p.in_ch) {
-        // The converter's depthwise tensors are already channel-major
-        // [OC, KH, KW], which is the layout consumed by ggml's depthwise
-        // im2col path after its [KW, KH, 1, OC] view.
-        data = src;
-    } else {
-        for (int oc = 0; oc < p.out_ch; ++oc)
-            for (int ic = 0; ic < icg; ++ic)
-                for (int ky = 0; ky < p.kh; ++ky)
-                    for (int kx = 0; kx < p.kw; ++kx) {
-                        const size_t paddle = ((size_t)oc * icg + ic) * p.kh * p.kw + (size_t)ky * p.kw + kx;
-                        const size_t ggml = (size_t)kx + (size_t)p.kw * (ky + (size_t)p.kh * (ic + (size_t)icg * oc));
-                        data[ggml] = src[paddle];
-                    }
-    }
+    if ((size_t)ggml_nelements(p.w) < n) return nullptr;
     ggml_init_params ip = { ggml_tensor_overhead() + 64, nullptr, true };
     ggml_context * wc = ggml_init(ip);
     if (!wc) return nullptr;
@@ -572,19 +567,23 @@ static ggml_tensor * pp_graph_resident_conv(ppocrv6_ocr_context * c, const pp_co
         ggml_free(wc);
         return nullptr;
     }
-    if (type == GGML_TYPE_F16) {
-        std::vector<ggml_fp16_t> half(data.size());
-        ggml_fp32_to_fp16_row(data.data(), half.data(), (int64_t)half.size());
-        ggml_backend_tensor_set(dst, half.data(), 0, ggml_nbytes(dst));
+    if (p.w->type == type && p.w->buffer && ggml_backend_buffer_is_host(p.w->buffer)) {
+        ggml_backend_tensor_set(dst, p.w->data, 0, ggml_nbytes(dst));
     } else {
-        ggml_backend_tensor_set(dst, data.data(), 0, ggml_nbytes(dst));
+        std::vector<float> data = to_f32(p.w);
+        if (type == GGML_TYPE_F16) {
+            std::vector<ggml_fp16_t> half(n);
+            ggml_fp32_to_fp16_row(data.data(), half.data(), (int64_t)n);
+            ggml_backend_tensor_set(dst, half.data(), 0, ggml_nbytes(dst));
+        } else {
+            ggml_backend_tensor_set(dst, data.data(), 0, ggml_nbytes(dst));
+        }
     }
     if (core_env::on("CRISPEMBED_PPOCRV6_GRAPH_DEBUG"))
-        fprintf(stderr, "[ppocrv6-graph-weight] conv=%dx%dx%dx%d src0=%.7g dst0=%.7g\n", p.kw, p.kh, icg, p.out_ch,
-                src[0], data[0]);
-    c->graph.resident[p.w] = dst;
-    c->graph.resident_ctxs.push_back(wc);
-    c->graph.resident_bufs.push_back(buf);
+        fprintf(stderr, "[ppocrv6-graph-weight] conv=%dx%dx%dx%d type=%d\n", p.kw, p.kh, icg, p.out_ch, (int)type);
+    c->graph_weights.resident[p.w] = dst;
+    c->graph_weights.resident_ctxs.push_back(wc);
+    c->graph_weights.resident_bufs.push_back(buf);
     return dst;
 }
 
@@ -624,7 +623,7 @@ static ggml_tensor * pp_graph_conv(ppocrv6_ocr_context * c, ggml_context * g, gg
     // im2col + mul_mat, whose intermediate is what small 48-row images are
     // bandwidth-bound on. Opt-in A/B via CRISPEMBED_PPOCRV6_CONV_DIRECT=1;
     // requires F32 input and contiguous F16/F32 kernel (both true here).
-    static const bool conv_direct =
+    const bool conv_direct =
         core_env::on("CRISPEMBED_PPOCRV6_CONV_DIRECT") && !ggml_backend_is_cpu(c->graph.backend);
     ggml_tensor * y = dw ? ggml_conv_2d_dw(g, w, x, p.stride_w, p.stride_h, p.pad_w, p.pad_h, 1, 1)
                          : (conv_direct ? ggml_conv_2d_direct(g, w, x, p.stride_w, p.stride_h, p.pad_w, p.pad_h, 1, 1)
@@ -727,53 +726,150 @@ static ggml_tensor * pp_graph_linear(ppocrv6_ocr_context * c, ggml_context * g, 
 // tiny variant keeps its own CRISPEMBED_PPOCRV6_GRAPH_ACCEPT gate because the
 // evidence above is for small. CRISPEMBED_PPOCRV6_NO_GRAPH restores the CPU
 // reference everywhere, which is the bisection lever if a crop ever disagrees.
+// This cap applies to each recognition graph batch, never to the page's
+// total region count. Zero remains an explicit graph opt-out.
+static int pp_graph_max_regions() {
+    const char * value = std::getenv("CRISPEMBED_PPOCRV6_GRAPH_MAX_REGIONS");
+    if (!value || !*value) return 8;
+    char * end = nullptr;
+    const long limit = std::strtol(value, &end, 10);
+    if (*end || limit < 0) return 8;
+    return (int)std::min(limit, (long)INT32_MAX);
+}
+
 static bool pp_graph_enabled() {
     // FORCE_CPU normally means the scalar reference. Permit the explicit
     // batch-graph probe to select the CPU backend while still exercising the
     // GGML graph; ordinary FORCE_CPU runs remain graph-free.
-    static const bool off =
-        core_env::on("CRISPEMBED_PPOCRV6_NO_GRAPH") ||
+    const bool off =
+        pp_graph_max_regions() == 0 || core_env::on("CRISPEMBED_PPOCRV6_NO_GRAPH") ||
         (core_env::on("CRISPEMBED_PPOCRV6_FORCE_CPU") && !core_env::on("CRISPEMBED_PPOCRV6_BATCH_GRAPH"));
     return !off;
 }
 
-static bool pp_graph_build(ppocrv6_ocr_context * c, int width, int batch = 1) {
-    batch = std::max(1, batch);
-    if (c->graph.attempted && c->graph.width == width && c->graph.batch == batch) return c->graph.ready;
-    if (c->graph.attempted && (c->graph.width != width || c->graph.batch != batch)) {
-        // Only activations and the execution plan depend on crop shape.
-        // Resident model tensors keep their own contexts/buffers and remain
-        // valid on c->backend until ppocrv6_ocr_free.
-        c->graph.debug_taps.clear();
-        if (c->graph.sched) ggml_backend_sched_free(c->graph.sched);
-        if (c->graph.graph_ctx) ggml_free(c->graph.graph_ctx);
-        c->graph.sched = nullptr;
-        c->graph.graph_ctx = nullptr;
-        c->graph.graph = nullptr;
-        c->graph.input = nullptr;
-        c->graph.output = nullptr;
-        c->graph.attempted = false;
-        c->graph.ready = false;
-        c->graph.allocated = false;
-        c->graph.logits_output = false;
-        c->graph.svtr_prefix_output = false;
-        c->graph.svtr_decoder_output = false;
-        c->graph.batch = 1;
+// A plain GPU argmax can choose a later lane on ties. Select its value,
+// mask every non-maximum, then prefer the smallest index with ranks C - index.
+static ggml_tensor * pp_graph_ctc_ids(ppocrv6_ocr_context * c, ggml_context * g, ggml_tensor * logits) {
+    const int64_t classes = logits->ne[0], tokens = logits->ne[1];
+    if (classes > (1 << 24)) return nullptr; // integer ranks must be exact in F32
+    if (!c->graph_weights.ctc_rank) {
+        ggml_init_params ip = {ggml_tensor_overhead() + 64, nullptr, true};
+        ggml_context * wc = ggml_init(ip);
+        if (!wc) return nullptr;
+        ggml_tensor * rank = ggml_new_tensor_1d(wc, GGML_TYPE_F32, classes);
+        ggml_backend_buffer_t buf = ggml_backend_alloc_ctx_tensors(wc, c->graph.backend);
+        if (!buf) { ggml_free(wc); return nullptr; }
+        std::vector<float> values((size_t)classes);
+        for (int64_t i = 0; i < classes; ++i) values[(size_t)i] = float(classes - i);
+        ggml_backend_tensor_set(rank, values.data(), 0, values.size() * sizeof(float));
+        c->graph_weights.ctc_rank = rank;
+        c->graph_weights.resident_ctxs.push_back(wc);
+        c->graph_weights.resident_bufs.push_back(buf);
     }
-    c->graph.attempted = true;
-    if (!pp_graph_enabled()) return false;
+    ggml_tensor * winner = ggml_argmax(g, logits);
+    ggml_tensor * maximum = ggml_get_rows(g, ggml_reshape_3d(g, logits, 1, classes, tokens),
+                                         ggml_reshape_2d(g, winner, 1, tokens));
+    maximum = ggml_reshape_2d(g, maximum, 1, tokens);
+    ggml_tensor * equal = ggml_scale_bias(g, ggml_sgn(g, ggml_sub(g, logits, maximum)), 1.0f, 1.0f);
+    return ggml_argmax(g, ggml_mul(g, equal, c->graph_weights.ctc_rank));
+}
+
+static void pp_graph_decode(const ppocrv6_ocr_context * c, const float * logits, const int32_t * ids,
+                            int tokens, int classes, std::string & text) {
+    text.clear();
+    int last = -1;
+    for (int t = 0; t < tokens; ++t) {
+        int best;
+        if (ids) best = ids[t];
+        else {
+            const float * row = logits + (size_t)t * classes;
+            best = int(std::max_element(row, row + classes) - row);
+        }
+        if (best > 0 && best != last && best - 1 < (int)c->vocab.size()) text += c->vocab[best - 1];
+        last = best;
+    }
+}
+
+static void pp_graph_dispose(pp_graph_state & plan) {
+    // The scheduler still references graph tensors and shared model leaves.
+    if (plan.sched) ggml_backend_sched_free(plan.sched);
+    if (plan.graph_ctx) ggml_free(plan.graph_ctx);
+    plan = pp_graph_state{};
+}
+
+static void pp_graph_free_residents(pp_graph_weights & weights) {
+    for (auto * buffer : weights.resident_bufs)
+        if (buffer) ggml_backend_buffer_free(buffer);
+    for (auto * ctx : weights.resident_ctxs)
+        if (ctx) ggml_free(ctx);
+    weights.resident.clear();
+    weights.resident_bufs.clear();
+    weights.resident_ctxs.clear();
+    weights.ctc_rank = nullptr;
+    weights.configured = false;
+}
+
+static uint32_t pp_graph_config(const ppocrv6_ocr_context * c) {
+    uint32_t flags = 0;
+    const char * names[] = {
+        "CRISPEMBED_PPOCRV6_GRAPH_F16", "CRISPEMBED_PPOCRV6_GRAPH_DEQUANT",
+        "CRISPEMBED_PPOCRV6_CONV_DIRECT", "CRISPEMBED_PPOCRV6_GRAPH_DEBUG",
+        "CRISPEMBED_PPOCRV6_BATCH_CPU_DECODER"
+    };
+    for (uint32_t i = 0; i < sizeof(names) / sizeof(names[0]); ++i)
+        if (core_env::on(names[i])) flags |= 1u << i;
+    if (c->diff) flags |= 1u << 5;
+    const char * stop = std::getenv("CRISPEMBED_PPOCRV6_GRAPH_STOP");
+    const char * stops[] = { "stem", "stage1", "stage2", "stage3", "stage4", "backbone", "decoder" };
+    for (uint32_t i = 0; stop && i < sizeof(stops) / sizeof(stops[0]); ++i)
+        if (std::strcmp(stop, stops[i]) == 0) flags |= (i + 1) << 8;
+    return flags;
+}
+
+static constexpr size_t pp_graph_cache_budget = 32u * 1024u * 1024u;
+
+static bool pp_graph_cache_enabled() {
+    const char * enabled = std::getenv("CRISPEMBED_PPOCRV6_GRAPH_CACHE");
+    return !enabled || std::strcmp(enabled, "0") != 0;
+}
+
+static size_t pp_graph_plan_bytes(const pp_graph_state & plan) {
+    if (!plan.ready) return 0;
+    // Public GGML accounting includes every backend's scheduler allocation.
+    // Reserve another 2 MiB for the fixed 4096-node scheduler's private host
+    // bookkeeping, which GGML does not expose through its allocation API.
+    size_t bytes = 2u * 1024u * 1024u + sizeof(plan) + ggml_get_mem_size(plan.graph_ctx);
+    bytes += plan.debug_taps.capacity() * sizeof(plan.debug_taps[0]);
+    bytes += std::max(plan.token_ids.capacity(), plan.output_ids ? (size_t)ggml_nelements(plan.output_ids) : size_t(0)) *
+             sizeof(int32_t);
+    bytes += std::max(plan.svtr_skip_host.capacity(), plan.svtr_skip ? (size_t)ggml_nelements(plan.svtr_skip) : size_t(0)) *
+             sizeof(float);
+    for (int i = 0; i < ggml_backend_sched_get_n_backends(plan.sched); ++i)
+        bytes += ggml_backend_sched_get_buffer_size(plan.sched, ggml_backend_sched_get_backend(plan.sched, i));
+    return bytes;
+}
+
+static void pp_graph_trim_cache(ppocrv6_ocr_context * c) {
+    // One active plan plus at most one extra plan within the activation budget.
+    // An oversized active plan runs alone, including its CPU readback buffers.
+    if (!pp_graph_cache_enabled() || pp_graph_plan_bytes(c->graph) > pp_graph_cache_budget ||
+        pp_graph_plan_bytes(c->cached_graph) > pp_graph_cache_budget)
+        pp_graph_dispose(c->cached_graph);
+}
+
+static bool pp_graph_build_new(ppocrv6_ocr_context * c, int width, int batch) {
     c->graph.backend = c->backend;
     if (!c->graph.backend) return false;
     if (ggml_backend_is_cpu(c->graph.backend)) {
         ggml_backend_t backends[] = { c->graph.backend };
         c->graph.sched = ggml_backend_sched_new(backends, nullptr, 1, 4096, false, false);
     } else {
-        if (!c->graph.cpu_backend) {
-            c->graph.cpu_backend = ggml_backend_cpu_init();
-            if (!c->graph.cpu_backend) return false;
-            ggml_backend_cpu_set_n_threads(c->graph.cpu_backend, std::max(1, c->n_threads));
+        if (!c->graph_weights.cpu_backend) {
+            c->graph_weights.cpu_backend = ggml_backend_cpu_init();
+            if (!c->graph_weights.cpu_backend) return false;
+            ggml_backend_cpu_set_n_threads(c->graph_weights.cpu_backend, std::max(1, c->n_threads));
         }
-        ggml_backend_t backends[] = { c->graph.backend, c->graph.cpu_backend };
+        ggml_backend_t backends[] = { c->graph.backend, c->graph_weights.cpu_backend };
         c->graph.sched = ggml_backend_sched_new(backends, nullptr, 2, 4096, false, false);
     }
     if (!c->graph.sched) {
@@ -783,8 +879,8 @@ static bool pp_graph_build(ppocrv6_ocr_context * c, int width, int batch = 1) {
     }
     constexpr int H = 48;
     const size_t meta_size = ggml_tensor_overhead() * 4096 + ggml_graph_overhead_custom(4096, false);
-    c->graph.graph_meta.resize(meta_size);
-    ggml_init_params ip = { meta_size, c->graph.graph_meta.data(), true };
+    // GGML initializes its own metadata; avoid zero-filling an external arena.
+    ggml_init_params ip = { meta_size, nullptr, true };
     c->graph.graph_ctx = ggml_init(ip);
     if (!c->graph.graph_ctx) {
         if (core_env::on("CRISPEMBED_PPOCRV6_GRAPH_DEBUG")) fprintf(stderr, "ppocrv6 graph context creation failed\n");
@@ -1065,7 +1161,12 @@ static bool pp_graph_build(ppocrv6_ocr_context * c, int width, int batch = 1) {
             c->graph.debug_taps.push_back({ "pool", x });
             ggml_set_output(x);
         }
-        pp_conv graph_head_dw = c->head_dw;
+        // Construct only the weight/shape descriptor; copying head_dw would
+        // also duplicate any F32 reference weights populated by a fallback.
+        pp_conv graph_head_dw = conv(c->wl.tensors, "rec.head.conv1", c->head_dw.in_ch, c->head_dw.out_ch,
+                                     5, 1, c->head_dw.groups);
+        graph_head_dw.kh = 1;
+        graph_head_dw.pad_h = 0;
         // The CPU reference materializes two zero columns on both sides and
         // then performs a valid 1x5 convolution; express that equivalently as
         // explicit graph padding.
@@ -1114,8 +1215,12 @@ static bool pp_graph_build(ppocrv6_ocr_context * c, int width, int batch = 1) {
     }
     c->graph.output = x;
     ggml_set_name(x, "ppocrv6_graph_output");
-    ggml_set_output(x);
-    ggml_build_forward_expand(c->graph.graph, x);
+    if (c->graph.logits_output && !ggml_backend_is_cpu(c->graph.backend) && !c->diff &&
+        !core_env::on("CRISPEMBED_PPOCRV6_GRAPH_DEBUG"))
+        c->graph.output_ids = pp_graph_ctc_ids(c, c->graph.graph_ctx, x);
+    ggml_tensor * result = c->graph.output_ids ? c->graph.output_ids : x;
+    ggml_set_output(result);
+    ggml_build_forward_expand(c->graph.graph, result);
     ggml_backend_sched_reset(c->graph.sched);
     if (!ggml_backend_sched_alloc_graph(c->graph.sched, c->graph.graph)) {
         if (core_env::on("CRISPEMBED_PPOCRV6_GRAPH_DEBUG")) fprintf(stderr, "ppocrv6 graph allocation failed\n");
@@ -1130,6 +1235,53 @@ static bool pp_graph_build(ppocrv6_ocr_context * c, int width, int batch = 1) {
     fprintf(stderr, "ppocrv6: persistent GGML graph ready (%s, %s, %lldx%lldx%lld)\n",
             ggml_backend_name(c->graph.backend), output_kind, (long long)x->ne[0], (long long)x->ne[1],
             (long long)x->ne[2]);
+    return true;
+}
+
+static bool pp_graph_build(ppocrv6_ocr_context * c, int width, int batch = 1) {
+    if (!pp_graph_enabled() || !c->backend) return false;
+    batch = std::max(1, batch);
+    const uint32_t config = pp_graph_config(c);
+    // A weight-format change must invalidate all users before replacing the
+    // shared residents. Keep exactly one resident representation per leaf.
+    const uint32_t weight_config = config & 3u;
+    if (c->graph_weights.configured && c->graph_weights.config != weight_config) {
+        pp_graph_dispose(c->graph);
+        pp_graph_dispose(c->cached_graph);
+        pp_graph_free_residents(c->graph_weights);
+    }
+    c->graph_weights.config = weight_config;
+    c->graph_weights.configured = true;
+    const auto matches = [&](const pp_graph_state & plan) {
+        return plan.ready && plan.width == width && plan.batch == batch && plan.config == config &&
+               plan.backend == c->backend;
+    };
+    const char * action = "active-hit";
+    if (!matches(c->graph)) {
+        if (pp_graph_cache_enabled() && c->cached_graph.reusable && matches(c->cached_graph)) {
+            std::swap(c->graph, c->cached_graph);
+            action = "cache-hit";
+        } else {
+            if (pp_graph_cache_enabled() && c->graph.reusable &&
+                pp_graph_plan_bytes(c->graph) <= pp_graph_cache_budget) {
+                pp_graph_dispose(c->cached_graph);
+                std::swap(c->graph, c->cached_graph);
+            } else {
+                pp_graph_dispose(c->graph);
+            }
+            c->graph.config = config;
+            if (!pp_graph_build_new(c, width, batch)) {
+                pp_graph_dispose(c->graph);
+                return false;
+            }
+            action = "build";
+        }
+    }
+    pp_graph_trim_cache(c);
+    if (core_env::on("CRISPEMBED_PPOCRV6_GRAPH_BENCH"))
+        fprintf(stderr, "[ppocrv6-graph-cache] action=%s width=%d batch=%d active_bytes=%zu cached_bytes=%zu residents=%zu\n",
+                action, width, batch, pp_graph_plan_bytes(c->graph), pp_graph_plan_bytes(c->cached_graph),
+                c->graph_weights.resident.size());
     return true;
 }
 
@@ -1155,6 +1307,7 @@ static bool pp_graph_run_batch(ppocrv6_ocr_context * c, const std::vector<float>
         if (core_env::on("CRISPEMBED_PPOCRV6_GRAPH_DEBUG"))
             fprintf(stderr, "[ppocrv6-graph] input %zu floats != graph shape %lld; using CPU reference\n", input.size(),
                     (long long)ggml_nelements(c->graph.input));
+        pp_graph_dispose(c->graph);
         return false;
     }
     // Reuse each shape's allocation. Reset invalidates tensor storage and
@@ -1162,7 +1315,10 @@ static bool pp_graph_run_batch(ppocrv6_ocr_context * c, const std::vector<float>
     const auto t_alloc0 = std::chrono::steady_clock::now();
     if (!c->graph.allocated) {
         ggml_backend_sched_reset(c->graph.sched);
-        if (!ggml_backend_sched_alloc_graph(c->graph.sched, c->graph.graph)) return false;
+        if (!ggml_backend_sched_alloc_graph(c->graph.sched, c->graph.graph)) {
+            pp_graph_dispose(c->graph);
+            return false;
+        }
         c->graph.allocated = true;
     }
     const auto t_stage0 = std::chrono::steady_clock::now();
@@ -1176,10 +1332,20 @@ static bool pp_graph_run_batch(ppocrv6_ocr_context * c, const std::vector<float>
                 report.cos_global, report.is_pass() ? "PASS" : "FAIL");
     }
     const auto started = std::chrono::steady_clock::now();
-    if (ggml_backend_sched_graph_compute(c->graph.sched, c->graph.graph) != GGML_STATUS_SUCCESS) return false;
+    if (ggml_backend_sched_graph_compute(c->graph.sched, c->graph.graph) != GGML_STATUS_SUCCESS) {
+        pp_graph_dispose(c->graph);
+        return false;
+    }
     const auto finished = std::chrono::steady_clock::now();
-    output.resize(ggml_nelements(c->graph.output));
-    ggml_backend_tensor_get(c->graph.output, output.data(), 0, output.size() * sizeof(float));
+    if (c->graph.output_ids) {
+        output.clear();
+        c->graph.token_ids.resize(ggml_nelements(c->graph.output_ids));
+        ggml_backend_tensor_get(c->graph.output_ids, c->graph.token_ids.data(), 0,
+                                c->graph.token_ids.size() * sizeof(int32_t));
+    } else {
+        output.resize(ggml_nelements(c->graph.output));
+        ggml_backend_tensor_get(c->graph.output, output.data(), 0, output.size() * sizeof(float));
+    }
     if (c->graph.svtr_skip) {
         c->graph.svtr_skip_host.resize(ggml_nelements(c->graph.svtr_skip));
         ggml_backend_tensor_get(c->graph.svtr_skip, c->graph.svtr_skip_host.data(), 0,
@@ -1258,6 +1424,8 @@ static bool pp_graph_run_batch(ppocrv6_ocr_context * c, const std::vector<float>
                 ms(t_alloc0, t_stage0), ms(finished, t_readback1),
                 (double)(output.size() + c->graph.svtr_skip_host.size()) * sizeof(float) / (1024.0 * 1024.0), w, h);
     }
+    c->graph.reusable = true;
+    pp_graph_trim_cache(c);
     return true;
 }
 
@@ -1266,6 +1434,7 @@ static bool pp_graph_run(ppocrv6_ocr_context * c, const std::vector<float> & inp
     return pp_graph_run_batch(c, input, output, h, w, 1);
 }
 
+
 // Returns the padded input width, which is NOT fixed. PaddleOCR
 // tools/infer/predict_rec.py seeds max_wh_ratio with imgW/imgH (320/48) and
 // then grows it to the widest crop in the batch, taking
@@ -1273,7 +1442,7 @@ static bool pp_graph_run(ppocrv6_ocr_context * c, const std::vector<float> & inp
 // 713 px, not a squeeze. Capping at 320 crushed a 44-character line into 40
 // CTC timesteps, which no recognizer can decode. CRISPEMBED_PPOCRV6_FIXED_WIDTH
 // restores the old cap for bisection.
-static int resize_normalize(const uint8_t * px, int w, int h, int ch, std::vector<float> & out) {
+static int model_input_width(int w, int h) {
     constexpr int H = 48, W_MIN = 320;
     const bool fixed = core_env::on("CRISPEMBED_PPOCRV6_FIXED_WIDTH");
     const float ratio = w / float(std::max(1, h));
@@ -1309,7 +1478,12 @@ static int resize_normalize(const uint8_t * px, int w, int h, int ch, std::vecto
             bucket_step = std::atoi(bucket_env);
         if (bucket_step >= 8) W = (W + bucket_step - 1) / bucket_step * bucket_step;
     }
-    out.assign(3 * H * W, 0.0f);
+    return W;
+}
+
+static int resize_normalize_into(const uint8_t * px, int w, int h, int ch, float * out, int W) {
+    constexpr int H = 48;
+    std::fill(out, out + (size_t)3 * H * W, 0.0f);
     // The shipped Paddle inference contract is BGR, while the HF processor
     // advertises RGB conversion. Keep BGR as the production default (it is
     // the contract used by our official-source gold archives), but expose an
@@ -1339,6 +1513,12 @@ static int resize_normalize(const uint8_t * px, int w, int h, int ch, std::vecto
             }
         }
     return W;
+}
+
+static int resize_normalize(const uint8_t * px, int w, int h, int ch, std::vector<float> & out) {
+    const int W = model_input_width(w, h);
+    out.resize((size_t)3 * 48 * W);
+    return resize_normalize_into(px, w, h, ch, out.data(), W);
 }
 
 static const char * recognize_svtr(ppocrv6_ocr_context * c, std::vector<float> & x, int h, int w, int * out_len,
@@ -1477,7 +1657,7 @@ static const char * recognize_svtr(ppocrv6_ocr_context * c, std::vector<float> &
 }
 
 static const char * recognize_nchw(ppocrv6_ocr_context * c, const std::vector<float> & input, int * out_len,
-                                   int input_w) {
+                                   int input_w, bool use_graph = true) {
     // O7 adoption (issue #45): the medium/large recognizer has no GGML graph
     // (`graph unavailable large_stem=1`), so every crop runs these scalar
     // reference convs — adopt the R6 im2col+mk consume like ppocrv6_det did.
@@ -1485,11 +1665,11 @@ static const char * recognize_nchw(ppocrv6_ocr_context * c, const std::vector<fl
     // pipeline wall 3.86 s -> 3.45 s on a 1920x200 two-liner with decoded
     // output byte-identical. Env vars keep absolute precedence in both
     // directions (CRISPEMBED_CONV2D_MK=0 restores the reference loop here).
-    core_cpu::conv2d_prefs_scope conv_prefs(/*mk=*/true, c->n_threads);
-    std::vector<float> x = input, y;
+    core_cpu::conv2d_prefs_scope conv_prefs(/*mk=*/true, c->n_threads, &c->conv_runtime);
+    std::vector<float> x, y;
     int h = 48, w = input_w;
     std::vector<float> graph_out;
-    const bool graph_allowed = c->graph_accept_override < 0 || c->graph_accept_override != 0;
+    const bool graph_allowed = use_graph && c->graph_accept_override != 0;
     bool graph_done = graph_allowed && pp_graph_run(c, input, graph_out, h, w);
     if (graph_done && c->graph.logits_output && core_env::on("CRISPEMBED_PPOCRV6_GRAPH_DEBUG")) {
         const int tokens = h;
@@ -1513,14 +1693,8 @@ static const char * recognize_nchw(ppocrv6_ocr_context * c, const std::vector<fl
         if (c->graph.logits_output) {
             const int tokens = h;
             const int classes = w;
-            c->result.clear();
-            int last = -1;
-            for (int t = 0; t < tokens; ++t) {
-                const float * row = graph_out.data() + (size_t)t * classes;
-                const int best = int(std::max_element(row, row + classes) - row);
-                if (best > 0 && best != last && best - 1 < (int)c->vocab.size()) c->result += c->vocab[best - 1];
-                last = best;
-            }
+            pp_graph_decode(c, graph_out.data(), c->graph.output_ids ? c->graph.token_ids.data() : nullptr,
+                            tokens, classes, c->result);
             if (out_len) *out_len = (int)c->result.size();
             return c->result.c_str();
         }
@@ -1538,6 +1712,7 @@ static const char * recognize_nchw(ppocrv6_ocr_context * c, const std::vector<fl
             }
         }
     } else if (c->large_stem) {
+        x = input;
         int oh, ow;
         auto diff_stem = [&](const char * name, const std::vector<float> & v) {
             if (!c->diff) return;
@@ -1588,6 +1763,7 @@ static const char * recognize_nchw(ppocrv6_ocr_context * c, const std::vector<fl
                     std::sqrt(std::inner_product(x.begin(), x.end(), x.begin(), 0.0)), r.is_pass() ? "PASS" : "FAIL");
         }
     } else {
+        x = input;
         for (const auto & s : c->stem) {
             int oh, ow;
             if (!apply_conv(s, x, h, w, y, oh, ow)) return nullptr;
@@ -1639,7 +1815,8 @@ static const char * recognize_nchw(ppocrv6_ocr_context * c, const std::vector<fl
             }
         }
     if (c->large_stem)
-        return recognize_svtr(c, x, h, w, out_len, c->graph.svtr_prefix_output, c->graph.svtr_decoder_output);
+        return recognize_svtr(c, x, h, w, out_len, graph_done && c->graph.svtr_prefix_output,
+                              graph_done && c->graph.svtr_decoder_output);
     if (core_env::on("CRISPEMBED_PPOCRV6_GRAPH_DEBUG"))
         fprintf(stderr, "[ppocrv6-cpu-tap] backbone shape=%dx%d first=%.7g %.7g %.7g %.7g\n", h, w,
                 x.size() > 0 ? x[0] : 0.0f, x.size() > 1 ? x[1] : 0.0f, x.size() > 2 ? x[2] : 0.0f,
@@ -1710,6 +1887,14 @@ static const char * recognize_nchw(ppocrv6_ocr_context * c, const std::vector<fl
         auto r = c->diff->compare("ppocrv6.head_input", seq.data(), seq.size(), -1);
         fprintf(stderr, "[ppocrv6-diff] ppocrv6.head_input cos=%.6f |mine|=%.6g %s\n", r.cos_min,
                 std::sqrt(std::inner_product(seq.begin(), seq.end(), seq.begin(), 0.0)), r.is_pass() ? "PASS" : "FAIL");
+    }
+    // The graph consumes model tensors directly. Expand the reference head
+    // only if a graph cannot run and this CPU path is actually reached.
+    if (c->fc1_wf.empty()) {
+        c->fc1_wf = to_f32(c->fc1_w);
+        c->fc1_bf = to_f32(c->fc1_b);
+        c->fc2_wf = to_f32(c->fc2_w);
+        c->fc2_bf = to_f32(c->fc2_b);
     }
     c->result.clear();
     std::vector<float> all_logits;
@@ -1784,7 +1969,18 @@ extern "C" ppocrv6_ocr_context * ppocrv6_ocr_init(const char * path, int n_threa
         if (!c->diff->load(ref)) c->diff.reset();
     }
     core_gguf::free_metadata(meta);
-    if (!core_gguf::load_weights(path, c->backend, "ppocrv6", c->wl)) {
+    // Keep the GGUF source on the host. Graph residents are uploaded once;
+    // uploading this source first would immediately read it back for conversion.
+    ggml_backend_t weight_backend = c->backend;
+    if (c->backend && !ggml_backend_is_cpu(c->backend)) {
+        c->graph_weights.cpu_backend = ggml_backend_cpu_init();
+        if (!c->graph_weights.cpu_backend) {
+            ppocrv6_ocr_free(c);
+            return nullptr;
+        }
+        weight_backend = c->graph_weights.cpu_backend;
+    }
+    if (!core_gguf::load_weights(path, weight_backend, "ppocrv6", c->wl, true)) {
         fprintf(stderr, "ppocrv6: failed to load recognizer weights: %s (variant=%s)\n", path, c->variant.c_str());
         ppocrv6_ocr_free(c);
         return nullptr;
@@ -1799,15 +1995,11 @@ extern "C" ppocrv6_ocr_context * ppocrv6_ocr_init(const char * path, int n_threa
 
 extern "C" void ppocrv6_ocr_free(ppocrv6_ocr_context * c) {
     if (!c) return;
-    for (auto * buf : c->graph.resident_bufs)
-        if (buf) ggml_backend_buffer_free(buf);
-    for (auto * ctx : c->graph.resident_ctxs)
-        if (ctx) ggml_free(ctx);
-    if (c->graph.sched) ggml_backend_sched_free(c->graph.sched);
-    // graph.backend is normally c->backend; it is freed below.
-    if (c->graph.cpu_backend) ggml_backend_free(c->graph.cpu_backend);
-    if (c->graph.graph_ctx) ggml_free(c->graph.graph_ctx);
+    pp_graph_dispose(c->graph);
+    pp_graph_dispose(c->cached_graph);
+    pp_graph_free_residents(c->graph_weights);
     core_gguf::free_weights(c->wl);
+    if (c->graph_weights.cpu_backend) ggml_backend_free(c->graph_weights.cpu_backend);
     if (c->backend) crispasr_free_gpu_backend(c->backend);
     delete c;
 }
@@ -1840,22 +2032,15 @@ extern "C" int ppocrv6_ocr_recognize_raw_batch(ppocrv6_ocr_context * c, const ui
         lengths[i] = 0;
         if (outputs[i] && capacities[i] > 0) outputs[i][0] = '\0';
     }
-    struct prepared_crop {
-        int model_width = 0;
-        std::vector<float> input;
-    };
-    std::vector<prepared_crop> prepared((size_t)count);
     std::vector<int> model_widths((size_t)count, 0);
     for (int i = 0; i < count; ++i) {
         if (!pixels[i] || widths[i] <= 0 || heights[i] <= 0 ||
             (channels[i] != 1 && channels[i] != 3 && channels[i] != 4))
             continue;
-        model_widths[i] = resize_normalize(pixels[i], widths[i], heights[i], channels[i], prepared[i].input);
-        prepared[i].model_width = model_widths[i];
+        model_widths[i] = model_input_width(widths[i], heights[i]);
     }
-    // Stable width grouping keeps the caller-visible order while allowing a
-    // same-shape graph invocation. Large-stem SVTR models remain on the
-    // parity-tested scalar path; the first fused lane is tiny's logits graph.
+    // Sort only shape metadata; preprocess at most one bounded batch at a time.
+    // Result slots always use the caller's original region indices.
     std::stable_sort(order.begin(), order.end(),
                      [&](int lhs, int rhs) { return model_widths[lhs] < model_widths[rhs]; });
     auto copy_output = [&](int i, const char * text, int len) {
@@ -1865,17 +2050,6 @@ extern "C" int ppocrv6_ocr_recognize_raw_batch(ppocrv6_ocr_context * c, const ui
         outputs[i][copied] = '\0';
         lengths[i] = copied;
         return true;
-    };
-    auto graph_text = [&](const float * logits, int tokens, int classes) {
-        std::string text;
-        int last = -1;
-        for (int t = 0; t < tokens; ++t) {
-            const float * row = logits + (size_t)t * classes;
-            const int best = int(std::max_element(row, row + classes) - row);
-            if (best > 0 && best != last && best - 1 < (int)c->vocab.size()) text += c->vocab[best - 1];
-            last = best;
-        }
-        return text;
     };
     // The fused batch graph is the DEFAULT since 2026-08-04. History: the
     // "metal-fourth-dimension" pooling abort that kept this lane CPU-only was
@@ -1890,52 +2064,55 @@ extern "C" int ppocrv6_ocr_recognize_raw_batch(ppocrv6_ocr_context * c, const ui
     // An explicit accept-override of 0 (diagnostic runs demanding the scalar
     // reference) also disables the fused lane.
     const char * batch_graph_env = std::getenv("CRISPEMBED_PPOCRV6_BATCH_GRAPH");
+    const bool graph_accept = c->graph_accept_override >= 0 ? c->graph_accept_override != 0
+                                                          : core_env::on("CRISPEMBED_PPOCRV6_GRAPH_ACCEPT");
+    const bool hybrid = c->large_stem && core_env::on("CRISPEMBED_PPOCRV6_BATCH_CPU_DECODER");
     const bool batch_graph_enabled = (batch_graph_env ? std::strcmp(batch_graph_env, "0") != 0
                                                       : !core_env::on("CRISPEMBED_PPOCRV6_NO_BATCH_GRAPH")) &&
-                                     c->graph_accept_override != 0;
+                                     pp_graph_enabled() && c->graph_accept_override != 0 && (graph_accept || hybrid);
     const bool batch_backend_ok =
         c->backend && (ggml_backend_is_cpu(c->backend) || !core_env::on("CRISPEMBED_PPOCRV6_BATCH_GRAPH_CPU_ONLY"));
     if (batch_graph_enabled && !batch_backend_ok && core_env::on("CRISPEMBED_PPOCRV6_BENCH"))
         fprintf(stderr, "[ppocrv6-batch-graph] backend=%s action=scalar-fallback reason=cpu-only-gate\n",
                 c->backend ? ggml_backend_name(c->backend) : "none");
-    int max_batch = 8;
-    if (const char * limit = std::getenv("CRISPEMBED_PPOCRV6_BATCH_MAX")) max_batch = std::max(1, std::atoi(limit));
+    int max_batch = std::max(1, pp_graph_max_regions());
+    // Preserve the legacy knob as an additional upper bound.
+    if (const char * limit = std::getenv("CRISPEMBED_PPOCRV6_BATCH_MAX"))
+        max_batch = std::min(max_batch, std::max(1, std::atoi(limit)));
     int completed = 0;
     for (size_t start = 0; start < order.size();) {
         const int first = order[start];
         const int width = model_widths[first];
         size_t end = start + 1;
         while (end < order.size() && model_widths[order[end]] == width) ++end;
+        if (width == 0) {
+            start = end;
+            continue;
+        }
         for (size_t group_start = start; group_start < end; group_start += (size_t)max_batch) {
             const size_t group_end = std::min(end, group_start + (size_t)max_batch);
             const int group_count = (int)(group_end - group_start);
-            // Batch graph execution is deliberately a second opt-in until
-            // every backend accepts the fourth dimension through pooling and
-            // the flattened CTC head. The grouped scalar path remains the
-            // production default and is the fallback for all other cases.
-            // large_stem (small/medium) is included since 2026-08-04: the
-            // batch>1 graph finishes in-graph (skip + head) and returns
-            // per-item logits exactly like the tiny lane.
+            // Every equal-width group is split by the per-batch region cap;
+            // large pages continue through all groups instead of opting out.
             bool fused = batch_graph_enabled && batch_backend_ok && group_count > 1;
             std::vector<float> fused_input;
             std::vector<float> fused_output;
-            // pp_graph_run_batch's third/fourth parameters are IN-OUT: the
-            // fourth carries the model width IN (pp_graph_build keys on it)
-            // and the token/class counts come back OUT. Passing zeros here
-            // built every batch graph at width 0, which poisoned the stem
-            // shapes until ggml_pool_2d asserted ne[0] > 0 — on every
-            // backend, not just Metal; the recorded "Metal fourth-dimension
-            // pooling" failure was this bug wearing a Metal costume.
+            const size_t input_stride = (size_t)3 * 48 * width;
+            // Width is an input to graph execution; token/class counts return
+            // through the same parameters after the graph finishes.
             int tokens = 0, classes = width;
             if (fused) {
-                fused_input.reserve(prepared[first].input.size() * (size_t)group_count);
-                for (size_t pos = group_start; pos < group_end; ++pos) {
-                    const auto & input = prepared[order[pos]].input;
-                    fused_input.insert(fused_input.end(), input.begin(), input.end());
+                fused_input.resize(input_stride * (size_t)group_count);
+                for (int member = 0; member < group_count; ++member) {
+                    const int i = order[group_start + (size_t)member];
+                    resize_normalize_into(pixels[i], widths[i], heights[i], channels[i],
+                                          fused_input.data() + input_stride * (size_t)member, width);
                 }
                 fused = pp_graph_run_batch(c, fused_input, fused_output, tokens, classes, group_count);
-                fused =
-                    fused && tokens > 0 && classes > 0 && fused_output.size() >= (size_t)tokens * classes * group_count;
+                fused = fused && tokens > 0 && classes > 0 &&
+                        (c->graph.output_ids ? c->graph.token_ids.size() == (size_t)tokens * group_count
+                                             : fused_output.size() >= (size_t)tokens * classes * group_count);
+                if (!fused) pp_graph_dispose(c->graph);
                 if (core_env::on("CRISPEMBED_PPOCRV6_BENCH"))
                     fprintf(stderr,
                             "[ppocrv6-batch-graph] backend=%s width=%d batch=%d action=%s tokens=%d classes=%d\n",
@@ -1965,13 +2142,23 @@ extern "C" int ppocrv6_ocr_recognize_raw_batch(ppocrv6_ocr_context * c, const ui
                         valid = true;
                     }
                 } else if (fused) {
-                    const size_t stride = (size_t)tokens * classes;
-                    text = graph_text(fused_output.data() + stride * member, tokens, classes);
+                    const int32_t * ids = c->graph.output_ids ? c->graph.token_ids.data() + (size_t)tokens * member : nullptr;
+                    const float * logits = ids ? nullptr : fused_output.data() + (size_t)tokens * classes * member;
+                    pp_graph_decode(c, logits, ids, tokens, classes, text);
                     len = (int)text.size();
                     valid = true;
                 } else {
-                    const char * scalar =
-                        ppocrv6_ocr_recognize_raw(c, pixels[i], widths[i], heights[i], channels[i], &len);
+                    const char * scalar;
+                    if (fused_input.empty()) {
+                        scalar = ppocrv6_ocr_recognize_raw(c, pixels[i], widths[i], heights[i], channels[i], &len);
+                    } else {
+                        // Failed fused execution already normalized this crop.
+                        // Recover on the reference path without another graph
+                        // inference or another image resize.
+                        std::vector<float> item(fused_input.begin() + input_stride * (size_t)member,
+                                                fused_input.begin() + input_stride * (size_t)(member + 1));
+                        scalar = recognize_nchw(c, item, &len, width, false);
+                    }
                     if (scalar) {
                         text.assign(scalar, (size_t)std::max(0, len));
                         valid = true;
