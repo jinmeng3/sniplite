@@ -25,7 +25,6 @@ using core_cpu::conv2d_cpu;
 using core_cpu::gelu;
 using core_cpu::hardswish_inplace;
 using core_cpu::linear_cpu;
-using core_cpu::softmax;
 using core_cpu::to_f32;
 
 struct pp_conv {
@@ -45,16 +44,6 @@ struct pp_block {
     bool silu_act = false;
 };
 
-struct pp_svtr {
-    ggml_tensor *ln1_w = nullptr, *ln1_b = nullptr;
-    ggml_tensor *qkv_w = nullptr, *qkv_b = nullptr;
-    ggml_tensor *proj_w = nullptr, *proj_b = nullptr;
-    ggml_tensor *ln2_w = nullptr, *ln2_b = nullptr;
-    ggml_tensor *fc1_w = nullptr, *fc1_b = nullptr;
-    ggml_tensor *fc2_w = nullptr, *fc2_b = nullptr;
-    std::vector<float> ln1_wf, ln1_bf, qkv_wf, qkv_bf, proj_wf, proj_bf;
-    std::vector<float> ln2_wf, ln2_bf, fc1_wf, fc1_bf, fc2_wf, fc2_bf;
-};
 
 struct pp_graph_state {
     ggml_backend_t backend = nullptr;
@@ -66,12 +55,6 @@ struct pp_graph_state {
     ggml_tensor * output_ids = nullptr;
     std::vector<int32_t> token_ids;
     bool logits_output = false;
-    bool svtr_prefix_output = false;
-    bool svtr_decoder_output = false;
-    // rnn.py's skip_conv output, produced by the graph neck and applied after
-    // whichever path runs the SVTR blocks + neck norm.
-    ggml_tensor * svtr_skip = nullptr;
-    std::vector<float> svtr_skip_host;
     std::vector<std::pair<const char *, ggml_tensor *>> debug_taps;
     bool ready = false;
     // The recognizer graph has fixed crop dimensions. Keep its scheduler
@@ -105,8 +88,6 @@ struct ppocrv6_ocr_context {
     std::vector<std::string> vocab;
     std::string result;
     std::vector<float> scratch;
-    std::string variant;
-    bool large_stem = false;
     int hidden = 0;
     int vocab_size = 0;
     int graph_accept_override = -1;
@@ -121,10 +102,6 @@ struct ppocrv6_ocr_context {
     std::vector<float> fc1_wf, fc1_bf, fc2_wf, fc2_bf;
     ggml_tensor *norm1_w = nullptr, *norm1_b = nullptr, *norm1_mean = nullptr, *norm1_var = nullptr;
     ggml_tensor *norm2_w = nullptr, *norm2_b = nullptr, *norm2_mean = nullptr, *norm2_var = nullptr;
-    ggml_tensor *svtr_norm_w = nullptr, *svtr_norm_b = nullptr;
-    ggml_tensor *svtr_head_w = nullptr, *svtr_head_b = nullptr;
-    std::vector<pp_svtr> svtr;
-    std::vector<float> svtr_norm_wf, svtr_norm_bf, svtr_head_wf, svtr_head_bf;
     std::unique_ptr<crispembed_diff::Ref> diff;
     pp_graph_state graph;
     pp_graph_state cached_graph;
@@ -192,8 +169,7 @@ static bool apply_conv(const pp_conv & c, const std::vector<float> & in, int h, 
         conv2d_cpu(in.data(), out.data(), ww.data(), bb.empty() ? nullptr : bb.data(), c.in_ch, c.out_ch, h, w, c.kh,
                    c.kw, c.stride, c.pad_h, c.groups);
     } else {
-        // cpu_ops uses one symmetric padding value.  Materialize the
-        // rectangular padding used by the SVTR 1x7 convolution instead.
+        // cpu_ops uses symmetric geometry; materialize per-axis padding and stride when needed.
         const int ph = c.pad_h, pw = c.pad_w;
         std::vector<float> padded((size_t)c.in_ch * (h + 2 * ph) * (w + 2 * pw), 0.0f);
         const int pwid = w + 2 * pw;
@@ -235,81 +211,6 @@ static void activate(std::vector<float> & x, bool hs) {
 
 static void silu(std::vector<float> & x) {
     for (float & v : x) v = v / (1.0f + std::exp(-v));
-}
-
-static void relu(std::vector<float> & x) {
-    for (float & v : x) v = std::max(0.0f, v);
-}
-
-static void pad_right_bottom(const std::vector<float> & in, int channels, int h, int w, std::vector<float> & out,
-                             int & oh, int & ow) {
-    oh = h + 1;
-    ow = w + 1;
-    out.assign((size_t)channels * oh * ow, 0.0f);
-    for (int c = 0; c < channels; ++c)
-        for (int y = 0; y < h; ++y)
-            std::memcpy(out.data() + (size_t)c * oh * ow + y * ow, in.data() + (size_t)c * h * w + y * w,
-                        sizeof(float) * w);
-}
-
-static void maxpool2x2_stride1(const std::vector<float> & in, int channels, int h, int w, std::vector<float> & out,
-                               int & oh, int & ow) {
-    oh = std::max(1, h - 1);
-    ow = std::max(1, w - 1);
-    out.assign((size_t)channels * oh * ow, 0.0f);
-    for (int c = 0; c < channels; ++c)
-        for (int y = 0; y < oh; ++y)
-            for (int x = 0; x < ow; ++x) {
-                const float * p = in.data() + (size_t)c * h * w + y * w + x;
-                out[(size_t)c * oh * ow + y * ow + x] = std::max(std::max(p[0], p[1]), std::max(p[w], p[w + 1]));
-            }
-}
-
-static void layernorm_tokens(std::vector<float> & x, int tokens, int channels, ggml_tensor * w, ggml_tensor * b) {
-    auto ww = to_f32(w), bb = to_f32(b);
-    for (int t = 0; t < tokens; ++t) {
-        float mean = 0.0f;
-        for (int c = 0; c < channels; ++c) mean += x[t * channels + c];
-        mean /= channels;
-        float var = 0.0f;
-        for (int c = 0; c < channels; ++c) {
-            float d = x[t * channels + c] - mean;
-            var += d * d;
-        }
-        var /= channels;
-        for (int c = 0; c < channels; ++c)
-            x[t * channels + c] = (x[t * channels + c] - mean) / std::sqrt(var + 1e-5f) * ww[c] + bb[c];
-    }
-}
-
-static void layernorm_tokens(std::vector<float> & x, int tokens, int channels, const std::vector<float> & w,
-                             const std::vector<float> & b) {
-    for (int t = 0; t < tokens; ++t) {
-        float mean = 0.0f;
-        for (int c = 0; c < channels; ++c) mean += x[t * channels + c];
-        mean /= channels;
-        float var = 0.0f;
-        for (int c = 0; c < channels; ++c) {
-            const float d = x[t * channels + c] - mean;
-            var += d * d;
-        }
-        var /= channels;
-        for (int c = 0; c < channels; ++c)
-            x[t * channels + c] = (x[t * channels + c] - mean) / std::sqrt(var + 1e-5f) * w[c] + b[c];
-    }
-}
-
-static void linear_vec(const std::vector<float> & x, std::vector<float> & y, ggml_tensor * w, ggml_tensor * b) {
-    auto ww = to_f32(w), bb = to_f32(b);
-    const int out = (int)bb.size(), in = (int)x.size();
-    y.resize(out);
-    linear_cpu(x.data(), y.data(), in, out, ww.data(), bb.data());
-}
-
-static void linear_vec(const std::vector<float> & x, std::vector<float> & y, const std::vector<float> & w,
-                       const std::vector<float> & b) {
-    y.resize(b.size());
-    linear_cpu(x.data(), y.data(), (int)x.size(), (int)b.size(), w.data(), b.data());
 }
 
 static void bn1d(std::vector<float> & x, int channels, int length, ggml_tensor * w, ggml_tensor * b, ggml_tensor * mean,
@@ -364,56 +265,23 @@ static bool run_block(pp_block & b, std::vector<float> & x, int & h, int & w, st
 
 static bool map_model(ppocrv6_ocr_context * c) {
     const auto & m = c->wl.tensors;
-    const bool tiny = c->variant == "tiny";
-    const int s = tiny ? 24 : (c->variant == "small" ? 48 : 64);
-    const int stem2 = tiny ? 48 : (c->variant == "small" ? 96 : 128);
-    c->hidden = tiny ? 80 : (c->variant == "small" ? 120 : 192);
+    constexpr int widths[4] = { 48, 48, 96, 160 };
+    constexpr int block_counts[4] = { 1, 1, 3, 4 };
+    c->hidden = 80;
     if (c->vocab_size == 0) c->vocab_size = (int)c->vocab.size() + 1;
-    if (tiny) {
-        c->stem.push_back(conv(m, "rec.bb.stem.conv1.conv", 3, s, 3, 2));
-        c->stem.push_back(conv(m, "rec.bb.stem.conv2.conv", s, stem2, 3, 2));
-    } else {
-        c->large_stem = true;
-        c->stem.push_back(conv(m, "rec.bb.stem.stem1.conv", 3, s, 3, 2));
-        c->stem.push_back(conv(m, "rec.bb.stem.stem2a.conv", s, s / 2, 2, 1));
-        c->stem.back().pad_h = c->stem.back().pad_w = 0;
-        c->stem.push_back(conv(m, "rec.bb.stem.stem2b.conv", s / 2, s, 2, 1));
-        c->stem.back().pad_h = c->stem.back().pad_w = 0;
-        c->stem.push_back(conv(m, "rec.bb.stem.stem3.conv", s * 2, s, 3, 2));
-        c->stem.push_back(conv(m, "rec.bb.stem.stem4.conv", s, stem2, 1, 1));
-    }
-    int widths[4];
-    if (tiny) {
-        widths[0] = 48;
-        widths[1] = 48;
-        widths[2] = 96;
-        widths[3] = 160;
-    } else if (c->variant == "small") {
-        widths[0] = 96;
-        widths[1] = 96;
-        widths[2] = 192;
-        widths[3] = 384;
-    } else {
-        widths[0] = 128;
-        widths[1] = 256;
-        widths[2] = 512;
-        widths[3] = 768;
-    }
+    c->stem.push_back(conv(m, "rec.bb.stem.conv1.conv", 3, 24, 3, 2));
+    c->stem.push_back(conv(m, "rec.bb.stem.conv2.conv", 24, 48, 3, 2));
     c->stages.resize(4);
     for (int si = 0; si < 4; ++si) {
         const std::string p = "rec.bb.blk." + std::to_string(si) + ".b.";
-        // The converter preserves the source block order; use tensor presence
-        // to discover the number of blocks, making this work for all three
-        // official width variants without a second model-specific registry.
-        for (int bi = 0; bi < 16; ++bi) {
-            std::string q = p + std::to_string(bi);
-            if (!get(m, q + ".cm1.weight")) break;
-            int in = bi == 0 && si > 0 ? widths[si - 1] : widths[si];
-            int out = widths[si];
+        for (int bi = 0; bi < block_counts[si]; ++bi) {
+            const std::string q = p + std::to_string(bi);
+            if (!get(m, q + ".cm1.weight")) return false;
+            const int in = bi == 0 && si > 0 ? widths[si - 1] : widths[si];
+            const int out = widths[si];
             pp_block b;
             const bool down = bi == 0 && (si == 2 || si == 3);
-            // sniplite: every recognition variant downsamples height only here.
-            // Tiny's official stage3/stage4 strides are (2,1), not (2,2).
+            // Tiny stage3/stage4 downsample height only, with stride (2,1).
             b.dw = conv(m, q + ".dw", in, in, 3, down ? 2 : 1, in, down ? 1 : 0);
             b.cm1 = conv(m, q + ".cm1", in, in * 2, 1, 1);
             b.cm2 = conv(m, q + ".cm2", in * 2, out, 1, 1);
@@ -423,8 +291,6 @@ static bool map_model(ppocrv6_ocr_context * c) {
                 b.se2 = conv(m, q + ".se2", std::max(1, in / 4), in, 1, 1);
             }
             b.residual = in == out && b.dw.stride == 1;
-            // PPLCNetV4 uses the configured activation in the stem (SILU for
-            // PP-OCRv6) but the channel mixer activation is GELU.
             b.silu_act = false;
             c->stages[si].push_back(b);
         }
@@ -432,8 +298,6 @@ static bool map_model(ppocrv6_ocr_context * c) {
     c->head_dw = conv(m, "rec.head.conv1", widths[3], widths[3], 5, 1, widths[3]);
     c->head_dw.kh = 1;
     c->head_dw.kw = 5;
-    // cpu_ops::conv2d uses symmetric padding for both axes; the subsequent
-    // sequence path accepts the valid-width result of this 1-D convolution.
     c->head_dw.pad_h = 0;
     c->head_dw.pad_w = 0;
     c->head_pw = conv(m, "rec.head.conv2", widths[3], widths[3], 1, 1);
@@ -449,49 +313,7 @@ static bool map_model(ppocrv6_ocr_context * c) {
     c->norm2_b = get(m, "rec.head.norm2.bias");
     c->norm2_mean = get(m, "rec.head.norm2.running_mean");
     c->norm2_var = get(m, "rec.head.norm2.running_var");
-    if (!tiny) {
-        const std::string p = "rec.head.encoder.";
-        auto load_svtr = [&](int i) {
-            pp_svtr b;
-            const std::string q = p + "svtr_block." + std::to_string(i) + ".";
-            b.ln1_w = get(m, q + "layer_norm1.weight");
-            b.ln1_b = get(m, q + "layer_norm1.bias");
-            b.qkv_w = get(m, q + "self_attn.qkv.weight");
-            b.qkv_b = get(m, q + "self_attn.qkv.bias");
-            b.proj_w = get(m, q + "self_attn.projection.weight");
-            b.proj_b = get(m, q + "self_attn.projection.bias");
-            b.ln2_w = get(m, q + "layer_norm2.weight");
-            b.ln2_b = get(m, q + "layer_norm2.bias");
-            b.fc1_w = get(m, q + "mlp.fc1.weight");
-            b.fc1_b = get(m, q + "mlp.fc1.bias");
-            b.fc2_w = get(m, q + "mlp.fc2.weight");
-            b.fc2_b = get(m, q + "mlp.fc2.bias");
-            b.ln1_wf = to_f32(b.ln1_w);
-            b.ln1_bf = to_f32(b.ln1_b);
-            b.qkv_wf = to_f32(b.qkv_w);
-            b.qkv_bf = to_f32(b.qkv_b);
-            b.proj_wf = to_f32(b.proj_w);
-            b.proj_bf = to_f32(b.proj_b);
-            b.ln2_wf = to_f32(b.ln2_w);
-            b.ln2_bf = to_f32(b.ln2_b);
-            b.fc1_wf = to_f32(b.fc1_w);
-            b.fc1_bf = to_f32(b.fc1_b);
-            b.fc2_wf = to_f32(b.fc2_w);
-            b.fc2_bf = to_f32(b.fc2_b);
-            c->svtr.push_back(b);
-        };
-        load_svtr(0);
-        load_svtr(1);
-        c->svtr_norm_w = get(m, p + "norm.weight");
-        c->svtr_norm_b = get(m, p + "norm.bias");
-        c->svtr_head_w = get(m, "rec.head.head.weight");
-        c->svtr_head_b = get(m, "rec.head.head.bias");
-        c->svtr_norm_wf = to_f32(c->svtr_norm_w);
-        c->svtr_norm_bf = to_f32(c->svtr_norm_b);
-        c->svtr_head_wf = to_f32(c->svtr_head_w);
-        c->svtr_head_bf = to_f32(c->svtr_head_b);
-    }
-    return !c->stem.empty() && (tiny ? c->fc2_w != nullptr : c->svtr_head_w != nullptr && c->svtr.size() == 2);
+    return !c->stem.empty() && c->fc2_w != nullptr;
 }
 
 // The GGUF loader owns the original leaves.  A graph backend must not consume
@@ -673,16 +495,6 @@ static ggml_tensor * pp_graph_bn(ppocrv6_ocr_context * c, ggml_context * g, ggml
     return ggml_add(g, ggml_mul(g, x, scale), shift);
 }
 
-static ggml_tensor * pp_graph_layernorm(ppocrv6_ocr_context * c, ggml_context * g, ggml_tensor * x, ggml_tensor * w_src,
-                                        ggml_tensor * b_src, int channels) {
-    if (!w_src || !b_src) return x;
-    ggml_tensor * w = pp_graph_resident(c, w_src, GGML_TYPE_F32, channels, 1, 1, 1);
-    ggml_tensor * b = pp_graph_resident(c, b_src, GGML_TYPE_F32, channels, 1, 1, 1);
-    if (!w || !b) return nullptr;
-    w = ggml_reshape_2d(g, w, channels, 1);
-    b = ggml_reshape_2d(g, b, channels, 1);
-    return ggml_add(g, ggml_mul(g, ggml_norm(g, x, 1e-5f), w), b);
-}
 
 static ggml_tensor * pp_graph_linear(ppocrv6_ocr_context * c, ggml_context * g, ggml_tensor * x, ggml_tensor * wt,
                                      ggml_tensor * bias) {
@@ -714,20 +526,10 @@ static ggml_tensor * pp_graph_linear(ppocrv6_ocr_context * c, ggml_context * g, 
     return y;
 }
 
-// The small/medium recognizer graph is on by default as of 2026-08-02. It was
-// promoted on evidence, not preference: decoded text is identical to the CPU
-// reference on all 26 fixtures tried (20 synthetic + 6 CC0 scans, the largest
-// 71 regions), and it is ~1.9x faster end-to-end on a quiet box
-// (synth_00_clean 1230 -> 646 ms; the 1920x2518 german_official_print scan
-// 9369 -> 4964 ms).
-//
-// Scope is deliberate. This covers the recognizer only: the *detector* graph
-// stays diagnostic-only because its box geometry is not yet at parity, and the
-// tiny variant keeps its own CRISPEMBED_PPOCRV6_GRAPH_ACCEPT gate because the
-// evidence above is for small. CRISPEMBED_PPOCRV6_NO_GRAPH restores the CPU
-// reference everywhere, which is the bisection lever if a crop ever disagrees.
-// This cap applies to each recognition graph batch, never to the page's
-// total region count. Zero remains an explicit graph opt-out.
+// The graph path is used only for the shipped tiny recognizer. Its acceptance
+// gate keeps it separate from the detector's diagnostic-only graph.
+// CRISPEMBED_PPOCRV6_NO_GRAPH restores the scalar reference path. Each graph
+// batch is capped independently of the page's total region count; zero opts out.
 static int pp_graph_max_regions() {
     const char * value = std::getenv("CRISPEMBED_PPOCRV6_GRAPH_MAX_REGIONS");
     if (!value || !*value) return 8;
@@ -813,14 +615,13 @@ static uint32_t pp_graph_config(const ppocrv6_ocr_context * c) {
     uint32_t flags = 0;
     const char * names[] = {
         "CRISPEMBED_PPOCRV6_GRAPH_F16", "CRISPEMBED_PPOCRV6_GRAPH_DEQUANT",
-        "CRISPEMBED_PPOCRV6_CONV_DIRECT", "CRISPEMBED_PPOCRV6_GRAPH_DEBUG",
-        "CRISPEMBED_PPOCRV6_BATCH_CPU_DECODER"
+        "CRISPEMBED_PPOCRV6_CONV_DIRECT", "CRISPEMBED_PPOCRV6_GRAPH_DEBUG"
     };
     for (uint32_t i = 0; i < sizeof(names) / sizeof(names[0]); ++i)
         if (core_env::on(names[i])) flags |= 1u << i;
     if (c->diff) flags |= 1u << 5;
     const char * stop = std::getenv("CRISPEMBED_PPOCRV6_GRAPH_STOP");
-    const char * stops[] = { "stem", "stage1", "stage2", "stage3", "stage4", "backbone", "decoder" };
+    const char * stops[] = { "stem", "stage1", "stage2", "stage3", "stage4", "backbone" };
     for (uint32_t i = 0; stop && i < sizeof(stops) / sizeof(stops[0]); ++i)
         if (std::strcmp(stop, stops[i]) == 0) flags |= (i + 1) << 8;
     return flags;
@@ -842,8 +643,6 @@ static size_t pp_graph_plan_bytes(const pp_graph_state & plan) {
     bytes += plan.debug_taps.capacity() * sizeof(plan.debug_taps[0]);
     bytes += std::max(plan.token_ids.capacity(), plan.output_ids ? (size_t)ggml_nelements(plan.output_ids) : size_t(0)) *
              sizeof(int32_t);
-    bytes += std::max(plan.svtr_skip_host.capacity(), plan.svtr_skip ? (size_t)ggml_nelements(plan.svtr_skip) : size_t(0)) *
-             sizeof(float);
     for (int i = 0; i < ggml_backend_sched_get_n_backends(plan.sched); ++i)
         bytes += ggml_backend_sched_get_buffer_size(plan.sched, ggml_backend_sched_get_backend(plan.sched, i));
     return bytes;
@@ -891,62 +690,25 @@ static bool pp_graph_build_new(ppocrv6_ocr_context * c, int width, int batch) {
     ggml_set_name(c->graph.input, "ppocrv6_graph_input");
     ggml_set_input(c->graph.input);
     ggml_tensor * x = c->graph.input;
-    if (c->large_stem) {
-        // PPLCNetV4 large stem: the two even-kernel branches use explicit
-        // right/bottom padding before valid convolution, then concatenate
-        // with ceil-mode max-pool output along the channel axis.
-        auto large_tap = [&](const char * name, ggml_tensor * value) {
-            if (core_env::on("CRISPEMBED_PPOCRV6_GRAPH_DEBUG")) {
-                c->graph.debug_taps.push_back({ name, value });
-                ggml_set_output(value);
-            }
-        };
-        x = pp_graph_conv(c, c->graph.graph_ctx, x, c->stem[0]);
-        if (!x) return false;
-        x = ggml_relu(c->graph.graph_ctx, x);
-        large_tap("large_stem1", x);
-        ggml_tensor * padded = ggml_pad_ext(c->graph.graph_ctx, x, 0, 1, 0, 1, 0, 0, 0, 0);
-        ggml_tensor * branch = pp_graph_conv(c, c->graph.graph_ctx, padded, c->stem[1]);
-        if (!branch) return false;
-        branch = ggml_relu(c->graph.graph_ctx, branch);
-        large_tap("large_stem2a", branch);
-        branch = ggml_pad_ext(c->graph.graph_ctx, branch, 0, 1, 0, 1, 0, 0, 0, 0);
-        branch = pp_graph_conv(c, c->graph.graph_ctx, branch, c->stem[2]);
-        if (!branch) return false;
-        branch = ggml_relu(c->graph.graph_ctx, branch);
-        large_tap("large_stem2b", branch);
-        ggml_tensor * pooled = ggml_pool_2d(c->graph.graph_ctx, padded, GGML_OP_POOL_MAX, 2, 2, 1, 1, 0, 0);
-        x = ggml_concat(c->graph.graph_ctx, pooled, branch, 2);
-        large_tap("large_cat", x);
-        x = pp_graph_conv(c, c->graph.graph_ctx, x, c->stem[3]);
-        if (!x) return false;
-        x = ggml_relu(c->graph.graph_ctx, x);
-        large_tap("large_stem3", x);
-        x = pp_graph_conv(c, c->graph.graph_ctx, x, c->stem[4]);
-        if (!x) return false;
-        x = ggml_relu(c->graph.graph_ctx, x);
-        large_tap("large_stem", x);
-    } else {
-        for (size_t stem_idx = 0; stem_idx < c->stem.size(); ++stem_idx) {
-            const pp_conv & p = c->stem[stem_idx];
-            x = pp_graph_conv(c, c->graph.graph_ctx, x, p);
-            if (!x) {
-                if (core_env::on("CRISPEMBED_PPOCRV6_GRAPH_DEBUG")) fprintf(stderr, "ppocrv6 graph stem failed\n");
-                return false;
-            }
-            if (core_env::on("CRISPEMBED_PPOCRV6_GRAPH_DEBUG")) {
-                const char * pre_name = stem_idx == 0 ? "stem1_pre" : "stem2_pre";
-                c->graph.debug_taps.push_back({ pre_name, x });
-                ggml_set_output(x);
-            }
-            // PP-OCRv6 applies GELU after the first stem convolution only; the
-            // second stem feeds the first backbone block directly.
-            if (stem_idx == 0) x = ggml_gelu(c->graph.graph_ctx, x);
-            if (core_env::on("CRISPEMBED_PPOCRV6_GRAPH_DEBUG")) {
-                const char * name = stem_idx == 0 ? "stem1" : "stem2";
-                c->graph.debug_taps.push_back({ name, x });
-                ggml_set_output(x);
-            }
+    for (size_t stem_idx = 0; stem_idx < c->stem.size(); ++stem_idx) {
+        const pp_conv & p = c->stem[stem_idx];
+        x = pp_graph_conv(c, c->graph.graph_ctx, x, p);
+        if (!x) {
+            if (core_env::on("CRISPEMBED_PPOCRV6_GRAPH_DEBUG")) fprintf(stderr, "ppocrv6 graph stem failed\n");
+            return false;
+        }
+        if (core_env::on("CRISPEMBED_PPOCRV6_GRAPH_DEBUG")) {
+            const char * pre_name = stem_idx == 0 ? "stem1_pre" : "stem2_pre";
+            c->graph.debug_taps.push_back({ pre_name, x });
+            ggml_set_output(x);
+        }
+        // PP-OCRv6 applies GELU after the first stem convolution only; the
+        // second stem feeds the first backbone block directly.
+        if (stem_idx == 0) x = ggml_gelu(c->graph.graph_ctx, x);
+        if (core_env::on("CRISPEMBED_PPOCRV6_GRAPH_DEBUG")) {
+            const char * name = stem_idx == 0 ? "stem1" : "stem2";
+            c->graph.debug_taps.push_back({ name, x });
+            ggml_set_output(x);
         }
     }
     // Profiling-only truncation at finer backbone granularity (decode is
@@ -1006,146 +768,9 @@ static bool pp_graph_build_new(ppocrv6_ocr_context * c, int width, int batch) {
         fprintf(stderr, "ppocrv6: STAGE-STOP graph at backbone (%s)\n", ggml_backend_name(c->graph.backend));
         return true;
     }
-    if (c->large_stem && pp_graph_enabled()) {
-        // Keep the SVTR attention/MLP decoder on the scalar reference path,
-        // but move its convolutional tokenization onto the persistent graph.
-        // The output is [hidden,tokens] with token-major contiguous storage.
-        const std::string p = "rec.head.encoder.conv_block.";
-        pp_conv c0 = conv(c->wl.tensors, p + "0.conv", c->stages.back().back().cm2.out_ch, c->hidden, 1, 1);
-        pp_conv c1 = conv(c->wl.tensors, p + "1.conv", c->stages.back().back().cm2.out_ch, c->hidden, 1, 1);
-        pp_conv c2 = conv(c->wl.tensors, p + "2.conv", c->hidden, c->hidden, 1, 1, c->hidden);
-        c2.kh = 1;
-        c2.kw = 7;
-        c2.pad_w = 3;
-        ggml_tensor * pooled = ggml_pool_2d(c->graph.graph_ctx, x, GGML_OP_POOL_AVG, 2, 3, 2, 3, 0, 0);
-        // rnn.py EncoderWithLightSVTR: conv_block.0 is skip_conv and is added
-        // only after the SVTR blocks and the neck norm; the [1,7] conv_block.2
-        // is a residual on conv_reduce. Emit the skip as a separate graph
-        // output so whichever path runs the blocks (CPU here, in-graph below)
-        // can apply it at the right point.
-        ggml_tensor * skip = pp_graph_conv(c, c->graph.graph_ctx, pooled, c0);
-        ggml_tensor * branch = pp_graph_conv(c, c->graph.graph_ctx, pooled, c1);
-        if (!skip || !branch) return false;
-        skip = ggml_silu(c->graph.graph_ctx, skip);
-        branch = ggml_silu(c->graph.graph_ctx, branch);
-        ggml_tensor * local = pp_graph_conv(c, c->graph.graph_ctx, branch, c2);
-        if (!local) return false;
-        local = ggml_silu(c->graph.graph_ctx, local);
-        x = ggml_add(c->graph.graph_ctx, branch, local);
-        skip = ggml_cont(c->graph.graph_ctx, ggml_permute(c->graph.graph_ctx, skip, 2, 0, 1, 3));
-        // Batch-aware: keep the per-item axis explicit as ne[2] instead of
-        // relying on a 2D flatten. For batch==1 this is byte-identical to the
-        // old [hidden,tokens] matrix.
-        skip = ggml_reshape_3d(c->graph.graph_ctx, skip, c->hidden, skip->ne[2], skip->ne[3]);
-        ggml_set_output(skip);
-        ggml_build_forward_expand(c->graph.graph, skip);
-        c->graph.svtr_skip = skip;
-        x = ggml_cont(c->graph.graph_ctx, ggml_permute(c->graph.graph_ctx, x, 2, 0, 1, 3));
-        // On ggml's convolution layout the singleton spatial dimension can
-        // remain as the fastest axis after the permute. The bytes are already
-        // token-major; expose them as the decoder's [hidden,tokens,batch].
-        const int64_t tokens = x->ne[2];
-        x = ggml_reshape_3d(c->graph.graph_ctx, x, c->hidden, tokens, x->ne[3]);
-        c->graph.svtr_prefix_output = true;
-    }
-    // Hybrid batch lane (opt-in): stop the graph at the tokenization output
-    // and run the SVTR decoder + head on the CPU per item. Rationale, from
-    // the Metal profiler: the backbone's ~550 conv nodes execute in ~58 ms
-    // per batch-8 group while the neck/decoder's ~130 tiny-tensor nodes
-    // (attention over [120,320]) take ~250 ms of GPU-serial kernel launches —
-    // that arithmetic is microseconds of NEON work per item.
-    const bool batch_cpu_decoder = batch > 1 && core_env::on("CRISPEMBED_PPOCRV6_BATCH_CPU_DECODER");
-    if (c->large_stem && c->graph.svtr_prefix_output && batch_cpu_decoder) {
-        // Flatten [hidden, tokens, items] to [hidden, tokens*items] so the
-        // caller's h = ne[1]/batch contract yields the per-item token count.
-        x = ggml_reshape_2d(c->graph.graph_ctx, x, x->ne[0], x->ne[1] * x->ne[2]);
-    }
-    if (c->large_stem && c->graph.svtr_prefix_output && pp_graph_enabled() && !batch_cpu_decoder) {
-        const int heads = 8;
-        const int head_dim = c->hidden / heads;
-        const int tokens = (int)x->ne[1];
-        const int64_t items = x->ne[2];
-        for (const auto & b : c->svtr) {
-            ggml_tensor * residual = x;
-            x = pp_graph_layernorm(c, c->graph.graph_ctx, x, b.ln1_w, b.ln1_b, c->hidden);
-            if (!x) return false;
-            ggml_tensor * qkv = pp_graph_linear(c, c->graph.graph_ctx, x, b.qkv_w, b.qkv_b);
-            if (!qkv) return false;
-            const size_t slice = (size_t)c->hidden * ggml_type_size(qkv->type);
-            // Attention must stay per-item: keep the batch axis explicit
-            // through the qkv views and run the head matmuls as 4D
-            // [head_dim, tokens, heads, items] so no token ever attends
-            // across crops.
-            ggml_tensor * q = ggml_cont(c->graph.graph_ctx, ggml_view_3d(c->graph.graph_ctx, qkv, c->hidden, tokens,
-                                                                         items, qkv->nb[1], qkv->nb[2], 0));
-            ggml_tensor * k = ggml_cont(c->graph.graph_ctx, ggml_view_3d(c->graph.graph_ctx, qkv, c->hidden, tokens,
-                                                                         items, qkv->nb[1], qkv->nb[2], slice));
-            ggml_tensor * v = ggml_cont(c->graph.graph_ctx, ggml_view_3d(c->graph.graph_ctx, qkv, c->hidden, tokens,
-                                                                         items, qkv->nb[1], qkv->nb[2], 2 * slice));
-            q = ggml_permute(c->graph.graph_ctx, ggml_reshape_4d(c->graph.graph_ctx, q, head_dim, heads, tokens, items),
-                             0, 2, 1, 3);
-            k = ggml_permute(c->graph.graph_ctx, ggml_reshape_4d(c->graph.graph_ctx, k, head_dim, heads, tokens, items),
-                             0, 2, 1, 3);
-            v = ggml_permute(c->graph.graph_ctx, ggml_reshape_4d(c->graph.graph_ctx, v, head_dim, heads, tokens, items),
-                             0, 2, 1, 3);
-            const float scale = 1.0f / std::sqrt((float)head_dim);
-            ggml_tensor * scores =
-                ggml_mul_mat(c->graph.graph_ctx, ggml_cont(c->graph.graph_ctx, k), ggml_cont(c->graph.graph_ctx, q));
-            scores = ggml_soft_max_ext(c->graph.graph_ctx, scores, nullptr, scale, 0.0f);
-            ggml_tensor * vt = ggml_cont(c->graph.graph_ctx, ggml_permute(c->graph.graph_ctx, v, 1, 0, 2, 3));
-            ggml_tensor * attn = ggml_mul_mat(c->graph.graph_ctx, vt, scores);
-            attn = ggml_cont(c->graph.graph_ctx, ggml_permute(c->graph.graph_ctx, attn, 0, 2, 1, 3));
-            attn = ggml_reshape_3d(c->graph.graph_ctx, attn, c->hidden, tokens, items);
-            attn = pp_graph_linear(c, c->graph.graph_ctx, attn, b.proj_w, b.proj_b);
-            if (!attn) return false;
-            x = ggml_add(c->graph.graph_ctx, residual, attn);
-            residual = x;
-            x = pp_graph_layernorm(c, c->graph.graph_ctx, x, b.ln2_w, b.ln2_b, c->hidden);
-            if (!x) return false;
-            x = pp_graph_linear(c, c->graph.graph_ctx, x, b.fc1_w, b.fc1_b);
-            if (!x) return false;
-            x = ggml_silu(c->graph.graph_ctx, x);
-            x = pp_graph_linear(c, c->graph.graph_ctx, x, b.fc2_w, b.fc2_b);
-            if (!x) return false;
-            x = ggml_add(c->graph.graph_ctx, residual, x);
-        }
-        x = pp_graph_layernorm(c, c->graph.graph_ctx, x, c->svtr_norm_w, c->svtr_norm_b, c->hidden);
-        if (!x) return false;
-        c->graph.svtr_decoder_output = true;
-        // Second stage-stop for profiling: everything except the head linear.
-        if (const char * stop = std::getenv("CRISPEMBED_PPOCRV6_GRAPH_STOP");
-            stop && std::strcmp(stop, "decoder") == 0 && batch > 1) {
-            x = ggml_add(c->graph.graph_ctx, x, c->graph.svtr_skip);
-            c->graph.output = x;
-            ggml_set_name(x, "ppocrv6_graph_output");
-            ggml_set_output(x);
-            ggml_build_forward_expand(c->graph.graph, x);
-            ggml_backend_sched_reset(c->graph.sched);
-            if (!ggml_backend_sched_alloc_graph(c->graph.sched, c->graph.graph)) return false;
-            c->graph.allocated = c->graph.ready = true;
-            c->graph.width = width;
-            c->graph.batch = batch;
-            fprintf(stderr, "ppocrv6: STAGE-STOP graph at decoder (%s)\n", ggml_backend_name(c->graph.backend));
-            return true;
-        }
-        if (batch > 1) {
-            // Fused batch lane: finish in-graph so the caller receives
-            // per-item logits like the tiny lane. rnn.py adds the skip AFTER
-            // the final norm; the head is one linear to the class table. The
-            // single-crop (batch==1) contract is unchanged — its consumer
-            // still applies skip + head on the scalar side.
-            x = ggml_add(c->graph.graph_ctx, x, c->graph.svtr_skip);
-            x = pp_graph_linear(c, c->graph.graph_ctx, x, c->svtr_head_w, c->svtr_head_b);
-            if (!x) return false;
-            x = ggml_reshape_2d(c->graph.graph_ctx, x, c->vocab_size, (int64_t)tokens * items);
-            c->graph.logits_output = true;
-        }
-    }
-    // Complete the tiny/small recognizer graph through logits.  The large
-    // SVTR decoder remains on its established CPU path for now.  Keeping the
-    // logits as the graph output also avoids copying the backbone feature map
-    // back to CPU merely to run two small projection layers.
-    if (!c->large_stem) {
+    // Complete the tiny graph through the CTC logits; graph failures fall
+    // through to the scalar tiny recognizer.
+    {
         if (core_env::on("CRISPEMBED_PPOCRV6_GRAPH_DEBUG")) {
             c->graph.debug_taps.push_back({ "backbone", x });
             ggml_set_output(x);
@@ -1230,8 +855,7 @@ static bool pp_graph_build_new(ppocrv6_ocr_context * c, int width, int batch) {
     c->graph.ready = true;
     c->graph.width = width;
     c->graph.batch = batch;
-    const char * output_kind =
-        c->graph.logits_output ? "logits" : (c->graph.svtr_decoder_output ? "svtr-decoder" : "backbone");
+    const char * output_kind = c->graph.logits_output ? "logits" : "backbone";
     fprintf(stderr, "ppocrv6: persistent GGML graph ready (%s, %s, %lldx%lldx%lld)\n",
             ggml_backend_name(c->graph.backend), output_kind, (long long)x->ne[0], (long long)x->ne[1],
             (long long)x->ne[2]);
@@ -1290,7 +914,7 @@ static bool pp_graph_run_batch(ppocrv6_ocr_context * c, const std::vector<float>
     output_data = nullptr;
     if (!pp_graph_build(c, w, batch)) {
         if (core_env::on("CRISPEMBED_PPOCRV6_GRAPH_BENCH"))
-            fprintf(stderr, "[ppocrv6-graph-bench] graph unavailable large_stem=%d backend=%s\n", c->large_stem ? 1 : 0,
+            fprintf(stderr, "[ppocrv6-graph-bench] graph unavailable backend=%s\n",
                     c->backend ? ggml_backend_name(c->backend) : "none");
         return false;
     }
@@ -1354,11 +978,6 @@ static bool pp_graph_run_batch(ppocrv6_ocr_context * c, const std::vector<float>
         ggml_backend_tensor_get(c->graph.output, output.data(), 0, output.size() * sizeof(float));
         output_data = output.data();
     }
-    if (c->graph.svtr_skip) {
-        c->graph.svtr_skip_host.resize(ggml_nelements(c->graph.svtr_skip));
-        ggml_backend_tensor_get(c->graph.svtr_skip, c->graph.svtr_skip_host.data(), 0,
-                                c->graph.svtr_skip_host.size() * sizeof(float));
-    }
     const auto t_readback1 = std::chrono::steady_clock::now();
     if (core_env::on("CRISPEMBED_PPOCRV6_GRAPH_DEBUG")) {
         for (const auto & tap : c->graph.debug_taps) {
@@ -1382,12 +1001,6 @@ static bool pp_graph_run_batch(ppocrv6_ocr_context * c, const std::vector<float>
                 if (std::strcmp(tap.first, "backbone") == 0) ref_name = "ppocrv6.stage4";
                 if (std::strcmp(tap.first, "head_act1") == 0) ref_name = "ppocrv6.head_conv1";
                 if (std::strcmp(tap.first, "head_act2") == 0) ref_name = "ppocrv6.head_input";
-                if (std::strcmp(tap.first, "large_stem1") == 0) ref_name = "ppocrv6.large_stem1";
-                if (std::strcmp(tap.first, "large_stem2a") == 0) ref_name = "ppocrv6.large_stem2a";
-                if (std::strcmp(tap.first, "large_stem2b") == 0) ref_name = "ppocrv6.large_stem2b";
-                if (std::strcmp(tap.first, "large_cat") == 0) ref_name = "ppocrv6.large_cat";
-                if (std::strcmp(tap.first, "large_stem3") == 0) ref_name = "ppocrv6.large_stem3";
-                if (std::strcmp(tap.first, "large_stem") == 0) ref_name = "ppocrv6.large_stem";
                 if (ref_name) {
                     std::vector<float> token_major;
                     const float * compare_data = values.data();
@@ -1430,8 +1043,8 @@ static bool pp_graph_run_batch(ppocrv6_ocr_context * c, const std::vector<float>
                 "readback_mb=%.6f readback=%s output=%dx%d\n",
                 ggml_backend_name(c->graph.backend), ms(started, finished), ms(t_stage0, t_stage1),
                 ms(t_alloc0, t_stage0), ms(finished, t_readback1),
-                (double)(output.size() * sizeof(float) + c->graph.token_ids.size() * sizeof(int32_t) +
-                         c->graph.svtr_skip_host.size() * sizeof(float)) / (1024.0 * 1024.0),
+                (double)(output.size() * sizeof(float) + c->graph.token_ids.size() * sizeof(int32_t)) /
+                    (1024.0 * 1024.0),
                 c->graph.output_ids ? "ids" : (output.empty() && output_data ? "host-logits" : "logits"), w, h);
     }
     c->graph.reusable = true;
@@ -1531,150 +1144,11 @@ static int resize_normalize(const uint8_t * px, int w, int h, int ch, std::vecto
     return resize_normalize_into(px, w, h, ch, out.data(), W);
 }
 
-static const char * recognize_svtr(ppocrv6_ocr_context * c, std::vector<float> & x, int h, int w, int * out_len,
-                                   bool prefix_encoded = false, bool decoder_encoded = false) {
-    const int in_ch = c->stages.back().back().cm2.out_ch;
-    int ow = 0;
-    std::vector<float> tok;
-    // skip_conv output, held in token layout until after the SVTR blocks.
-    std::vector<float> skip_tokens;
-    if (prefix_encoded || decoder_encoded) {
-        // pp_graph_run exposes [hidden,tokens] as w=hidden,h=tokens.
-        ow = h;
-        tok = x;
-        skip_tokens = c->graph.svtr_skip_host;
-    } else {
-        const int ph = std::max(1, h / 3), pw = std::max(1, w / 2);
-        std::vector<float> pooled((size_t)in_ch * ph * pw, 0.0f);
-        for (int cc = 0; cc < in_ch; ++cc)
-            for (int yy = 0; yy < ph; ++yy)
-                for (int xx = 0; xx < pw; ++xx) {
-                    float sum = 0.0f;
-                    for (int ky = 0; ky < 3; ++ky)
-                        for (int kx = 0; kx < 2; ++kx) sum += x[(size_t)cc * h * w + (yy * 3 + ky) * w + xx * 2 + kx];
-                    pooled[(size_t)cc * ph * pw + yy * pw + xx] = sum / 6.0f;
-                }
-        int oh, ow_full;
-        std::vector<float> y, residual;
-        const std::string p = "rec.head.encoder.conv_block.";
-        pp_conv c0 = conv(c->wl.tensors, p + "0.conv", in_ch, c->hidden, 1, 1);
-        pp_conv c1 = conv(c->wl.tensors, p + "1.conv", in_ch, c->hidden, 1, 1);
-        pp_conv c2 = conv(c->wl.tensors, p + "2.conv", c->hidden, c->hidden, 1, 1, c->hidden);
-        c2.kh = 1;
-        c2.kw = 7;
-        c2.pad_h = 0;
-        c2.pad_w = 3;
-        // PaddleOCR ppocr/modeling/necks/rnn.py, EncoderWithLightSVTR::forward:
-        //     skip = skip_conv(x); z = conv_reduce(x); z = z + local_conv(z)
-        //     ... svtr blocks ...; z = norm(z); z = z + skip
-        // conv_block.0 is skip_conv and lands AFTER the blocks and the final
-        // norm, not here; the local [1,7] conv is a residual on conv_reduce.
-        if (!apply_conv(c0, pooled, ph, pw, residual, oh, ow_full)) return nullptr;
-        silu(residual);
-        if (!apply_conv(c1, pooled, ph, pw, y, oh, ow_full)) return nullptr;
-        silu(y);
-        std::vector<float> z;
-        if (!apply_conv(c2, y, ph, pw, z, oh, ow_full)) return nullptr;
-        silu(z);
-        for (size_t i = 0; i < z.size() && i < y.size(); ++i) z[i] += y[i];
-        ow = ow_full;
-        tok.resize((size_t)ow * c->hidden);
-        skip_tokens.resize((size_t)ow * c->hidden);
-        for (int t = 0; t < ow; ++t)
-            for (int cc = 0; cc < c->hidden; ++cc) {
-                tok[(size_t)t * c->hidden + cc] = z[(size_t)cc * oh * ow + t];
-                skip_tokens[(size_t)t * c->hidden + cc] = residual[(size_t)cc * oh * ow + t];
-            }
-    }
-    if (core_env::on("CRISPEMBED_PPOCRV6_GRAPH_DEBUG"))
-        fprintf(stderr, "[ppocrv6-svtr-prefix] mode=%s tokens=%d hidden=%d first=%.7g %.7g %.7g %.7g\n",
-                prefix_encoded ? "graph" : "cpu", ow, c->hidden, tok.size() > 0 ? tok[0] : 0.0f,
-                tok.size() > 1 ? tok[1] : 0.0f, tok.size() > 2 ? tok[2] : 0.0f, tok.size() > 3 ? tok[3] : 0.0f);
-    const int heads = 8, hd = c->hidden / heads;
-    if (!decoder_encoded)
-        for (const auto & b : c->svtr) {
-            std::vector<float> a = tok, qkv, attn((size_t)ow * c->hidden, 0.0f), proj, mlp;
-            for (int t = 0; t < ow; ++t) {
-                std::vector<float> one(tok.begin() + (size_t)t * c->hidden, tok.begin() + (size_t)(t + 1) * c->hidden);
-                layernorm_tokens(one, 1, c->hidden, b.ln1_wf, b.ln1_bf);
-                std::vector<float> qrow;
-                linear_vec(one, qrow, b.qkv_wf, b.qkv_bf);
-                qkv.insert(qkv.end(), qrow.begin(), qrow.end());
-            }
-            for (int head = 0; head < heads; ++head)
-                for (int t = 0; t < ow; ++t) {
-                    std::vector<float> scores(ow);
-                    for (int u = 0; u < ow; ++u) {
-                        float s = 0.0f;
-                        for (int k = 0; k < hd; ++k)
-                            s += qkv[(size_t)t * 3 * c->hidden + head * hd + k] *
-                                 qkv[(size_t)u * 3 * c->hidden + c->hidden + head * hd + k];
-                        scores[u] = s / std::sqrt(float(hd));
-                    }
-                    softmax(scores.data(), ow);
-                    for (int u = 0; u < ow; ++u)
-                        for (int k = 0; k < hd; ++k)
-                            attn[(size_t)t * c->hidden + head * hd + k] +=
-                                scores[u] * qkv[(size_t)u * 3 * c->hidden + 2 * c->hidden + head * hd + k];
-                }
-            for (int t = 0; t < ow; ++t) {
-                std::vector<float> one(attn.begin() + (size_t)t * c->hidden,
-                                       attn.begin() + (size_t)(t + 1) * c->hidden),
-                    out;
-                linear_vec(one, out, b.proj_wf, b.proj_bf);
-                for (int k = 0; k < c->hidden; ++k) tok[(size_t)t * c->hidden + k] += out[k];
-            }
-            for (int t = 0; t < ow; ++t) {
-                std::vector<float> one(tok.begin() + (size_t)t * c->hidden, tok.begin() + (size_t)(t + 1) * c->hidden),
-                    n, out;
-                layernorm_tokens(one, 1, c->hidden, b.ln2_wf, b.ln2_bf);
-                linear_vec(one, n, b.fc1_wf, b.fc1_bf);
-                silu(n);
-                linear_vec(n, out, b.fc2_wf, b.fc2_bf);
-                for (int k = 0; k < c->hidden; ++k) tok[(size_t)t * c->hidden + k] += out[k];
-            }
-        }
-    if (!decoder_encoded) layernorm_tokens(tok, ow, c->hidden, c->svtr_norm_wf, c->svtr_norm_bf);
-    // z = z + skip, after the blocks and the neck norm (rnn.py). Only the CPU
-    // neck fills skip_tokens; the graph prefix paths still fold it in-graph.
-    if (!skip_tokens.empty() && skip_tokens.size() == tok.size())
-        for (size_t i = 0; i < tok.size(); ++i) tok[i] += skip_tokens[i];
-    if (c->diff) {
-        auto r = c->diff->compare("ppocrv6.head_input", tok.data(), tok.size(), -1);
-        fprintf(stderr, "[ppocrv6-diff] ppocrv6.head_input cos=%.6f |mine|=%.6g %s\n", r.cos_min,
-                std::sqrt(std::inner_product(tok.begin(), tok.end(), tok.begin(), 0.0)), r.is_pass() ? "PASS" : "FAIL");
-    }
-    c->result.clear();
-    int last = -1;
-    std::vector<float> logits((size_t)ow * c->vocab_size);
-    for (int t = 0; t < ow; ++t) {
-        linear_cpu(tok.data() + (size_t)t * c->hidden, logits.data() + (size_t)t * c->vocab_size, c->hidden,
-                   c->vocab_size, c->svtr_head_wf.data(), c->svtr_head_bf.data());
-        int best = int(std::max_element(logits.begin() + (size_t)t * c->vocab_size,
-                                        logits.begin() + (size_t)(t + 1) * c->vocab_size) -
-                       (logits.begin() + (size_t)t * c->vocab_size));
-        if (best > 0 && best != last && best - 1 < (int)c->vocab.size()) c->result += c->vocab[best - 1];
-        last = best;
-    }
-    if (c->diff) {
-        auto r = c->diff->compare("ppocrv6.logits", logits.data(), logits.size(), -1);
-        fprintf(stderr, "[ppocrv6-diff] logits cos=%.6f |mine|=%.6g %s\n", r.cos_min,
-                std::sqrt(std::inner_product(logits.begin(), logits.end(), logits.begin(), 0.0)),
-                r.is_pass() ? "PASS" : "FAIL");
-    }
-    if (out_len) *out_len = (int)c->result.size();
-    return c->result.c_str();
-}
 
 static const char * recognize_nchw(ppocrv6_ocr_context * c, const std::vector<float> & input, int * out_len,
                                    int input_w, bool use_graph = true) {
-    // O7 adoption (issue #45): the medium/large recognizer has no GGML graph
-    // (`graph unavailable large_stem=1`), so every crop runs these scalar
-    // reference convs — adopt the R6 im2col+mk consume like ppocrv6_det did.
-    // Measured on the issue-#45 subtitle corpus (M1, interleaved, 3 reps):
-    // pipeline wall 3.86 s -> 3.45 s on a 1920x200 two-liner with decoded
-    // output byte-identical. Env vars keep absolute precedence in both
-    // directions (CRISPEMBED_CONV2D_MK=0 restores the reference loop here).
+    // Tiny CTC recognizer: use the persistent graph when accepted, otherwise
+    // run the scalar stem, backbone and CTC head.
     core_cpu::conv2d_prefs_scope conv_prefs(/*mk=*/true, c->n_threads, &c->conv_runtime);
     std::vector<float> x, y;
     int h = 48, w = input_w;
@@ -1711,7 +1185,7 @@ static const char * recognize_nchw(ppocrv6_ocr_context * c, const std::vector<fl
         }
         if (graph_done) {
             x.swap(graph_out);
-            if (c->diff && !c->graph.svtr_prefix_output) {
+            if (c->diff) {
                 // The compact reference archives predate the explicit
                 // graph_backbone alias; stage4 is the same tensor at this
                 // seam. Prefer the alias when a future archive provides it.
@@ -1721,57 +1195,6 @@ static const char * recognize_nchw(ppocrv6_ocr_context * c, const std::vector<fl
                 fprintf(stderr, "[ppocrv6-diff] graph_backbone as %s cos=%.6f %s\n", ref_name, r.cos_min,
                         r.is_pass() ? "PASS" : "FAIL");
             }
-        }
-    } else if (c->large_stem) {
-        x = input;
-        int oh, ow;
-        auto diff_stem = [&](const char * name, const std::vector<float> & v) {
-            if (!c->diff) return;
-            auto r = c->diff->compare(name, v.data(), v.size(), -1);
-            fprintf(stderr, "[ppocrv6-diff] %s cos=%.6f %s\n", name, r.cos_min, r.is_pass() ? "PASS" : "FAIL");
-        };
-        if (!apply_conv(c->stem[0], x, h, w, y, oh, ow)) return nullptr;
-        relu(y);
-        x.swap(y);
-        h = oh;
-        w = ow;
-        diff_stem("ppocrv6.large_stem1", x);
-        std::vector<float> padded_stem;
-        int ph, pw;
-        pad_right_bottom(x, c->stem[0].out_ch, h, w, padded_stem, ph, pw);
-        std::vector<float> branch;
-        if (!apply_conv(c->stem[1], padded_stem, ph, pw, branch, oh, ow)) return nullptr;
-        relu(branch);
-        diff_stem("ppocrv6.large_stem2a", branch);
-        std::vector<float> padded_branch;
-        int bph, bpw;
-        pad_right_bottom(branch, c->stem[1].out_ch, oh, ow, padded_branch, bph, bpw);
-        if (!apply_conv(c->stem[2], padded_branch, bph, bpw, y, oh, ow)) return nullptr;
-        relu(y);
-        branch.swap(y);
-        diff_stem("ppocrv6.large_stem2b", branch);
-        std::vector<float> pooled;
-        int poh, pow;
-        maxpool2x2_stride1(padded_stem, c->stem[0].out_ch, ph, pw, pooled, poh, pow);
-        std::vector<float> cat((size_t)(pooled.size() + branch.size()));
-        std::memcpy(cat.data(), pooled.data(), pooled.size() * sizeof(float));
-        std::memcpy(cat.data() + pooled.size(), branch.data(), branch.size() * sizeof(float));
-        diff_stem("ppocrv6.large_cat", cat);
-        if (!apply_conv(c->stem[3], cat, poh, pow, y, oh, ow)) return nullptr;
-        relu(y);
-        x.swap(y);
-        h = oh;
-        w = ow;
-        diff_stem("ppocrv6.large_stem3", x);
-        if (!apply_conv(c->stem[4], x, h, w, y, oh, ow)) return nullptr;
-        relu(y);
-        x.swap(y);
-        h = oh;
-        w = ow;
-        if (c->diff) {
-            auto r = c->diff->compare("ppocrv6.large_stem", x.data(), x.size(), -1);
-            fprintf(stderr, "[ppocrv6-diff] ppocrv6.large_stem cos=%.6f |mine|=%.6g %s\n", r.cos_min,
-                    std::sqrt(std::inner_product(x.begin(), x.end(), x.begin(), 0.0)), r.is_pass() ? "PASS" : "FAIL");
         }
     } else {
         x = input;
@@ -1825,9 +1248,6 @@ static const char * recognize_nchw(ppocrv6_ocr_context * c, const std::vector<fl
                         r.is_pass() ? "PASS" : "FAIL");
             }
         }
-    if (c->large_stem)
-        return recognize_svtr(c, x, h, w, out_len, graph_done && c->graph.svtr_prefix_output,
-                              graph_done && c->graph.svtr_decoder_output);
     if (core_env::on("CRISPEMBED_PPOCRV6_GRAPH_DEBUG"))
         fprintf(stderr, "[ppocrv6-cpu-tap] backbone shape=%dx%d first=%.7g %.7g %.7g %.7g\n", h, w,
                 x.size() > 0 ? x[0] : 0.0f, x.size() > 1 ? x[1] : 0.0f, x.size() > 2 ? x[2] : 0.0f,
@@ -1966,14 +1386,17 @@ extern "C" ppocrv6_ocr_context * ppocrv6_ocr_init(const char * path, int n_threa
         delete c;
         return nullptr;
     }
-    c->variant = core_gguf::kv_str(meta, "ppocrv6.variant", "tiny");
+    const std::string variant = core_gguf::kv_str(meta, "ppocrv6.variant", "tiny");
+    if (variant != "tiny") {
+        core_gguf::free_metadata(meta);
+        fprintf(stderr, "ppocrv6: unsupported recognizer variant: %s\n", variant.c_str());
+        ppocrv6_ocr_free(c);
+        return nullptr;
+    }
     c->vocab = core_gguf::kv_str_array(meta, "tokenizer.ggml.tokens");
     c->vocab_size = (int)core_gguf::kv_u32(meta, "ppocrv6.vocab_size", 0);
-    // The PP-OCRv6 configs set use_space_char, so PaddleOCR's label list is
-    // blank + the dict + ' ' -- which is where vocab_size (18710) gets its two
-    // extra classes over the 18708-entry dict the converter emits. Without the
-    // trailing space every inter-word class decodes to nothing and the output
-    // is one run-on token.
+    // Some GGUF dictionaries omit the trailing space token while vocab_size
+    // counts both blank and space; restore it when that two-token gap exists.
     if (c->vocab_size == (int)c->vocab.size() + 2) c->vocab.push_back(" ");
     if (const char * ref = std::getenv("PPOCRV6_REF")) {
         c->diff = std::make_unique<crispembed_diff::Ref>();
@@ -1992,12 +1415,12 @@ extern "C" ppocrv6_ocr_context * ppocrv6_ocr_init(const char * path, int n_threa
         weight_backend = c->graph_weights.cpu_backend;
     }
     if (!core_gguf::load_weights(path, weight_backend, "ppocrv6", c->wl, true)) {
-        fprintf(stderr, "ppocrv6: failed to load recognizer weights: %s (variant=%s)\n", path, c->variant.c_str());
+        fprintf(stderr, "ppocrv6: failed to load recognizer weights: %s\n", path);
         ppocrv6_ocr_free(c);
         return nullptr;
     }
     if (!map_model(c)) {
-        fprintf(stderr, "ppocrv6: recognizer tensor map is incompatible: %s (variant=%s)\n", path, c->variant.c_str());
+        fprintf(stderr, "ppocrv6: recognizer tensor map is incompatible: %s\n", path);
         ppocrv6_ocr_free(c);
         return nullptr;
     }
@@ -2062,25 +1485,14 @@ extern "C" int ppocrv6_ocr_recognize_raw_batch(ppocrv6_ocr_context * c, const ui
         lengths[i] = copied;
         return true;
     };
-    // The fused batch graph is the DEFAULT since 2026-08-04. History: the
-    // "metal-fourth-dimension" pooling abort that kept this lane CPU-only was
-    // NOT a Metal limitation — the fused caller passed a zeroed width into
-    // pp_graph_run_batch's in-out shape parameter, so every batch graph was
-    // built at width 0 and asserted inside ggml_pool_2d on any backend. With
-    // the width seeded and the large-stem lane finishing in-graph, the
-    // 26-fixture sweep decodes byte-identical to the scalar-per-crop path,
-    // and the 47-crop receipt runs recognize 3743 -> 2563 ms on Metal.
-    // CRISPEMBED_PPOCRV6_BATCH_GRAPH=0 (or NO_BATCH_GRAPH) disables;
-    // CRISPEMBED_PPOCRV6_BATCH_GRAPH_CPU_ONLY restores the old backend gate.
-    // An explicit accept-override of 0 (diagnostic runs demanding the scalar
-    // reference) also disables the fused lane.
+    // Batch graph acceptance follows the single-image graph gate; disabling it
+    // keeps the existing scalar per-crop fallback.
     const char * batch_graph_env = std::getenv("CRISPEMBED_PPOCRV6_BATCH_GRAPH");
     const bool graph_accept = c->graph_accept_override >= 0 ? c->graph_accept_override != 0
                                                           : core_env::on("CRISPEMBED_PPOCRV6_GRAPH_ACCEPT");
-    const bool hybrid = c->large_stem && core_env::on("CRISPEMBED_PPOCRV6_BATCH_CPU_DECODER");
     const bool batch_graph_enabled = (batch_graph_env ? std::strcmp(batch_graph_env, "0") != 0
                                                       : !core_env::on("CRISPEMBED_PPOCRV6_NO_BATCH_GRAPH")) &&
-                                     pp_graph_enabled() && c->graph_accept_override != 0 && (graph_accept || hybrid);
+                                     pp_graph_enabled() && c->graph_accept_override != 0 && graph_accept;
     const bool batch_backend_ok =
         c->backend && (ggml_backend_is_cpu(c->backend) || !core_env::on("CRISPEMBED_PPOCRV6_BATCH_GRAPH_CPU_ONLY"));
     if (batch_graph_enabled && !batch_backend_ok && core_env::on("CRISPEMBED_PPOCRV6_BENCH"))
@@ -2137,24 +1549,7 @@ extern "C" int ppocrv6_ocr_recognize_raw_batch(ppocrv6_ocr_context * c, const ui
                 std::string text;
                 int len = 0;
                 bool valid = false;
-                if (fused && c->graph.svtr_prefix_output && !c->graph.logits_output) {
-                    // Hybrid lane: the graph returned the tokenization output
-                    // [hidden, tokens] per item; run the scalar SVTR decoder +
-                    // head on this item's slice. recognize_svtr reads the skip
-                    // from svtr_skip_host, so stage this item's skip slice.
-                    const size_t stride = (size_t)tokens * classes; // classes == hidden here
-                    std::vector<float> item(fused_output.begin() + stride * member,
-                                            fused_output.begin() + stride * (member + 1));
-                    std::vector<float> all_skip = std::move(c->graph.svtr_skip_host);
-                    c->graph.svtr_skip_host.assign(all_skip.begin() + stride * member,
-                                                   all_skip.begin() + stride * (member + 1));
-                    const char * decoded = recognize_svtr(c, item, tokens, classes, &len, true, false);
-                    c->graph.svtr_skip_host = std::move(all_skip);
-                    if (decoded) {
-                        text.assign(decoded, (size_t)std::max(0, len));
-                        valid = true;
-                    }
-                } else if (fused) {
+                if (fused) {
                     const int32_t * ids = c->graph.output_ids ? c->graph.token_ids.data() + (size_t)tokens * member : nullptr;
                     const float * logits = ids ? nullptr : fused_data + (size_t)tokens * classes * member;
                     pp_graph_decode(c, logits, ids, tokens, classes, text);

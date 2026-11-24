@@ -53,9 +53,6 @@ struct neck_feature {
     conv dw, pw, se1, se2;
 };
 
-struct medium_ic {
-    conv reduce, vertical[3], horizontal[3], symmetric[3], final;
-};
 
 struct context {
     core_gguf::WeightLoad wl;
@@ -63,14 +60,10 @@ struct context {
     int n_threads = 1;
     core_cpu::Conv2dRuntime conv_runtime;
     bool capture_stages = false;
-    std::string variant;
     int neck = 0;
-    int stage_channels[4] = {};
     std::vector<conv> stem;
     std::vector<std::vector<block>> stages;
     std::vector<neck_feature> features;
-    std::vector<conv> med_adjust, med_project, med_bottom, med_lateral;
-    std::vector<medium_ic> med_ic;
     conv head_down, head_up, head_final;
     std::vector<float> last_prob;
     int last_h = 0, last_w = 0;
@@ -577,12 +570,6 @@ static bool graph_build(context * c, int h, int w) {
     // matched scalar probability cosine ~1e-8 and passed the 25-fixture CER
     // gate (labelled mean 0.06394 vs 0.06410).
     // CRISPEMBED_PPOCRV6_DET_SCALAR=1 selects the native CPU reference.
-    // medium's RepLKFPN neck graph validated 2026-08-04: every med_* tap at
-    // cosine 0.99999998-1.0 vs scalar on synth + receipt, probability
-    // 0.99999999 with equal norms, same box counts, and 6.9 s -> 1.0 s /
-    // 41.4 s -> 8.7 s detector time on synth_00_clean / german_official_print
-    // (the CPU-scalar medium detector was why the medium tier timed out in
-    // every benchmark). German CER graph 0.04856 vs scalar 0.04955.
     c->graph.backend = c->backend;
     if (!c->graph.backend) return false;
     if (ggml_backend_is_cpu(c->graph.backend)) {
@@ -641,121 +628,53 @@ static bool graph_build(context * c, int h, int w) {
         stage_out[si] = x;
     }
     ggml_tensor * neck = nullptr;
-    if (c->variant == "medium") {
-        // RepLKFPN-style medium neck, mirroring run_medium_neck: adjust ->
-        // top-down FPN -> project -> bottom-up (stride-2 conv, grid-matched
-        // by nearest interpolation) -> lateral -> med_ic refinement (reduce,
-        // 3x summed vertical/horizontal/symmetric branches, final+ReLU,
-        // residual) -> deepest-first concat on stage-0's grid. Tap names
-        // match the scalar last_stages so DET_GRAPH_COMPARE diffs per stage.
-        ggml_context * g = c->graph.graph_ctx;
-        ggml_tensor *adjusted[4], *top[4], *projected[4], *bottom[4], *refined[4];
-        for (int i = 0; i < 4; ++i) {
-            adjusted[i] = graph_conv(c, g, stage_out[i], c->med_adjust[i]);
-            if (!adjusted[i]) return false;
-            c->graph.named_taps.push_back({ "med_adjust" + std::to_string(i), adjusted[i] });
-        }
-        top[3] = adjusted[3];
-        for (int i = 2; i >= 0; --i) {
-            ggml_tensor * up = ggml_interpolate(g, top[i + 1], adjusted[i]->ne[0], adjusted[i]->ne[1],
-                                                adjusted[i]->ne[2], adjusted[i]->ne[3], GGML_SCALE_MODE_NEAREST);
-            top[i] = ggml_add(g, adjusted[i], up);
-        }
-        for (int i = 0; i < 4; ++i) c->graph.named_taps.push_back({ "med_top" + std::to_string(i), top[i] });
-        for (int i = 0; i < 4; ++i) {
-            projected[i] = graph_conv(c, g, i < 3 ? top[i] : adjusted[3], c->med_project[i]);
-            if (!projected[i]) return false;
-            c->graph.named_taps.push_back({ "med_project" + std::to_string(i), projected[i] });
-        }
-        bottom[0] = projected[0];
-        for (int i = 1; i < 4; ++i) {
-            ggml_tensor * down = graph_conv(c, g, bottom[i - 1], c->med_bottom[i - 1]);
-            if (!down) return false;
-            down = ggml_interpolate(g, down, projected[i]->ne[0], projected[i]->ne[1], down->ne[2], down->ne[3],
-                                    GGML_SCALE_MODE_NEAREST);
-            bottom[i] = ggml_add(g, projected[i], down);
-        }
-        for (int i = 0; i < 4; ++i) c->graph.named_taps.push_back({ "med_bottom" + std::to_string(i), bottom[i] });
-        for (int i = 0; i < 4; ++i) {
-            ggml_tensor * lat = graph_conv(c, g, i == 0 ? projected[0] : bottom[i], c->med_lateral[i]);
-            if (!lat) return false;
-            c->graph.named_taps.push_back({ "med_lateral" + std::to_string(i), lat });
-            const medium_ic & b = c->med_ic[i];
-            ggml_tensor * r = graph_conv(c, g, lat, b.reduce);
-            if (!r) return false;
-            ggml_tensor * a = r;
-            for (int j = 0; j < 3; ++j) {
-                ggml_tensor * v = graph_conv(c, g, a, b.vertical[j]);
-                ggml_tensor * q = graph_conv(c, g, a, b.horizontal[j]);
-                ggml_tensor * s = graph_conv(c, g, a, b.symmetric[j]);
-                if (!v || !q || !s) return false;
-                a = ggml_add(g, ggml_add(g, v, q), s);
-            }
-            ggml_tensor * y = graph_conv(c, g, a, b.final);
-            if (!y) return false;
-            y = ggml_relu(g, y);
-            refined[i] = ggml_add(g, lat, y);
-            c->graph.named_taps.push_back({ "med_refined" + std::to_string(i), refined[i] });
-        }
-        neck = ggml_interpolate(g, refined[3], refined[0]->ne[0], refined[0]->ne[1], refined[3]->ne[2],
-                                refined[3]->ne[3], GGML_SCALE_MODE_NEAREST);
-        for (int i = 2; i >= 1; --i)
-            neck = ggml_concat(g, neck,
-                               ggml_interpolate(g, refined[i], refined[0]->ne[0], refined[0]->ne[1], refined[i]->ne[2],
-                                                refined[i]->ne[3], GGML_SCALE_MODE_NEAREST),
-                               2);
-        neck = ggml_concat(g, neck, refined[0], 2);
-    } else {
-        std::vector<ggml_tensor *> fused(4);
-        for (int i = 0; i < 4; ++i) {
-            fused[i] = graph_conv(c, c->graph.graph_ctx, stage_out[i], c->features[i].insert);
-            if (!fused[i]) return false;
-            ggml_tensor * pooled = ggml_pool_2d(c->graph.graph_ctx, fused[i], GGML_OP_POOL_AVG, fused[i]->ne[0],
-                                                fused[i]->ne[1], fused[i]->ne[0], fused[i]->ne[1], 0, 0);
-            ggml_tensor * gate = graph_conv(c, c->graph.graph_ctx, pooled, c->features[i].insert_se1);
-            if (!gate) return false;
-            gate = ggml_relu(c->graph.graph_ctx, gate);
-            gate = graph_conv(c, c->graph.graph_ctx, gate, c->features[i].insert_se2);
-            if (!gate) return false;
-            // Hard-sigmoid gate: clamp(0.2*x + 0.5), matching the scalar path and
-            // Paddle's SELayer. A stray extra ggml_scale(gate, 0.2f) here squashed
-            // the gate to 0.04*x + 0.5 — the proc-SE below never had it — and was
-            // the whole fused0-cosine-0.988 / 31-vs-30-box geometry divergence.
-            gate = ggml_clamp(c->graph.graph_ctx, ggml_scale_bias(c->graph.graph_ctx, gate, 0.2f, 0.5f), 0.0f, 1.0f);
-            fused[i] = ggml_add(c->graph.graph_ctx, fused[i], ggml_mul(c->graph.graph_ctx, fused[i], gate));
-            c->graph.named_taps.push_back({ "fused" + std::to_string(i), fused[i] });
-        }
-        for (int i = 2; i >= 0; --i)
-            fused[i] = ggml_add(c->graph.graph_ctx, fused[i],
-                                ggml_upscale(c->graph.graph_ctx, fused[i + 1], 2, GGML_SCALE_MODE_NEAREST));
-        std::vector<ggml_tensor *> proc(4);
-        for (int i = 0; i < 4; ++i) {
-            ggml_tensor * z = graph_conv(c, c->graph.graph_ctx, fused[i], c->features[i].dw);
-            if (!z) return false;
-            z = graph_conv(c, c->graph.graph_ctx, z, c->features[i].pw);
-            if (!z) return false;
-            ggml_tensor * pooled =
-                ggml_pool_2d(c->graph.graph_ctx, z, GGML_OP_POOL_AVG, z->ne[0], z->ne[1], z->ne[0], z->ne[1], 0, 0);
-            ggml_tensor * gate = graph_conv(c, c->graph.graph_ctx, pooled, c->features[i].se1);
-            if (!gate) return false;
-            gate = ggml_relu(c->graph.graph_ctx, gate);
-            gate = graph_conv(c, c->graph.graph_ctx, gate, c->features[i].se2);
-            if (!gate) return false;
-            gate = ggml_clamp(c->graph.graph_ctx, ggml_scale_bias(c->graph.graph_ctx, gate, 0.2f, 0.5f), 0.0f, 1.0f);
-            proc[i] = ggml_add(c->graph.graph_ctx, z, ggml_mul(c->graph.graph_ctx, z, gate));
-            c->graph.named_taps.push_back({ "proc" + std::to_string(i), proc[i] });
-        }
-        // Match the CPU neck's channel order: deepest feature first, then
-        // progressively finer features.  Reversing this concat is critical—the
-        // channels have equal shapes, so a mistaken order can look numerically
-        // plausible until the detector head produces unrelated logits.
-        neck = ggml_upscale(c->graph.graph_ctx, proc[3], 8, GGML_SCALE_MODE_NEAREST);
-        neck = ggml_concat(c->graph.graph_ctx, neck,
-                           ggml_upscale(c->graph.graph_ctx, proc[2], 4, GGML_SCALE_MODE_NEAREST), 2);
-        neck = ggml_concat(c->graph.graph_ctx, neck,
-                           ggml_upscale(c->graph.graph_ctx, proc[1], 2, GGML_SCALE_MODE_NEAREST), 2);
-        neck = ggml_concat(c->graph.graph_ctx, neck, proc[0], 2);
+    std::vector<ggml_tensor *> fused(4);
+    for (int i = 0; i < 4; ++i) {
+        fused[i] = graph_conv(c, c->graph.graph_ctx, stage_out[i], c->features[i].insert);
+        if (!fused[i]) return false;
+        ggml_tensor * pooled = ggml_pool_2d(c->graph.graph_ctx, fused[i], GGML_OP_POOL_AVG, fused[i]->ne[0],
+                                            fused[i]->ne[1], fused[i]->ne[0], fused[i]->ne[1], 0, 0);
+        ggml_tensor * gate = graph_conv(c, c->graph.graph_ctx, pooled, c->features[i].insert_se1);
+        if (!gate) return false;
+        gate = ggml_relu(c->graph.graph_ctx, gate);
+        gate = graph_conv(c, c->graph.graph_ctx, gate, c->features[i].insert_se2);
+        if (!gate) return false;
+        // Hard-sigmoid gate: clamp(0.2*x + 0.5), matching the scalar path and
+        // Paddle's SELayer. A stray extra ggml_scale(gate, 0.2f) here squashed
+        // the gate to 0.04*x + 0.5 — the proc-SE below never had it — and was
+        // the whole fused0-cosine-0.988 / 31-vs-30-box geometry divergence.
+        gate = ggml_clamp(c->graph.graph_ctx, ggml_scale_bias(c->graph.graph_ctx, gate, 0.2f, 0.5f), 0.0f, 1.0f);
+        fused[i] = ggml_add(c->graph.graph_ctx, fused[i], ggml_mul(c->graph.graph_ctx, fused[i], gate));
+        c->graph.named_taps.push_back({ "fused" + std::to_string(i), fused[i] });
     }
+    for (int i = 2; i >= 0; --i)
+        fused[i] = ggml_add(c->graph.graph_ctx, fused[i],
+                            ggml_upscale(c->graph.graph_ctx, fused[i + 1], 2, GGML_SCALE_MODE_NEAREST));
+    std::vector<ggml_tensor *> proc(4);
+    for (int i = 0; i < 4; ++i) {
+        ggml_tensor * z = graph_conv(c, c->graph.graph_ctx, fused[i], c->features[i].dw);
+        if (!z) return false;
+        z = graph_conv(c, c->graph.graph_ctx, z, c->features[i].pw);
+        if (!z) return false;
+        ggml_tensor * pooled =
+            ggml_pool_2d(c->graph.graph_ctx, z, GGML_OP_POOL_AVG, z->ne[0], z->ne[1], z->ne[0], z->ne[1], 0, 0);
+        ggml_tensor * gate = graph_conv(c, c->graph.graph_ctx, pooled, c->features[i].se1);
+        if (!gate) return false;
+        gate = ggml_relu(c->graph.graph_ctx, gate);
+        gate = graph_conv(c, c->graph.graph_ctx, gate, c->features[i].se2);
+        if (!gate) return false;
+        gate = ggml_clamp(c->graph.graph_ctx, ggml_scale_bias(c->graph.graph_ctx, gate, 0.2f, 0.5f), 0.0f, 1.0f);
+        proc[i] = ggml_add(c->graph.graph_ctx, z, ggml_mul(c->graph.graph_ctx, z, gate));
+        c->graph.named_taps.push_back({ "proc" + std::to_string(i), proc[i] });
+    }
+    // Match the CPU neck's channel order: deepest feature first, then
+    // progressively finer features. Reversing this concat changes head logits.
+    neck = ggml_upscale(c->graph.graph_ctx, proc[3], 8, GGML_SCALE_MODE_NEAREST);
+    neck = ggml_concat(c->graph.graph_ctx, neck,
+                       ggml_upscale(c->graph.graph_ctx, proc[2], 4, GGML_SCALE_MODE_NEAREST), 2);
+    neck = ggml_concat(c->graph.graph_ctx, neck,
+                       ggml_upscale(c->graph.graph_ctx, proc[1], 2, GGML_SCALE_MODE_NEAREST), 2);
+    neck = ggml_concat(c->graph.graph_ctx, neck, proc[0], 2);
     c->graph.named_taps.push_back({ "neck_output", neck });
     x = graph_conv(c, c->graph.graph_ctx, neck, c->head_down);
     if (!x) return false;
@@ -863,9 +782,7 @@ static bool run_stem(context * c, const std::vector<float> & input, int h, int w
     return true;
 }
 
-// Print graph-vs-scalar cosines for the probability map, the four backbone
-// stages, and the given named taps. Shared by the small/tiny and medium
-// detect tails (medium returns early and used to skip the compare entirely).
+// Compare the tiny detector graph and CPU probability maps and feature taps.
 static void report_graph_compare(context * c, const std::vector<float> & graph_probability,
                                  const std::vector<float> & y, std::initializer_list<const char *> names) {
     if (graph_probability.empty() || graph_probability.size() != y.size()) return;
@@ -897,89 +814,6 @@ static void report_graph_compare(context * c, const std::vector<float> & graph_p
     for (const char * name : names) pair_cosine(std::string("graph_") + name, name, name);
 }
 
-static bool run_medium_ic(const medium_ic & b, std::vector<float> & x, int h, int w) {
-    std::vector<float> r;
-    int rh, rw;
-    if (!apply_conv(b.reduce, x, h, w, r, rh, rw)) return false;
-    std::vector<float> a[3];
-    for (int j = 0; j < 3; ++j) {
-        std::vector<float> v, q, s;
-        int vh, vw;
-        const std::vector<float> & source = j == 0 ? r : a[j - 1];
-        if (!apply_conv(b.vertical[j], source, h, w, v, vh, vw) ||
-            !apply_conv(b.horizontal[j], source, h, w, q, vh, vw) ||
-            !apply_conv(b.symmetric[j], source, h, w, s, vh, vw))
-            return false;
-        a[j].resize(s.size());
-        for (size_t k = 0; k < s.size(); ++k) a[j][k] = v[k] + q[k] + s[k];
-    }
-    std::vector<float> z = a[2];
-    std::vector<float> y;
-    if (!apply_conv(b.final, z, h, w, y, rh, rw)) return false;
-    relu(y);
-    for (size_t k = 0; k < y.size(); ++k) y[k] += x[k];
-    x.swap(y);
-    return true;
-}
-
-static bool run_medium_neck(context * c, const std::vector<std::vector<float>> & stages, const std::vector<int> & hs,
-                            const std::vector<int> & ws, std::vector<float> & neck, int & nh, int & nw) {
-    std::vector<std::vector<float>> adjusted(4), top(4), projected(4), bottom(4), lateral(4), refined(4);
-    std::vector<int> ah(4), aw(4);
-    for (int i = 0; i < 4; ++i)
-        if (!apply_conv(c->med_adjust[i], stages[i], hs[i], ws[i], adjusted[i], ah[i], aw[i])) return false;
-    if (c->capture_stages)
-        for (int i = 0; i < 4; ++i) c->last_stages["med_adjust" + std::to_string(i)] = adjusted[i];
-    top[3] = adjusted[3];
-    for (int i = 2; i >= 0; --i) {
-        std::vector<float> up;
-        resize_nearest(top[i + 1], c->neck, ah[i + 1], aw[i + 1], ah[i], aw[i], up);
-        top[i] = adjusted[i];
-        add_inplace(top[i], up);
-    }
-    if (c->capture_stages)
-        for (int i = 0; i < 4; ++i) c->last_stages["med_top" + std::to_string(i)] = top[i];
-    for (int i = 0; i < 4; ++i) {
-        const auto & source = i < 3 ? top[i] : adjusted[3];
-        if (!apply_conv(c->med_project[i], source, ah[i], aw[i], projected[i], ah[i], aw[i])) return false;
-    }
-    if (c->capture_stages)
-        for (int i = 0; i < 4; ++i) c->last_stages["med_project" + std::to_string(i)] = projected[i];
-    bottom[0] = projected[0];
-    for (int i = 1; i < 4; ++i) {
-        std::vector<float> down;
-        int dh, dw;
-        if (!apply_conv(c->med_bottom[i - 1], bottom[i - 1], ah[i - 1], aw[i - 1], down, dh, dw)) return false;
-        std::vector<float> resized;
-        resize_nearest(down, c->neck / 4, dh, dw, (int)projected[i].size() / (c->neck / 4) / aw[i], aw[i], resized);
-        bottom[i] = projected[i];
-        add_inplace(bottom[i], resized);
-    }
-    if (c->capture_stages)
-        for (int i = 0; i < 4; ++i) c->last_stages["med_bottom" + std::to_string(i)] = bottom[i];
-    for (int i = 0; i < 4; ++i) {
-        const auto & source = i == 0 ? projected[0] : bottom[i];
-        int sh = ah[i], sw = aw[i];
-        if (!apply_conv(c->med_lateral[i], source, sh, sw, lateral[i], sh, sw)) return false;
-        refined[i] = lateral[i];
-        if (!run_medium_ic(c->med_ic[i], refined[i], sh, sw)) return false;
-    }
-    for (int i = 0; i < 4; ++i) {
-        if (c->capture_stages) {
-            c->last_stages["med_lateral" + std::to_string(i)] = lateral[i];
-            c->last_stages["med_refined" + std::to_string(i)] = refined[i];
-        }
-    }
-    nh = ah[0];
-    nw = aw[0];
-    neck.clear();
-    for (int i = 3; i >= 0; --i) {
-        std::vector<float> up;
-        resize_nearest(refined[i], c->neck / 4, ah[i], aw[i], nh, nw, up);
-        neck.insert(neck.end(), up.begin(), up.end());
-    }
-    return true;
-}
 
 static void append_component(const std::vector<float> & prob, int h, int w, float threshold, std::vector<box> & out) {
     std::vector<uint8_t> seen((size_t)h * w, 0);
@@ -1051,31 +885,33 @@ context * init(const char * path, int n_threads, bool prefer_vulkan) {
         delete c;
         return nullptr;
     }
-    c->variant = core_gguf::kv_str(meta, "ppocrv6.variant", "tiny");
+    const std::string variant = core_gguf::kv_str(meta, "ppocrv6.variant", "tiny");
     core_gguf::free_metadata(meta);
+    if (variant != "tiny") {
+        fprintf(stderr, "ppocrv6-det: unsupported model variant: %s\n", variant.c_str());
+        crispasr_free_gpu_backend(c->backend);
+        delete c;
+        return nullptr;
+    }
+
     if (!core_gguf::load_weights(path, c->backend, "ppocrv6", c->wl)) {
         free(c);
         return nullptr;
     }
     if (ggml_backend_is_cpu(c->backend)) ggml_backend_cpu_set_n_threads(c->backend, std::max(1, n_threads));
     const auto & m = c->wl.tensors;
-    const bool tiny = c->variant == "tiny", medium = c->variant == "medium";
-    int stem = medium ? 64 : (tiny ? 16 : 24);
-    int stage[4] = { medium ? 128 : (tiny ? 32 : 48), medium ? 256 : (tiny ? 48 : 96), medium ? 512 : (tiny ? 64 : 192),
-                     medium ? 896 : (tiny ? 160 : 384) };
-    c->stage_channels[0] = stage[0];
-    c->stage_channels[1] = stage[1];
-    c->stage_channels[2] = stage[2];
-    c->stage_channels[3] = stage[3];
-    c->neck = medium ? 256 : (tiny ? 64 : 96);
+    const int stem = 16;
+    static constexpr int stage[4] = { 32, 48, 64, 160 };
+    c->neck = 64;
     c->stem = { make_conv(m, "det.bb.stem.stem1.conv", 3, stem, 3, 3, 2),
                 make_conv(m, "det.bb.stem.stem2a.conv", stem, stem / 2, 2, 2, 1, 1, 1, 0, 0),
                 make_conv(m, "det.bb.stem.stem2b.conv", stem / 2, stem, 2, 2, 1, 1, 1, 0, 0),
                 make_conv(m, "det.bb.stem.stem3.conv", stem * 2, stem, 3, 3, 2),
                 make_conv(m, "det.bb.stem.stem4.conv", stem, stage[0], 1) };
     c->stages.resize(4);
+    static constexpr int block_counts[4] = { 2, 3, 5, 3 };
     for (int si = 0; si < 4; ++si)
-        for (int bi = 0; bi < 16; ++bi) {
+        for (int bi = 0; bi < block_counts[si]; ++bi) {
             std::string q = "det.bb.blk." + std::to_string(si) + ".b." + std::to_string(bi);
             if (!get(m, q + ".cm1.weight")) break;
             int ic = bi == 0 && si ? stage[si - 1] : stage[si], stride = bi == 0 && si > 0 ? 2 : 1;
@@ -1091,52 +927,6 @@ context * init(const char * path, int n_threads, bool prefer_vulkan) {
             }
             c->stages[si].push_back(b);
         }
-    if (medium) {
-        c->med_adjust.resize(4);
-        c->med_project.resize(4);
-        c->med_bottom.resize(3);
-        c->med_lateral.resize(4);
-        for (int i = 0; i < 4; ++i) {
-            c->med_adjust[i] = make_conv(m, "det.neck.input_channel_adjustment_convolution." + std::to_string(i),
-                                         stage[i], c->neck, 1);
-            c->med_project[i] = make_conv(m, "det.neck.input_feature_projection_convolution." + std::to_string(i),
-                                          c->neck, c->neck / 4, 9, 9, 1, 1, 1, 4, 4);
-            c->med_lateral[i] = make_conv(m, "det.neck.path_aggregation_lateral_convolution." + std::to_string(i),
-                                          c->neck / 4, c->neck / 4, 9, 9, 1, 1, 1, 4, 4);
-            if (i > 0)
-                c->med_bottom[i - 1] =
-                    make_conv(m, "det.neck.path_aggregation_head_convolution." + std::to_string(i - 1), c->neck / 4,
-                              c->neck / 4, 3, 3, 2, 2, 1, 1, 1);
-        }
-        c->med_ic.resize(4);
-        for (int i = 0; i < 4; ++i) {
-            auto & b = c->med_ic[i];
-            const std::string q = "det.nk.ic." + std::to_string(i);
-            b.reduce = make_conv(m, q + ".conv_reduce_channel", 64, 32, 1, 1, 1, 1, 1, 0, 0);
-            const int ks[3] = { 7, 5, 3 }, ps[3] = { 3, 2, 1 };
-            for (int j = 0; j < 3; ++j) {
-                b.vertical[j] = make_conv(m,
-                                          q + ".vl" +
-                                              (j == 0   ? "l"
-                                               : j == 1 ? "m"
-                                                        : "s"),
-                                          32, 32, ks[j], 1, 1, 1, 1, ps[j], 0);
-                b.horizontal[j] = make_conv(m,
-                                            q + ".hs" +
-                                                (j == 0   ? "l"
-                                                 : j == 1 ? "m"
-                                                          : "s"),
-                                            32, 32, 1, ks[j], 1, 1, 1, 0, ps[j]);
-                b.symmetric[j] = make_conv(m,
-                                           q + ".sl" +
-                                               (j == 0   ? "l"
-                                                : j == 1 ? "m"
-                                                         : "s"),
-                                           32, 32, ks[j], ks[j], 1, 1, 1, ps[j], ps[j]);
-            }
-            b.final = make_conv(m, q + ".conv_final.conv", 32, 64, 1, 1, 1, 1, 1, 0, 0);
-        }
-    }
     c->features.resize(4);
     for (int i = 0; i < 4; ++i) {
         auto & f = c->features[i];
@@ -1145,7 +935,7 @@ context * init(const char * path, int n_threads, bool prefer_vulkan) {
                                  c->neck, c->neck / 4, 1);
         f.insert_se2 = make_conv(m, "det.neck.insert_conv." + std::to_string(i) + ".squeeze_excitation_block.conv2",
                                  c->neck / 4, c->neck, 1);
-        int k = tiny ? 5 : 7;
+        const int k = 5;
         f.dw = make_conv(m, "det.neck.input_conv." + std::to_string(i) + ".depthwise_convolution", c->neck, c->neck, k,
                          k, 1, 1, c->neck);
         f.pw = make_conv(m, "det.neck.input_conv." + std::to_string(i) + ".pointwise_convolution", c->neck, c->neck / 4,
@@ -1278,70 +1068,6 @@ std::vector<box> detect_raw(context * c, const uint8_t * px, int w, int h, int c
         ws.push_back(W);
         if (c->capture_stages) c->last_stages["backbone_stage" + std::to_string(stages.size() - 1)] = x;
     }
-    if (c->variant == "medium") {
-        std::vector<float> neck;
-        int nh, nw;
-        if (!run_medium_neck(c, stages, hs, ws, neck, nh, nw)) return {};
-        std::vector<float> y, z;
-        int oh, ow;
-        if (!apply_conv(c->head_down, neck, nh, nw, y, oh, ow)) return {};
-        relu(y);
-        if (c->capture_stages) c->last_stages["head_down"] = y;
-        if (!apply_deconv2(c->head_up, y, oh, ow, z, oh, ow)) return {};
-        if (c->capture_stages) c->last_stages["head_up_pre"] = z;
-        relu(z);
-        if (c->capture_stages) c->last_stages["head_up"] = z;
-        if (!apply_deconv2(c->head_final, z, oh, ow, y, oh, ow)) return {};
-        if (c->capture_stages) {
-            c->last_stages["head_final_pre"] = y;
-            c->last_stages["head_final"] = y;
-            c->last_stages["neck_output"] = neck;
-        }
-        for (float & v : y) v = 1 / (1 + std::exp(-v));
-        c->last_prob = y;
-        c->last_h = oh;
-        c->last_w = ow;
-        // The f16 backbone has a small positive probability bias versus
-        // PaddleX (the map parity gate remains above 0.997 on the fixtures).
-        // Calibrate the DB box score while retaining the official 0.2 bitmap
-        // threshold; this restores region counts without changing logits.
-        auto native_boxes = ocr_detect::postprocess_probability_map(y.data(), oh, ow, threshold, 0.60f, 1.4f, 1, 1.0f,
-                                                                    1.0f, 0, 3000, ocr_detect::score_mode::fast);
-        std::vector<box> out;
-        out.reserve(native_boxes.size());
-        for (const auto & b : native_boxes) {
-            box p{ b.x, b.y, b.w, b.h, b.score };
-            std::copy(std::begin(b.qx), std::end(b.qx), std::begin(p.qx));
-            std::copy(std::begin(b.qy), std::end(b.qy), std::begin(p.qy));
-            out.push_back(p);
-        }
-        float sx = float(w) / ow, sy = float(h) / oh;
-        for (auto & b : out) {
-            b.x *= sx;
-            b.w *= sx;
-            b.y *= sy;
-            b.h *= sy;
-            for (int i = 0; i < 4; ++i) {
-                b.qx[i] *= sx;
-                b.qy[i] *= sy;
-            }
-        }
-        if (compare_graph) report_graph_box_geometry(graph_boxes, out);
-        report_graph_compare(c, graph_probability, y,
-                             { "med_adjust0",  "med_adjust1",  "med_adjust2",   "med_adjust3",  "med_top0",
-                               "med_top1",     "med_top2",     "med_top3",      "med_project0", "med_project1",
-                               "med_project2", "med_project3", "med_bottom0",   "med_bottom1",  "med_bottom2",
-                               "med_bottom3",  "med_lateral0", "med_lateral1",  "med_lateral2", "med_lateral3",
-                               "med_refined0", "med_refined1", "med_refined2",  "med_refined3", "neck_output",
-                               "head_down",    "head_up",      "head_final_pre" });
-        if (bench) {
-            const auto ms = [](auto a, auto b) { return std::chrono::duration<double, std::milli>(b - a).count(); };
-            fprintf(stderr, "[ppocrv6-det-bench] preprocess_ms=%.3f graph_ms=%.3f total_ms=%.3f boxes=%zu accepted=0\n",
-                    ms(started, preprocessed), ms(preprocessed, graph_finished),
-                    ms(started, std::chrono::steady_clock::now()), out.size());
-        }
-        return out;
-    }
     std::vector<std::vector<float>> fused(4);
     std::vector<int> fh(4), fw(4);
     for (int i = 0; i < 4; i++) {
@@ -1420,8 +1146,7 @@ std::vector<box> detect_raw(context * c, const uint8_t * px, int w, int h, int c
     c->last_prob = y;
     c->last_h = oh;
     c->last_w = ow;
-    // See the medium path above: use the calibrated DB box score for the
-    // compact model's native probability map.
+    // Use the calibrated DB box score for the compact model's native probability map.
     auto native_boxes = ocr_detect::postprocess_probability_map(y.data(), oh, ow, threshold, 0.60f, 1.4f, 1, 1.0f, 1.0f,
                                                                 0, 3000, ocr_detect::score_mode::fast);
     std::vector<box> out;

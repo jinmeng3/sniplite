@@ -89,7 +89,7 @@ Las partes que deben ser rápidas (captura, composición, dibujo y la pantalla d
 
 **¿Cómo saco el texto de una captura?**
 
-Selecciona una zona y pulsa el botón de texto (Ctrl+O): el texto aparece en un panel junto a la selección, donde puedes seleccionarlo, editarlo y copiarlo. Una tabla conserva sus columnas y se pega en una hoja de cálculo celda por celda, o como Markdown. Ctrl+Shift+C copia el texto directamente. El módulo OCR usa el detector PP-OCRv6 tiny GGUF y el reconocedor small GGUF con CrispEmbed/GGML; las imágenes se procesan localmente. La pestaña OCR de Ajustes permite elegir Auto, Vulkan, AVX2 o CPU. Auto prueba Vulkan, AVX2 y luego la CPU genérica; los backends acelerados vuelven a CPU si no están disponibles o falla la inferencia. Añade unos 81 MB por sí solo o unos 21 MB si ya está instalado el módulo de fórmulas. Instálalo en Ajustes, en el instalador o usa la versión portable con OCR.
+Selecciona una zona y pulsa el botón de texto (Ctrl+O): el texto aparece en un panel junto a la selección, donde puedes seleccionarlo, editarlo y copiarlo. Una tabla conserva sus columnas y se pega en una hoja de cálculo celda por celda, o como Markdown. Ctrl+Shift+C copia el texto directamente. El módulo OCR usa el detector PP-OCRv6 tiny GGUF y el reconocedor tiny GGUF con CrispEmbed/GGML; las imágenes se procesan localmente. La pestaña OCR de Ajustes permite elegir Auto, Vulkan, AVX2 o CPU. Auto prueba Vulkan, AVX2 y luego la CPU genérica; los backends acelerados vuelven a CPU si no están disponibles o falla la inferencia. Añade unos 81 MB por sí solo o unos 21 MB si ya está instalado el módulo de fórmulas. Instálalo en Ajustes, en el instalador o usa la versión portable con OCR.
 
 **¿Cómo hago una captura larga?**
 
