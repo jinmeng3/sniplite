@@ -25,15 +25,19 @@ mkdir "%OCR_DIR%" || exit /b 1
 copy /y build\sniplite_ocr.dll "%OCR_DIR%\sniplite_ocr.dll" >nul || exit /b 1
 copy /y third_party\ppocrv6\LICENSE "%OCR_DIR%\LICENSE-OCREngine.txt" >nul || exit /b 1
 for %%f in (PP-OCRv6_tiny_det-f16.gguf PP-OCRv6_tiny_rec-f16.gguf) do copy /y "%MODEL_DIR%\%%f" "%OCR_DIR%\%%f" >nul || exit /b 1
+set OCR_GENERIC=%OCR_DIR%\shared-runtime\cpu-generic
+mkdir "%OCR_GENERIC%" || exit /b 1
 for %%f in (crispembed.dll Apache-2.0.txt LICENSE NOTICE.marker NOTICE.sheenbidi NOTICE.teleocr) do (
-  copy /y "%CRISP_DIR%\%%f" "%OCR_DIR%\%%f"
+  copy /y "%CRISP_DIR%\%%f" "%OCR_GENERIC%\%%f"
   if errorlevel 1 (echo Could not stage %%f from the CrispEmbed package & exit /b 1)
 )
-for %%f in (ggml.dll ggml-base.dll ggml-cpu.dll) do copy /y "build\cpu-runtime\%%f" "%OCR_DIR%\%%f" >nul || exit /b 1
+for %%f in (ggml.dll ggml-base.dll ggml-cpu.dll) do copy /y "build\cpu-runtime\%%f" "%OCR_GENERIC%\%%f" >nul || exit /b 1
 mkdir "%OCR_DIR%\cpu-avx2" || exit /b 1
 copy /y build\sniplite_ocr_avx2.dll "%OCR_DIR%\cpu-avx2\sniplite_ocr.dll" >nul || exit /b 1
-for %%f in (ggml-cpu.dll) do copy /y "build\cpu-runtime-avx2\%%f" "%OCR_DIR%\cpu-avx2\%%f" >nul || exit /b 1
-for %%f in (vcruntime140.dll vcruntime140_1.dll msvcp140_1.dll msvcp140.dll) do copy /y "%SystemRoot%\System32\%%f" "%OCR_DIR%\%%f" >nul || exit /b 1
+mkdir "%OCR_DIR%\shared-runtime\cpu-avx2" || exit /b 1
+for %%f in (ggml.dll ggml-base.dll) do copy /y "build\cpu-runtime-avx2\%%f" "%OCR_DIR%\shared-runtime\cpu-avx2\%%f" >nul || exit /b 1
+copy /y "build\cpu-runtime-avx2\ggml-cpu.dll" "%OCR_DIR%\shared-runtime\cpu-avx2\ggml-cpu.dll" >nul || exit /b 1
+for %%f in (vcruntime140.dll vcruntime140_1.dll msvcp140_1.dll msvcp140.dll) do copy /y "%SystemRoot%\System32\%%f" "%OCR_GENERIC%\%%f" >nul || exit /b 1
 set OCR_VULKAN_RUNTIME=build\ocr-vulkan-runtime
 if exist "%OCR_VULKAN_RUNTIME%" rmdir /s /q "%OCR_VULKAN_RUNTIME%"
 mkdir "%OCR_VULKAN_RUNTIME%" || exit /b 1

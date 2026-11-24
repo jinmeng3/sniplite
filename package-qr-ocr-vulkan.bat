@@ -19,8 +19,10 @@ copy /y build\sniplite.exe "%STAGE%\sniplite.exe" >nul || exit /b 1
 copy /y build\sniplite.com "%STAGE%\sniplite-cli.com" >nul || exit /b 1
 copy /y build\sniplite_qr.exe "%STAGE%\sniplite_qr.exe" >nul || exit /b 1
 copy /y build\sniplite_ocr_vulkan.dll "%STAGE%\ocr\sniplite_ocr_vulkan.dll" >nul || exit /b 1
-for %%f in (ggml.dll ggml-base.dll ggml-cpu.dll ggml-vulkan.dll) do copy /y "build\ocr-vulkan-runtime\%%f" "%STAGE%\ocr\%%f" >nul || exit /b 1
-for %%f in (ggml.dll ggml-base.dll) do copy /y "build\cpu-runtime-avx2\%%f" "%STAGE%\ocr\cpu-avx2\%%f" >nul || exit /b 1
+mkdir "%STAGE%\ocr\shared-runtime\vulkan" || exit /b 1
+for %%f in (ggml.dll ggml-base.dll ggml-cpu.dll ggml-vulkan.dll) do copy /y "build\ocr-vulkan-runtime\%%f" "%STAGE%\ocr\shared-runtime\vulkan\%%f" >nul || exit /b 1
+mkdir "%STAGE%\ocr\shared-runtime\cpu-avx2" || exit /b 1
+for %%f in (ggml.dll ggml-base.dll) do copy /y "build\cpu-runtime-avx2\%%f" "%STAGE%\ocr\shared-runtime\cpu-avx2\%%f" >nul || exit /b 1
 if exist "%ZIP%" del /q "%ZIP%"
 "%SystemRoot%\System32\tar.exe" -a -c -f "%ZIP%" -C "%STAGE%" sniplite.exe sniplite-cli.com sniplite_qr.exe LICENSE-ZXing.txt LICENSE-MicroTeX.txt LICENSE-TinyXML2.txt ocr || exit /b 1
 if exist "%D%" rmdir /s /q "%D%"

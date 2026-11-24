@@ -11,7 +11,7 @@ typedef const char *(*CrispRecognize)(void *ctx, const uint8_t *pixels, int widt
                                       int height, int channels, int *length);
 
 static struct {
-    HMODULE dll;
+    HMODULE runtime[5];
     void *ctx;
     CrispModelInit model_init;
     CrispModelFree model_free;
@@ -40,11 +40,58 @@ static bool runtime_path(const WCHAR *name, WCHAR *path, int cap)
     return find_path(name, path, cap) && GetFileAttributesW(path) != INVALID_FILE_ATTRIBUTES;
 }
 
+static bool shared_runtime_dir(const WCHAR *backend, WCHAR *dir, int cap)
+{
+    WCHAR relative[64];
+    if (lstrlenW(backend) + 16 >= COUNTOF(relative)) return false;
+    wsprintfW(relative, L"shared-runtime\\%s", backend);
+    if (!find_path(relative, dir, cap)) return false;
+    DWORD attr = GetFileAttributesW(dir);
+    return attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY);
+}
+
+static bool runtime_file(const WCHAR *dir, const WCHAR *name, WCHAR *path, int cap)
+{
+    if (!dir || !*dir || lstrlenW(dir) + lstrlenW(name) + 2 >= cap) return false;
+    wsprintfW(path, L"%s\\%s", dir, name);
+    DWORD attr = GetFileAttributesW(path);
+    return attr != INVALID_FILE_ATTRIBUTES && !(attr & FILE_ATTRIBUTE_DIRECTORY);
+}
+
+static bool runtime_complete(const WCHAR *dir, bool vulkan)
+{
+    WCHAR path[MAX_PATH * 2];
+    return runtime_file(dir, L"ggml.dll", path, COUNTOF(path)) &&
+           runtime_file(dir, L"ggml-base.dll", path, COUNTOF(path)) &&
+           runtime_file(dir, L"ggml-cpu.dll", path, COUNTOF(path)) &&
+           (!vulkan || runtime_file(dir, L"ggml-vulkan.dll", path, COUNTOF(path)));
+}
+
+static bool load_runtime(const WCHAR *dir, const WCHAR *fallback, bool vulkan)
+{
+    static const WCHAR *const names[] = {
+        L"ggml-base.dll", L"ggml.dll", L"ggml-cpu.dll", L"ggml-vulkan.dll", L"crispembed.dll"
+    };
+    int count = vulkan ? 5 : 4;
+    for (int i = 0; i < count; ++i) {
+        const WCHAR *name = !vulkan && i == 3 ? names[4] : names[i];
+        WCHAR path[MAX_PATH * 2];
+        bool found = runtime_file(dir, name, path, COUNTOF(path));
+        if (!found && fallback) found = runtime_file(fallback, name, path, COUNTOF(path));
+        if (!found || !(F.runtime[i] = LoadLibraryExW(path, NULL, LOAD_WITH_ALTERED_SEARCH_PATH)))
+            return false;
+    }
+    return true;
+}
 
 static void unload(void)
 {
     if (F.ctx && F.model_free) F.model_free(F.ctx);
     if (F.dll) FreeLibrary(F.dll);
+    for (int i = COUNTOF(F.runtime) - 1; i >= 0; --i) {
+        if (F.runtime[i]) FreeLibrary(F.runtime[i]);
+        F.runtime[i] = NULL;
+    }
     F.ctx = NULL;
     F.dll = NULL;
     F.model_init = NULL;
@@ -63,31 +110,51 @@ void formula_set_backend(int backend)
 static bool load(void)
 {
     if (F.ready) return true;
-    WCHAR path[MAX_PATH * 2], vulkan_path[MAX_PATH * 2], avx2_path[MAX_PATH * 2];
-    WCHAR cpu_generic_path[MAX_PATH * 2], cpu_path[MAX_PATH * 2];
-    const WCHAR *candidate[3];
+    WCHAR model_path[MAX_PATH * 2], vk_engine[MAX_PATH * 2], avx_engine[MAX_PATH * 2];
+    WCHAR generic_engine[MAX_PATH * 2], root_engine[MAX_PATH * 2];
+    WCHAR legacy_root[MAX_PATH * 2], legacy_avx[MAX_PATH * 2], legacy_generic[MAX_PATH * 2];
+    struct Candidate { const WCHAR *engine, *runtime, *fallback; bool vulkan; } candidate[3];
     int count = 0;
-    bool vulkan = runtime_path(L"sniplite_formula_vulkan.dll", vulkan_path, COUNTOF(vulkan_path));
-    bool avx2 = IsProcessorFeaturePresent(PF_AVX2_INSTRUCTIONS_AVAILABLE) &&
-                runtime_path(L"cpu-avx2\\sniplite_formula.dll", avx2_path, COUNTOF(avx2_path));
-    bool cpu_generic = runtime_path(L"cpu-generic\\sniplite_formula.dll", cpu_generic_path, COUNTOF(cpu_generic_path));
-    bool cpu = cpu_generic || runtime_path(L"sniplite_formula.dll", cpu_path, COUNTOF(cpu_path));
-    bool try_vulkan = F.backend == INFER_AUTO || F.backend == INFER_VULKAN;
-    bool try_avx2 = F.backend == INFER_AUTO || F.backend == INFER_AVX2;
-    if (try_vulkan && vulkan) candidate[count++] = vulkan_path;
-    if (try_avx2 && avx2) candidate[count++] = avx2_path;
-    if (cpu) candidate[count++] = cpu_generic ? cpu_generic_path : cpu_path;
+    bool have_vk_engine = runtime_path(L"sniplite_formula_vulkan.dll", vk_engine, COUNTOF(vk_engine));
+    bool have_avx_engine = IsProcessorFeaturePresent(PF_AVX2_INSTRUCTIONS_AVAILABLE) &&
+                           runtime_path(L"cpu-avx2\\sniplite_formula.dll", avx_engine, COUNTOF(avx_engine));
+    bool have_generic_engine = runtime_path(L"cpu-generic\\sniplite_formula.dll", generic_engine, COUNTOF(generic_engine));
+    bool have_root_engine = runtime_path(L"sniplite_formula.dll", root_engine, COUNTOF(root_engine));
+    bool have_vk_runtime = shared_runtime_dir(L"vulkan", vk_runtime, COUNTOF(vk_runtime)) && runtime_complete(vk_runtime, true);
+    bool have_avx_runtime = shared_runtime_dir(L"cpu-avx2", avx_runtime, COUNTOF(avx_runtime)) && runtime_complete(avx_runtime, false);
+    bool have_generic_runtime = shared_runtime_dir(L"cpu-generic", generic_runtime, COUNTOF(generic_runtime)) && runtime_complete(generic_runtime, false);
+    find_path(L"", legacy_root, COUNTOF(legacy_root));
+    find_path(L"cpu-avx2", legacy_avx, COUNTOF(legacy_avx));
+    find_path(L"cpu-generic", legacy_generic, COUNTOF(legacy_generic));
+    const WCHAR *fallback_runtime = have_generic_runtime ? generic_runtime : have_vk_runtime ? vk_runtime : legacy_root;
+    if ((F.backend == INFER_AUTO || F.backend == INFER_VULKAN) && have_vk_engine) {
+        const WCHAR *runtime = have_vk_runtime ? vk_runtime : legacy_root;
+        if (have_vk_runtime || runtime_complete(runtime, true))
+            candidate[count++] = (struct Candidate){vk_engine, runtime, fallback_runtime, true};
+    }
+    if ((F.backend == INFER_AUTO || F.backend == INFER_AVX2) && have_avx_engine) {
+        const WCHAR *runtime = have_avx_runtime ? avx_runtime : legacy_avx;
+        if (have_avx_runtime || runtime_complete(runtime, false))
+            candidate[count++] = (struct Candidate){avx_engine, runtime, fallback_runtime, false};
+    }
+    if (have_generic_engine || have_root_engine) {
+        const WCHAR *runtime = have_generic_runtime ? generic_runtime : have_vk_runtime ? vk_runtime :
+                               have_generic_engine ? legacy_generic : legacy_root;
+        if (have_generic_runtime || have_vk_runtime || runtime_complete(runtime, false))
+            candidate[count++] = (struct Candidate){have_generic_engine ? generic_engine : root_engine,
+                                                     runtime, fallback_runtime, false};
+    }
     if (!count) {
         error(L"Formula runtime is not installed");
         goto failed;
     }
-    if (!find_path(L"texo-distill-q8_0.gguf", path, COUNTOF(path))) {
+    if (!find_path(L"texo-distill-q8_0.gguf", model_path, COUNTOF(model_path))) {
         error(L"Texo-Distill model is not installed");
         goto failed;
     }
-    int bytes = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, path, -1, NULL, 0, NULL, NULL);
+    int bytes = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, model_path, -1, NULL, 0, NULL, NULL);
     char *model = bytes > 0 ? mem_alloc((size_t)bytes) : NULL;
-    if (!model || !WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, path, -1, model, bytes, NULL, NULL)) {
+    if (!model || !WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, model_path, -1, model, bytes, NULL, NULL)) {
         mem_free(model);
         error(L"Could not encode the model path as UTF-8");
         goto failed;
@@ -96,7 +163,8 @@ static bool load(void)
     int threads = processors > 4 ? 4 : (processors ? (int)processors : 1);
     for (int i = 0; i < count; ++i) {
         unload();
-        F.dll = LoadLibraryExW(candidate[i], NULL, LOAD_WITH_ALTERED_SEARCH_PATH);
+        if (!load_runtime(candidate[i].runtime, candidate[i].fallback, candidate[i].vulkan)) continue;
+        F.dll = LoadLibraryExW(candidate[i].engine, NULL, LOAD_WITH_ALTERED_SEARCH_PATH);
         if (!F.dll) continue;
         F.model_init = (CrispModelInit)(void *)GetProcAddress(F.dll, "ppformulanet_ocr_init");
         F.model_free = (CrispModelFree)(void *)GetProcAddress(F.dll, "ppformulanet_ocr_free");

@@ -33,40 +33,40 @@ static const Part kParts[] = {
       0xff,0x4f,0x7b,0x7c,0xcb,0x61,0xa4,0x0a,0xd4,0xc7,0x11,0xbe,0x01,0x8b,0xeb,0x59}},
     {L"sniplite_ocr.dll", 0, {0}, IDR_OCR_ENGINE},
     {L"LICENSE-OCREngine.txt", 0, {0}, IDR_OCR_ENGINE_LICENSE},
-    {L"crispembed.dll", 7956992,
+    {L"shared-runtime\\cpu-generic\\crispembed.dll", 7956992,
      {0x35,0x74,0x39,0xa1,0xf4,0x3b,0x1c,0x97,0x16,0x62,0x48,0xc7,0x59,0x09,0x11,0x3c,
       0xed,0x59,0x79,0x0d,0x2a,0xae,0xe0,0xbc,0x0a,0xd8,0x0f,0x83,0x1b,0x13,0xdc,0x44}},
-    {L"ggml.dll", 2817022,
+    {L"shared-runtime\\cpu-generic\\ggml.dll", 2817022,
      {0x75,0x70,0xf8,0x71,0x90,0x26,0x7a,0xc1,0x99,0x45,0x51,0xb3,0xa7,0x43,0x84,0x83,
       0x2c,0x54,0xf5,0x92,0xeb,0xf0,0x5d,0x63,0x28,0xfa,0x30,0x87,0xd1,0x2b,0x2c,0x3c}},
-    {L"ggml-base.dll", 1416801,
+    {L"shared-runtime\\cpu-generic\\ggml-base.dll", 1416801,
      {0xf7,0xe0,0xeb,0x2d,0x64,0x52,0xa4,0xab,0x7f,0x22,0x37,0x96,0xfe,0x1d,0xe9,0x8b,
       0x1b,0x05,0x7e,0x20,0xe6,0xfc,0x38,0x24,0x56,0x82,0x2b,0xa9,0x4c,0xfc,0x94,0xd7}},
-    {L"ggml-cpu.dll", 1468953,
+    {L"shared-runtime\\cpu-generic\\ggml-cpu.dll", 1468953,
      {0x21,0xaf,0x84,0x8b,0x66,0xef,0x91,0x35,0xb3,0x17,0x10,0x6d,0x28,0x56,0xc2,0x8c,
       0x9b,0x65,0x49,0x0e,0x16,0x13,0x2f,0x63,0x4a,0x99,0x87,0x61,0x49,0x44,0x12,0xc6}},
-    {L"vcruntime140.dll", 123472,
+    {L"shared-runtime\\cpu-generic\\vcruntime140.dll", 123472,
      {0x18,0x41,0x46,0x85,0x27,0x27,0xa9,0xdb,0x4e,0xea,0x06,0x17,0x87,0x16,0xbe,0xc3,
       0xcd,0xbb,0x10,0x15,0xc9,0x11,0xf6,0xb0,0xf9,0x15,0xb1,0x84,0xad,0x77,0x75,0xb2}},
-    {L"vcruntime140_1.dll", 47264,
+    {L"shared-runtime\\cpu-generic\\vcruntime140_1.dll", 47264,
      {0xe6,0xbf,0xb3,0x66,0x2a,0xb4,0xb1,0x96,0x9a,0x73,0x44,0x1d,0xbe,0x35,0xc9,0x6d,
       0x51,0x44,0x1b,0x6b,0xff,0x8c,0xf1,0xfe,0x74,0x30,0xbd,0x5b,0x24,0x6c,0xa6,0x05}},
-    {L"msvcp140_1.dll", 35488,
+    {L"shared-runtime\\cpu-generic\\msvcp140_1.dll", 35488,
      {0x2d,0xd6,0x70,0xf8,0x74,0x56,0x2f,0xbd,0xca,0x5b,0x02,0x2d,0xf1,0x94,0x3d,0x70,
       0xa5,0x7b,0xa9,0x1f,0xde,0x55,0x92,0x80,0xe3,0xa1,0xda,0xeb,0xe4,0xdb,0x23,0x80}},
-    {L"msvcp140.dll", 553552,
+    {L"shared-runtime\\cpu-generic\\msvcp140.dll", 553552,
      {0xde,0xf4,0x6a,0xa6,0xa8,0xf7,0x2f,0x27,0xba,0xfa,0xc0,0xc4,0x33,0x34,0x41,0x94,
       0x86,0xa4,0xd1,0xdc,0xdb,0x6c,0x47,0x9a,0x8e,0xf7,0x03,0x4b,0x3e,0x1f,0xa4,0xcb}},
     {L"cpu-avx2\\sniplite_ocr.dll", 819712,
      {0x0f,0x23,0xdf,0x87,0x4f,0x24,0x62,0xcf,0xe6,0x74,0x8f,0xbc,0xc9,0xca,0x04,0x74,
       0x7b,0xaf,0x88,0xf4,0xdb,0x27,0x28,0xb1,0xb5,0x57,0x1a,0xe5,0x69,0x8d,0x58,0x86}, 0, true},
-    {L"cpu-avx2\\ggml.dll", 2817022,
+    {L"shared-runtime\\cpu-avx2\\ggml.dll", 2817022,
      {0x75,0x70,0xf8,0x71,0x90,0x26,0x7a,0xc1,0x99,0x45,0x51,0xb3,0xa7,0x43,0x84,0x83,
       0x2c,0x54,0xf5,0x92,0xeb,0xf0,0x5d,0x63,0x28,0xfa,0x30,0x87,0xd1,0x2b,0x2c,0x3c}, 0, true},
-    {L"cpu-avx2\\ggml-base.dll", 1416801,
+    {L"shared-runtime\\cpu-avx2\\ggml-base.dll", 1416801,
      {0xf7,0xe0,0xeb,0x2d,0x64,0x52,0xa4,0xab,0x7f,0x22,0x37,0x96,0xfe,0x1d,0xe9,0x8b,
       0x1b,0x05,0x7e,0x20,0xe6,0xfc,0x38,0x24,0x56,0x82,0x2b,0xa9,0x4c,0xfc,0x94,0xd7}, 0, true},
-    {L"cpu-avx2\\ggml-cpu.dll", 1691031,
+    {L"shared-runtime\\cpu-avx2\\ggml-cpu.dll", 1691031,
      {0x33,0x16,0x6c,0xb4,0x1c,0xaf,0x90,0x4d,0x5a,0x5c,0xc3,0x98,0xb0,0xe5,0xd8,0x68,
       0x0a,0xf2,0x74,0xf6,0x77,0x22,0x21,0x31,0x2c,0x23,0x65,0x27,0x69,0xc0,0x58,0xf8}, 0, true},
 };
@@ -346,26 +346,41 @@ static bool part_path(const WCHAR *name, const WCHAR *suffix, WCHAR *path, int c
 /* A ZIP entry into its destination folder: written under another name, then given its own. */
 static bool file_write(const WCHAR *dir, const WCHAR *name, const uint8_t *data, uint32_t n)
 {
-    WCHAR path[MAX_PATH * 2], tmp[MAX_PATH * 2], child[MAX_PATH * 2];
-    if (lstrlenW(dir) + lstrlenW(name) + 8 >= COUNTOF(path))
-        return false;
-    if (lstrlenW(name) > 9 && name[8] == L'\\') {
-        wsprintfW(child, L"%s\\cpu-avx2", dir);
-        if (!CreateDirectoryW(child, NULL) && GetLastError() != ERROR_ALREADY_EXISTS)
-            return false;
-    }
+    WCHAR path[MAX_PATH * 2], tmp[MAX_PATH * 2];
+    if (lstrlenW(dir) + lstrlenW(name) + 8 >= COUNTOF(path)) return false;
     wsprintfW(path, L"%s\\%s", dir, name);
+    for (WCHAR *p = path + lstrlenW(dir) + 1; *p; ++p) {
+        if (*p != L'\\') continue;
+        WCHAR saved = *p;
+        *p = 0;
+        if (!CreateDirectoryW(path, NULL) && GetLastError() != ERROR_ALREADY_EXISTS) return false;
+        *p = saved;
+    }
     wsprintfW(tmp, L"%s.part", path);
     HANDLE h = CreateFileW(tmp, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     DWORD wrote = 0;
     bool ok = h != INVALID_HANDLE_VALUE && WriteFile(h, data, n, &wrote, NULL) && wrote == n;
-    if (h != INVALID_HANDLE_VALUE)
-        CloseHandle(h);
+    if (h != INVALID_HANDLE_VALUE) CloseHandle(h);
     if (!ok || !MoveFileExW(tmp, path, MOVEFILE_REPLACE_EXISTING)) {
         DeleteFileW(tmp);
         return false;
     }
     return true;
+}
+
+static bool formula_shared_file(const WCHAR *name)
+{
+    if (!formula_installed()) return false;
+    WCHAR path[MAX_PATH * 2];
+    DWORD n = GetModuleFileNameW(NULL, path, COUNTOF(path) - 16);
+    if (!n || n >= COUNTOF(path) - 16) return false;
+    while (n && path[n - 1] != L'\\' && path[n - 1] != L'/') n--;
+    lstrcpyW(path + n, L"formula\\");
+    n += 8;
+    if (n + lstrlenW(name) + 1 >= COUNTOF(path)) return false;
+    lstrcatW(path, name);
+    DWORD attr = GetFileAttributesW(path);
+    return attr != INVALID_FILE_ATTRIBUTES && !(attr & FILE_ATTRIBUTE_DIRECTORY);
 }
 
 /* Extract only the known OCR files from the archive; all model and DLL bytes are pinned. */
@@ -378,7 +393,6 @@ static int zip_unpack(const uint8_t *zip, size_t n)
     WCHAR dir[MAX_PATH * 2];
     ocr_dir(dir, COUNTOF(dir));
     if (!dir[0] || (!CreateDirectoryW(dir, NULL) && GetLastError() != ERROR_ALREADY_EXISTS)) return OCR_GET_WRITE;
-    bool shared_runtime = formula_installed();
     const uint8_t *e = zip + dir_at, *dir_end = e + dir_bytes;
     uint32_t seen = 0;
     for (uint32_t i = 0; i < count; i++) {
@@ -390,12 +404,12 @@ static int zip_unpack(const uint8_t *zip, size_t n)
         e += 46 + nlen + rd16(e + 30) + rd16(e + 32);
         WCHAR file[64];
         bool plain = nlen > 4 && nlen < 4 + COUNTOF(file) && !memcmp(name, "ocr/", 4) && name[4] != '.';
-        bool nested = false;
+        unsigned depth = 0;
         for (uint32_t c = 4; plain && c < nlen; c++) {
             char ch = name[c];
             if (ch == '/') {
-                plain = !nested && c > 4;
-                nested = true;
+                ++depth;
+                plain = depth <= 2 && c > 4 && c + 1 < nlen;
                 file[c - 4] = L'\\';
             } else {
                 plain = ch > 32 && ch < 127 && ch != '\\' && ch != ':';
@@ -440,7 +454,8 @@ static int zip_unpack(const uint8_t *zip, size_t n)
                 if (memcmp(sha, part->sha, 32)) result = OCR_GET_CHECK;
             }
         }
-        if (result == OCR_GET_OK && !(part && part_index >= 4 && !part->optional && shared_runtime) && !file_write(dir, file, out, usize))
+        if (result == OCR_GET_OK && !(part && part_index >= 4 && formula_shared_file(file)) &&
+            !file_write(dir, file, out, usize))
             result = OCR_GET_WRITE;
         mem_free(mem);
         if (result != OCR_GET_OK) return result;
@@ -587,6 +602,16 @@ bool ocr_remove(void)
             DeleteFileW(path);
     if (lstrlenW(dir) + 10 < COUNTOF(path)) {
         wsprintfW(path, L"%s\\cpu-avx2", dir);
+        RemoveDirectoryW(path);
+    }
+    if (lstrlenW(dir) + 16 < COUNTOF(path)) {
+        wsprintfW(path, L"%s\\shared-runtime\\cpu-generic", dir);
+        RemoveDirectoryW(path);
+        wsprintfW(path, L"%s\\shared-runtime\\cpu-avx2", dir);
+        RemoveDirectoryW(path);
+        wsprintfW(path, L"%s\\shared-runtime\\vulkan", dir);
+        RemoveDirectoryW(path);
+        wsprintfW(path, L"%s\\shared-runtime", dir);
         RemoveDirectoryW(path);
     }
     RemoveDirectoryW(dir); /* stays when something else is in it */

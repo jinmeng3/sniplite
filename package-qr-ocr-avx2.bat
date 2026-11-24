@@ -2,10 +2,9 @@
 rem Build the QR + OCR AVX2 portable ZIP. Run package-all.bat first.
 setlocal
 cd /d "%~dp0"
-for %%f in (sniplite_ocr.dll ggml-cpu.dll) do if not exist "build\ocr\cpu-avx2\%%f" (
-  echo build\ocr\cpu-avx2\%%f is missing: run package-all.bat first
-  exit /b 1
-)
+for %%f in (sniplite_ocr.dll) do if not exist "build\ocr\cpu-avx2\%%f" (echo build\ocr\cpu-avx2\%%f is missing: run package-all.bat first ^& exit /b 1)
+if not exist build\ocr\shared-runtime\cpu-avx2\ggml-cpu.dll (echo AVX2 runtime is missing: run package-all.bat first ^& exit /b 1)
+for %%f in (ggml.dll ggml-base.dll ggml-cpu.dll) do if not exist "build\ocr\shared-runtime\cpu-generic\%%f" (echo generic runtime is missing: run package-all.bat first ^& exit /b 1)
 for /f "tokens=3" %%v in ('findstr /C:"#define SNIPLITE_VERSION" src\common.h') do set V=%%v
 set V=%V:L"=%
 set V=%V:"=%
@@ -18,7 +17,10 @@ if exist "%STAGE%" rmdir /s /q "%STAGE%"
 xcopy /e /i /q /y "%CPU%\*" "%STAGE%\" >nul
 if errorlevel 2 exit /b 1
 mkdir "%STAGE%\ocr\cpu-avx2" || exit /b 1
-for %%f in (sniplite_ocr.dll ggml-cpu.dll) do copy /y "build\ocr\cpu-avx2\%%f" "%STAGE%\ocr\cpu-avx2\%%f" >nul || exit /b 1
+for %%f in (sniplite_ocr.dll) do copy /y "build\ocr\cpu-avx2\%%f" "%STAGE%\ocr\cpu-avx2\%%f" >nul || exit /b 1
+mkdir "%STAGE%\ocr\shared-runtime\cpu-avx2" || exit /b 1
+for %%f in (ggml.dll ggml-base.dll) do copy /y "build\cpu-runtime-avx2\%%f" "%STAGE%\ocr\shared-runtime\cpu-avx2\%%f" >nul || exit /b 1
+copy /y build\ocr\shared-runtime\cpu-avx2\ggml-cpu.dll "%STAGE%\ocr\shared-runtime\cpu-avx2\ggml-cpu.dll" >nul || exit /b 1
 if exist "%ZIP%" del /q "%ZIP%"
 "%SystemRoot%\System32\tar.exe" -a -c -f "%ZIP%" -C "%STAGE%" sniplite.exe sniplite-cli.com sniplite_qr.exe LICENSE-ZXing.txt LICENSE-MicroTeX.txt LICENSE-TinyXML2.txt ocr || exit /b 1
 if exist "%D%" rmdir /s /q "%D%"

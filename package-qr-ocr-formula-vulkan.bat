@@ -3,8 +3,7 @@ rem Build the QR + OCR + formula Vulkan-first portable ZIP. Run build.bat first.
 setlocal
 cd /d "%~dp0"
 if not exist build\sniplite_ocr_vulkan.dll (echo build\sniplite_ocr_vulkan.dll is missing: run build.bat first ^& exit /b 1)
-for %%f in (ggml.dll ggml-base.dll ggml-cpu.dll ggml-vulkan.dll) do if not exist "build\formula\%%f" (echo build\formula\%%f is missing: install CrispEmbed from Preferences in build\sniplite.exe ^& exit /b 1)
-if not exist build\ocr-vulkan-runtime\ggml-vulkan.dll (echo OCR Vulkan GGML runtime is missing: run package-all.bat first ^& exit /b 1)
+for %%f in (ggml.dll ggml-base.dll ggml-cpu.dll ggml-vulkan.dll) do if not exist "build\ocr-vulkan-runtime\%%f" (echo build\ocr-vulkan-runtime\%%f is missing: run package-all.bat first ^& exit /b 1)
 for /f "tokens=3" %%v in ('findstr /C:"#define SNIPLITE_VERSION" src\common.h') do set V=%%v
 set V=%V:L"=%
 set V=%V:"=%
@@ -19,13 +18,10 @@ if errorlevel 2 exit /b 1
 copy /y build\sniplite.exe "%STAGE%\sniplite.exe" >nul || exit /b 1
 copy /y build\sniplite.com "%STAGE%\sniplite-cli.com" >nul || exit /b 1
 copy /y build\sniplite_qr.exe "%STAGE%\sniplite_qr.exe" >nul || exit /b 1
-mkdir "%STAGE%\formula\cpu-generic" || exit /b 1
-copy /y build\sniplite_formula.dll "%STAGE%\formula\cpu-generic\sniplite_formula.dll" >nul || exit /b 1
-for %%f in (ggml.dll ggml-base.dll ggml-cpu.dll) do copy /y "build\cpu-runtime\%%f" "%STAGE%\formula\cpu-generic\%%f" >nul || exit /b 1
-for %%f in (crispembed.dll vcruntime140.dll vcruntime140_1.dll msvcp140_1.dll msvcp140.dll) do copy /y "build\ocr\%%f" "%STAGE%\formula\cpu-generic\%%f" >nul || exit /b 1
-for %%f in (ggml.dll ggml-base.dll ggml-cpu.dll ggml-vulkan.dll) do copy /y "build\formula\%%f" "%STAGE%\formula\%%f" >nul || exit /b 1
+mkdir "%STAGE%\formula\shared-runtime\vulkan" || exit /b 1
+copy /y build\sniplite_formula.dll "%STAGE%\formula\sniplite_formula.dll" >nul || exit /b 1
+for %%f in (ggml.dll ggml-base.dll ggml-cpu.dll ggml-vulkan.dll) do copy /y "build\ocr-vulkan-runtime\%%f" "%STAGE%\formula\shared-runtime\vulkan\%%f" >nul || exit /b 1
 copy /y build\sniplite_ocr_vulkan.dll "%STAGE%\ocr\sniplite_ocr_vulkan.dll" >nul || exit /b 1
-copy /y build\sniplite_formula_vulkan.dll "%STAGE%\formula\sniplite_formula_vulkan.dll" >nul || exit /b 1
 if exist "%ZIP%" del /q "%ZIP%"
 "%SystemRoot%\System32\tar.exe" -a -c -f "%ZIP%" -C "%STAGE%" sniplite.exe sniplite-cli.com sniplite_qr.exe LICENSE-ZXing.txt LICENSE-MicroTeX.txt LICENSE-TinyXML2.txt ocr formula || exit /b 1
 if exist "%D%" rmdir /s /q "%D%"

@@ -27,12 +27,56 @@ static const FormulaFile files[] = {
     {L"LICENSE-FormulaEngine.txt", 0, IDR_FORMULA_ENGINE_LICENSE},
 };
 
+static bool paths(const WCHAR *name, WCHAR *dir, WCHAR *path, WCHAR *tmp, int cap);
+
+static bool shared_runtime_file(const WCHAR *name)
+{
+    static const WCHAR *const names[] = {
+        L"crispembed.dll", L"ggml.dll", L"ggml-base.dll", L"ggml-cpu.dll", L"ggml-vulkan.dll",
+        L"vcruntime140.dll", L"vcruntime140_1.dll", L"msvcp140_1.dll", L"msvcp140.dll",
+        L"Apache-2.0.txt", L"LICENSE", L"NOTICE.marker", L"NOTICE.sheenbidi", L"NOTICE.teleocr"
+    };
+    for (int i = 0; i < COUNTOF(names); ++i)
+        if (!lstrcmpiW(name, names[i])) return true;
+    return false;
+}
+
+static bool shared_target_paths(const WCHAR *name, WCHAR *dir, WCHAR *path, WCHAR *tmp, int cap)
+{
+    DWORD n = GetModuleFileNameW(NULL, dir, cap - 16);
+    if (!n || n >= (DWORD)(cap - 16)) return false;
+    while (n && dir[n - 1] != L'\\' && dir[n - 1] != L'/') n--;
+    lstrcpyW(dir + n, L"formula");
+    if (shared_runtime_file(name)) {
+        if (lstrlenW(dir) + 29 >= cap) return false;
+        lstrcatW(dir, L"\\shared-runtime\\vulkan");
+    }
+    if (lstrlenW(dir) + lstrlenW(name) + 8 >= cap) return false;
+    wsprintfW(path, L"%s\\%s", dir, name);
+    wsprintfW(tmp, L"%s.part", path);
+    return true;
+}
+
 static bool paths(const WCHAR *name, WCHAR *dir, WCHAR *path, WCHAR *tmp, int cap)
 {
     DWORD n = GetModuleFileNameW(NULL, dir, cap - 16);
     if (!n || n >= (DWORD)(cap - 16)) return false;
     while (n && dir[n - 1] != L'\\' && dir[n - 1] != L'/') n--;
     lstrcpyW(dir + n, L"formula");
+    if (shared_runtime_file(name)) {
+        WCHAR candidate[MAX_PATH * 2], shared[MAX_PATH * 2];
+        const WCHAR *backend = !lstrcmpiW(name, L"ggml-vulkan.dll") ? L"vulkan" : L"cpu-generic";
+        if (lstrlenW(dir) + lstrlenW(backend) + 17 >= COUNTOF(shared)) return false;
+        wsprintfW(shared, L"%s\\shared-runtime\\%s", dir, backend);
+        if (lstrlenW(shared) + lstrlenW(name) + 2 >= COUNTOF(candidate)) return false;
+        wsprintfW(candidate, L"%s\\%s", shared, name);
+        if (GetFileAttributesW(candidate) == INVALID_FILE_ATTRIBUTES && lstrcmpW(backend, L"vulkan")) {
+            wsprintfW(shared, L"%s\\shared-runtime\\vulkan", dir);
+            wsprintfW(candidate, L"%s\\%s", shared, name);
+        }
+        if (GetFileAttributesW(candidate) != INVALID_FILE_ATTRIBUTES)
+            lstrcpynW(dir, shared, cap);
+    }
     if (lstrlenW(dir) + lstrlenW(name) + 8 >= cap) return false;
     wsprintfW(path, L"%s\\%s", dir, name);
     wsprintfW(tmp, L"%s.part", path);
@@ -160,11 +204,19 @@ int formula_get(volatile LONG *cancel, void (*progress)(int, void *), void *ctx)
     if (!paths(files[0].name, dir, path, tmp, COUNTOF(dir)) ||
         (!CreateDirectoryW(dir, NULL) && GetLastError() != ERROR_ALREADY_EXISTS))
         return FORMULA_GET_WRITE;
+
+    WCHAR runtime_dir[MAX_PATH * 2];
+    if (lstrlenW(dir) + 25 >= COUNTOF(runtime_dir)) return FORMULA_GET_WRITE;
+    wsprintfW(runtime_dir, L"%s\\shared-runtime", dir);
+    if (!CreateDirectoryW(runtime_dir, NULL) && GetLastError() != ERROR_ALREADY_EXISTS) return FORMULA_GET_WRITE;
+    if (lstrlenW(runtime_dir) + 8 >= COUNTOF(runtime_dir)) return FORMULA_GET_WRITE;
+    lstrcatW(runtime_dir, L"\\vulkan");
+    if (!CreateDirectoryW(runtime_dir, NULL) && GetLastError() != ERROR_ALREADY_EXISTS) return FORMULA_GET_WRITE;
     uint64_t total = 0, done = 0;
     for (int i = 0; i < COUNTOF(files); i++) total += files[i].size;
     for (int i = 0; i < COUNTOF(files); i++) {
         if (cancelled(cancel)) return FORMULA_GET_CANCEL;
-        if (!paths(files[i].name, dir, path, tmp, COUNTOF(dir))) return FORMULA_GET_WRITE;
+        if (!shared_target_paths(files[i].name, dir, path, tmp, COUNTOF(dir))) return FORMULA_GET_WRITE;
         int result;
         if (files[i].resource) {
             result = copy_resource(files[i].resource, path, tmp, cancel);
@@ -202,6 +254,33 @@ int formula_size_mb(void)
     return (int)((bytes + 512 * 1024) >> 20);
 }
 
+static bool remove_known_dir_files(const WCHAR *root, const WCHAR *subdir, bool remove_runtime, bool remove_engine, bool *good)
+{
+    static const WCHAR *const runtime_names[] = {
+        L"crispembed.dll", L"ggml.dll", L"ggml-base.dll", L"ggml-cpu.dll", L"ggml-vulkan.dll",
+        L"vcruntime140.dll", L"vcruntime140_1.dll", L"msvcp140_1.dll", L"msvcp140.dll",
+        L"Apache-2.0.txt", L"LICENSE", L"NOTICE.marker", L"NOTICE.sheenbidi", L"NOTICE.teleocr"
+    };
+    WCHAR dir[MAX_PATH * 2], path[MAX_PATH * 2];
+    if (lstrlenW(root) + lstrlenW(subdir) + 2 >= COUNTOF(dir)) return false;
+    wsprintfW(dir, L"%s\\%s", root, subdir);
+    if (remove_runtime) for (int i = 0; i < COUNTOF(runtime_names); ++i) {
+        wsprintfW(path, L"%s\\%s", dir, runtime_names[i]);
+        if (!DeleteFileW(path) && GetLastError() != ERROR_FILE_NOT_FOUND && GetLastError() != ERROR_PATH_NOT_FOUND)
+            *good = false;
+    }
+    if (remove_engine) {
+        static const WCHAR *const engine_names[] = {L"sniplite_formula.dll", L"LICENSE-FormulaEngine.txt"};
+        for (int i = 0; i < COUNTOF(engine_names); ++i) {
+            wsprintfW(path, L"%s\\%s", dir, engine_names[i]);
+            if (!DeleteFileW(path) && GetLastError() != ERROR_FILE_NOT_FOUND && GetLastError() != ERROR_PATH_NOT_FOUND)
+                *good = false;
+        }
+    }
+    RemoveDirectoryW(dir);
+    return true;
+}
+
 bool formula_remove(void)
 {
     WCHAR dir[MAX_PATH * 2], path[MAX_PATH * 2], tmp[MAX_PATH * 2];
@@ -232,6 +311,15 @@ bool formula_remove(void)
     }
     wsprintfW(path, L"%s\\onnx", dir);
     RemoveDirectoryW(path);
+    if (!keep_runtime) {
+        remove_known_dir_files(dir, L"shared-runtime\\cpu-generic", true, false, &good);
+        remove_known_dir_files(dir, L"shared-runtime\\cpu-avx2", true, false, &good);
+        remove_known_dir_files(dir, L"shared-runtime\\vulkan", true, false, &good);
+        wsprintfW(path, L"%s\\shared-runtime", dir);
+        RemoveDirectoryW(path);
+    }
+    remove_known_dir_files(dir, L"cpu-generic", !keep_runtime, true, &good);
+    remove_known_dir_files(dir, L"cpu-avx2", !keep_runtime, true, &good);
     RemoveDirectoryW(dir);
     return good;
 }
