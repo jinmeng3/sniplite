@@ -1286,7 +1286,8 @@ static bool pp_graph_build(ppocrv6_ocr_context * c, int width, int batch = 1) {
 }
 
 static bool pp_graph_run_batch(ppocrv6_ocr_context * c, const std::vector<float> & input, std::vector<float> & output,
-                               int & h, int & w, int batch) {
+                               const float *& output_data, int & h, int & w, int batch) {
+    output_data = nullptr;
     if (!pp_graph_build(c, w, batch)) {
         if (core_env::on("CRISPEMBED_PPOCRV6_GRAPH_BENCH"))
             fprintf(stderr, "[ppocrv6-graph-bench] graph unavailable large_stem=%d backend=%s\n", c->large_stem ? 1 : 0,
@@ -1342,9 +1343,16 @@ static bool pp_graph_run_batch(ppocrv6_ocr_context * c, const std::vector<float>
         c->graph.token_ids.resize(ggml_nelements(c->graph.output_ids));
         ggml_backend_tensor_get(c->graph.output_ids, c->graph.token_ids.data(), 0,
                                 c->graph.token_ids.size() * sizeof(int32_t));
+    } else if (c->graph.logits_output && ggml_backend_is_cpu(c->graph.backend) &&
+               c->graph.output->buffer && ggml_backend_buffer_is_host(c->graph.output->buffer)) {
+        // Decode synchronously before the active graph is computed or reset again.
+        // The graph owns this read-only view; no host allocation/copy is needed.
+        output.clear();
+        output_data = static_cast<const float *>(c->graph.output->data);
     } else {
         output.resize(ggml_nelements(c->graph.output));
         ggml_backend_tensor_get(c->graph.output, output.data(), 0, output.size() * sizeof(float));
+        output_data = output.data();
     }
     if (c->graph.svtr_skip) {
         c->graph.svtr_skip_host.resize(ggml_nelements(c->graph.svtr_skip));
@@ -1419,10 +1427,12 @@ static bool pp_graph_run_batch(ppocrv6_ocr_context * c, const std::vector<float>
         const auto ms = [](auto a, auto b) { return std::chrono::duration<double, std::milli>(b - a).count(); };
         fprintf(stderr,
                 "[ppocrv6-graph-bench] backend=%s graph_ms=%.3f stage_ms=%.3f alloc_ms=%.3f readback_ms=%.3f "
-                "readback_mb=%.3f output=%dx%d\n",
+                "readback_mb=%.6f readback=%s output=%dx%d\n",
                 ggml_backend_name(c->graph.backend), ms(started, finished), ms(t_stage0, t_stage1),
                 ms(t_alloc0, t_stage0), ms(finished, t_readback1),
-                (double)(output.size() + c->graph.svtr_skip_host.size()) * sizeof(float) / (1024.0 * 1024.0), w, h);
+                (double)(output.size() * sizeof(float) + c->graph.token_ids.size() * sizeof(int32_t) +
+                         c->graph.svtr_skip_host.size() * sizeof(float)) / (1024.0 * 1024.0),
+                c->graph.output_ids ? "ids" : (output.empty() && output_data ? "host-logits" : "logits"), w, h);
     }
     c->graph.reusable = true;
     pp_graph_trim_cache(c);
@@ -1430,8 +1440,8 @@ static bool pp_graph_run_batch(ppocrv6_ocr_context * c, const std::vector<float>
 }
 
 static bool pp_graph_run(ppocrv6_ocr_context * c, const std::vector<float> & input, std::vector<float> & output,
-                         int & h, int & w) {
-    return pp_graph_run_batch(c, input, output, h, w, 1);
+                         const float *& output_data, int & h, int & w) {
+    return pp_graph_run_batch(c, input, output, output_data, h, w, 1);
 }
 
 
@@ -1669,14 +1679,15 @@ static const char * recognize_nchw(ppocrv6_ocr_context * c, const std::vector<fl
     std::vector<float> x, y;
     int h = 48, w = input_w;
     std::vector<float> graph_out;
+    const float * graph_data = nullptr;
     const bool graph_allowed = use_graph && c->graph_accept_override != 0;
-    bool graph_done = graph_allowed && pp_graph_run(c, input, graph_out, h, w);
+    bool graph_done = graph_allowed && pp_graph_run(c, input, graph_out, graph_data, h, w);
     if (graph_done && c->graph.logits_output && core_env::on("CRISPEMBED_PPOCRV6_GRAPH_DEBUG")) {
         const int tokens = h;
         const int classes = w;
         fprintf(stderr, "[ppocrv6-graph-decode] tokens=%d classes=%d vocab=%zu\n", tokens, classes, c->vocab.size());
         for (int t = 0; t < std::min(tokens, 4); ++t) {
-            const float * row = graph_out.data() + (size_t)t * classes;
+            const float * row = graph_data + (size_t)t * classes;
             const int best = int(std::max_element(row, row + classes) - row);
             fprintf(stderr, "[ppocrv6-graph-decode] t=%d best=%d value=%.7g blank=%.7g\n", t, best, row[best], row[0]);
         }
@@ -1693,7 +1704,7 @@ static const char * recognize_nchw(ppocrv6_ocr_context * c, const std::vector<fl
         if (c->graph.logits_output) {
             const int tokens = h;
             const int classes = w;
-            pp_graph_decode(c, graph_out.data(), c->graph.output_ids ? c->graph.token_ids.data() : nullptr,
+            pp_graph_decode(c, graph_data, c->graph.output_ids ? c->graph.token_ids.data() : nullptr,
                             tokens, classes, c->result);
             if (out_len) *out_len = (int)c->result.size();
             return c->result.c_str();
@@ -2098,6 +2109,7 @@ extern "C" int ppocrv6_ocr_recognize_raw_batch(ppocrv6_ocr_context * c, const ui
             std::vector<float> fused_input;
             std::vector<float> fused_output;
             const size_t input_stride = (size_t)3 * 48 * width;
+            const float * fused_data = nullptr;
             // Width is an input to graph execution; token/class counts return
             // through the same parameters after the graph finishes.
             int tokens = 0, classes = width;
@@ -2108,10 +2120,11 @@ extern "C" int ppocrv6_ocr_recognize_raw_batch(ppocrv6_ocr_context * c, const ui
                     resize_normalize_into(pixels[i], widths[i], heights[i], channels[i],
                                           fused_input.data() + input_stride * (size_t)member, width);
                 }
-                fused = pp_graph_run_batch(c, fused_input, fused_output, tokens, classes, group_count);
+                fused = pp_graph_run_batch(c, fused_input, fused_output, fused_data, tokens, classes, group_count);
+                const size_t expected = (size_t)tokens * group_count;
                 fused = fused && tokens > 0 && classes > 0 &&
-                        (c->graph.output_ids ? c->graph.token_ids.size() == (size_t)tokens * group_count
-                                             : fused_output.size() >= (size_t)tokens * classes * group_count);
+                        (c->graph.output_ids ? c->graph.token_ids.size() == expected
+                                             : fused_data && (size_t)ggml_nelements(c->graph.output) >= expected * classes);
                 if (!fused) pp_graph_dispose(c->graph);
                 if (core_env::on("CRISPEMBED_PPOCRV6_BENCH"))
                     fprintf(stderr,
@@ -2143,7 +2156,7 @@ extern "C" int ppocrv6_ocr_recognize_raw_batch(ppocrv6_ocr_context * c, const ui
                     }
                 } else if (fused) {
                     const int32_t * ids = c->graph.output_ids ? c->graph.token_ids.data() + (size_t)tokens * member : nullptr;
-                    const float * logits = ids ? nullptr : fused_output.data() + (size_t)tokens * classes * member;
+                    const float * logits = ids ? nullptr : fused_data + (size_t)tokens * classes * member;
                     pp_graph_decode(c, logits, ids, tokens, classes, text);
                     len = (int)text.size();
                     valid = true;
