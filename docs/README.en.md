@@ -102,13 +102,13 @@ Select an area, click the scrolling screenshot button or press `Ctrl+L`, then sc
 
 ### How do I organize multiple pins?
 
-Dragging a pin reveals the rack. In Preferences > Pin rack, set it to the top or bottom center of the screen. Drop the pin onto the rack to collect it as a thumbnail. You can also press `Ctrl+H` in a pin window or choose “Store on rack” from its context menu. The “Pin rack” menu item opens the bar on its own.
+In Preferences > Pin rack, choose the top or bottom edge. When the rack has stored pins, hold the pointer at that screen edge for about 300 ms to slide it out; it tucks away about 500 ms after the pointer leaves the cards. Drag a pin onto the revealed line to store it. You can also press `Ctrl+H` in a pin window or choose “Store on rack” from its context menu. The “Pin rack” menu item opens the rack on its own.
 
-Click a thumbnail to restore its pin. Drag a card onto another card to reorder; right-click a card to restore or close that pin. Click the empty rack area to focus it, then use the arrow keys to select, `Home`/`End` to jump, `Enter` to restore, or `Delete` to close. Drag the rack title to move it; use the wheel or `<` and `>` buttons to browse more thumbnails. Closing the rack restores every collected pin. `Shift+F3` hides or shows the rack together with uncollected pins. Collection lasts for the current session; exiting the app releases all images.
+Click a thumbnail to restore its pin. Drag a card onto another card to reorder; right-click a card to restore or close that pin. Click a card to focus the rack, then use the arrow keys, `Home`/`End`, `Enter` to restore, or `Delete` to close. Use the wheel or `<` and `>` buttons to browse more thumbnails. Closing the rack restores every collected pin. `Shift+F3` hides or shows the rack together with uncollected pins. Collection lasts for the current session; exiting the app releases all images.
 
-The rack uses rounded cards with hover highlights. Each card shows the original image dimensions, and the footer shows the visible range.
+The rack uses a transparent, curved clothesline with cards held by small clips. Each card shows the original image dimensions; the footer shows the visible range.
 
-![Pin rack](../pics/ui/pin-rack.png)
+![Pin rack](../pics/ui/pin-rack-en.png)
 
 ### How can I reduce memory use?
 
