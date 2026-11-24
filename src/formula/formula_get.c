@@ -2,8 +2,7 @@
 #include "ocr.h"
 #include "resource.h"
 
-#define FORMULA_MODEL_SOURCE L"E:\\浏览器下载\\texo-distill-q8_0.gguf"
-#define FORMULA_RUNTIME_SOURCE L"E:\\浏览器下载\\crispembed-windows-x86_64-vulkan\\"
+/* Source assets are selected by the user in the formula settings page. */
 #define FORMULA_MODEL_BYTES 22739744u
 
 typedef struct { const WCHAR *name; DWORD size; int resource; } FormulaFile;
@@ -209,21 +208,23 @@ static int copy_resource(int id, const WCHAR *target, const WCHAR *tmp, volatile
     return FORMULA_GET_OK;
 }
 
-int formula_get(volatile LONG *cancel, void (*progress)(int, void *), void *ctx)
+int formula_get(const WCHAR *model_dir, const WCHAR *runtime_dir, volatile LONG *cancel, void (*progress)(int, void *), void *ctx)
 {
     WCHAR dir[MAX_PATH * 2], path[MAX_PATH * 2], tmp[MAX_PATH * 2];
+    if (!model_dir || !*model_dir || !runtime_dir || !*runtime_dir) return FORMULA_GET_SOURCE;
     if (!paths(files[0].name, dir, path, tmp, COUNTOF(dir)) ||
         (!CreateDirectoryW(dir, NULL) && GetLastError() != ERROR_ALREADY_EXISTS))
         return FORMULA_GET_WRITE;
 
-    WCHAR runtime_dir[MAX_PATH * 2];
-    if (!app_dir(runtime_dir, COUNTOF(runtime_dir)) || lstrlenW(runtime_dir) + 25 >= COUNTOF(runtime_dir))
+    WCHAR install_runtime_dir[MAX_PATH * 2];
+    if (!app_dir(install_runtime_dir, COUNTOF(install_runtime_dir)) ||
+        lstrlenW(install_runtime_dir) + 25 >= COUNTOF(install_runtime_dir))
         return FORMULA_GET_WRITE;
-    lstrcatW(runtime_dir, L"\\shared-runtime");
-    if (!CreateDirectoryW(runtime_dir, NULL) && GetLastError() != ERROR_ALREADY_EXISTS) return FORMULA_GET_WRITE;
-    if (lstrlenW(runtime_dir) + 8 >= COUNTOF(runtime_dir)) return FORMULA_GET_WRITE;
-    lstrcatW(runtime_dir, L"\\vulkan");
-    if (!CreateDirectoryW(runtime_dir, NULL) && GetLastError() != ERROR_ALREADY_EXISTS) return FORMULA_GET_WRITE;
+    lstrcatW(install_runtime_dir, L"\\shared-runtime");
+    if (!CreateDirectoryW(install_runtime_dir, NULL) && GetLastError() != ERROR_ALREADY_EXISTS) return FORMULA_GET_WRITE;
+    if (lstrlenW(install_runtime_dir) + 8 >= COUNTOF(install_runtime_dir)) return FORMULA_GET_WRITE;
+    lstrcatW(install_runtime_dir, L"\\vulkan");
+    if (!CreateDirectoryW(install_runtime_dir, NULL) && GetLastError() != ERROR_ALREADY_EXISTS) return FORMULA_GET_WRITE;
     uint64_t total = 0, done = 0;
     for (int i = 0; i < COUNTOF(files); i++) total += files[i].size;
     for (int i = 0; i < COUNTOF(files); i++) {
@@ -234,15 +235,18 @@ int formula_get(volatile LONG *cancel, void (*progress)(int, void *), void *ctx)
             result = copy_resource(files[i].resource, path, tmp, cancel);
         } else {
             WCHAR source[MAX_PATH * 2];
-            if (i == 0) {
-                lstrcpynW(source, FORMULA_MODEL_SOURCE, COUNTOF(source));
+            if (i == 0 || (i >= 1 && i <= 5) || (i >= 10 && i <= 14)) {
+                const WCHAR *base = i == 0 ? model_dir : runtime_dir;
+                int dir_len = lstrlenW(base), name_len = lstrlenW(files[i].name);
+                if (dir_len + name_len + 2 >= COUNTOF(source)) return FORMULA_GET_SOURCE;
+                wsprintfW(source, L"%s\\%s", base, files[i].name);
             } else if (i >= 6 && i <= 9) {
                 DWORD n = GetSystemDirectoryW(source, COUNTOF(source));
                 if (!n || n + lstrlenW(files[i].name) + 2 >= COUNTOF(source)) return FORMULA_GET_SOURCE;
                 lstrcatW(source, L"\\");
                 lstrcatW(source, files[i].name);
             } else {
-                wsprintfW(source, L"%s%s", FORMULA_RUNTIME_SOURCE, files[i].name);
+                return FORMULA_GET_SOURCE;
             }
             result = copy_file(source, path, tmp, files[i].size, cancel);
         }

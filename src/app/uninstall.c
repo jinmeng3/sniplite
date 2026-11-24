@@ -1,8 +1,8 @@
 /* `sniplite.exe --uninstall [/S]`: removes exactly what the installer and the app
  * created, by name: the Start menu folder, the Startup shortcut, the program files
  * and sniplite.ini next to this exe. Never deletes anything recursively; the folder
- * itself is only removed when it is empty. The running exe is deleted by a small
- * hidden cmd.exe after this process exits. */
+ * itself is only removed when it is empty. A hidden instance deletes the running exe
+ * after this process exits. */
 #include "ocr.h"
 #include "common.h"
 #include "install.h"
@@ -41,6 +41,39 @@ static void close_wait(HWND w)
         WaitForSingleObject(h, 5000);
         CloseHandle(h);
     }
+}
+
+/* Launched as a second instance of this exe. It waits for the uninstaller to exit,
+ * then removes the executable and its directory using literal Win32 paths. */
+int uninstall_cleanup(const WCHAR *pid_arg)
+{
+    DWORD pid = 0;
+    for (const WCHAR *c = pid_arg; *c; c++) {
+        if (*c < L'0' || *c > L'9' || pid > (MAXDWORD - (*c - L'0')) / 10)
+            return EXIT_FAIL;
+        pid = pid * 10 + (*c - L'0');
+    }
+    if (!pid)
+        return EXIT_FAIL;
+
+    HANDLE process = OpenProcess(SYNCHRONIZE, FALSE, pid);
+    if (!process)
+        return EXIT_OK;
+    WaitForSingleObject(process, INFINITE);
+    CloseHandle(process);
+
+    WCHAR exe[MAX_PATH], dir[MAX_PATH];
+    DWORD n = GetModuleFileNameW(NULL, exe, MAX_PATH);
+    if (!n || n >= MAX_PATH)
+        return EXIT_OK;
+    lstrcpyW(dir, exe);
+    WCHAR *sl = wcsrchr(dir, L'\\');
+    if (!sl)
+        return EXIT_OK;
+    *sl = 0;
+    DeleteFileW(exe);
+    RemoveDirectoryW(dir); /* only succeeds when empty */
+    return EXIT_OK;
 }
 
 int uninstall_main(bool silent)
@@ -105,18 +138,16 @@ int uninstall_main(bool silent)
     if (!silent)
         MessageBoxW(NULL, T(UNINST_DONE), T(UNINST_TITLE), MB_OK | MB_ICONINFORMATION);
 
-    /* This exe is still running: let a hidden cmd.exe delete it (and the then empty
-     * folder) once we have exited. rmdir without /s never removes a non-empty folder. */
-    WCHAR sys[MAX_PATH], cmd[3 * MAX_PATH + 96];
-    if (GetSystemDirectoryW(sys, MAX_PATH)) {
-        wsprintfW(cmd, L"\"%s\\cmd.exe\" /d /c ping -n 3 127.0.0.1 >nul & del /f /q \"%s\" & rmdir \"%s\"", sys, exe, dir);
-        STARTUPINFOW si = {sizeof si};
-        PROCESS_INFORMATION pi;
-        /* in System32: not the folder it removes, and where cmd.exe looks for ping first */
-        if (CreateProcessW(NULL, cmd, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, sys, &si, &pi)) {
-            CloseHandle(pi.hThread);
-            CloseHandle(pi.hProcess);
-        }
+    /* The helper is this executable in a no-UI mode. Its arguments contain only the
+     * numeric PID; it derives literal paths from its own module filename. */
+    WCHAR cmd[MAX_PATH + 64];
+    wsprintfW(cmd, L"\"%s\" --uninstall-cleanup %lu", exe, GetCurrentProcessId());
+    STARTUPINFOW si = {sizeof si};
+    PROCESS_INFORMATION pi;
+    si.dwFlags = STARTF_FORCEOFFFEEDBACK;
+    if (CreateProcessW(exe, cmd, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, dir, &si, &pi)) {
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
     }
     return EXIT_OK;
 }

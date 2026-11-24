@@ -71,6 +71,7 @@ static struct {
     volatile LONG ocr_cancel, qr_cancel;
     bool formula_busy; /* the CrispEmbed model and runtime are being installed */
     volatile LONG formula_cancel;
+    WCHAR formula_model_dir[MAX_PATH * 2], formula_runtime_dir[MAX_PATH * 2];
     POINT at;        /* where it was */
 } S;
 
@@ -1185,7 +1186,7 @@ static void formula_progress(int pct, void *ctx)
 static DWORD WINAPI formula_thread(void *p)
 {
     (void)p;
-    int result = formula_get(&S.formula_cancel, formula_progress, NULL);
+    int result = formula_get(S.formula_model_dir, S.formula_runtime_dir, &S.formula_cancel, formula_progress, NULL);
     PostMessageW(S.dlg, WM_APP_FORMULA_DONE, (WPARAM)result, 0);
     return 0;
 }
@@ -1198,6 +1199,12 @@ static void formula_install(void)
         return;
     }
     if (formula_installed())
+        return;
+    MessageBoxW(S.dlg, T(F_SOURCE_PICK), T(SETTINGS_TITLE), MB_OK | MB_ICONINFORMATION);
+    if (!pick_path(S.dlg, S.formula_model_dir, COUNTOF(S.formula_model_dir), false))
+        return;
+    MessageBoxW(S.dlg, T(F_RUNTIME_PICK), T(SETTINGS_TITLE), MB_OK | MB_ICONINFORMATION);
+    if (!pick_path(S.dlg, S.formula_runtime_dir, COUNTOF(S.formula_runtime_dir), false))
         return;
     S.formula_cancel = 0;
     HANDLE thread = CreateThread(NULL, 0, formula_thread, NULL, 0, NULL);

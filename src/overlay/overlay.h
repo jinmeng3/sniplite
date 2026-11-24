@@ -14,6 +14,7 @@ typedef struct {
 bool ov_init(HINSTANCE inst, HWND daemon);
 bool ov_begin(void);      /* start an interactive capture; false if busy or failed */
 bool ov_active(void);
+uint64_t ov_session_id(void); /* changes when a new capture becomes active */
 void ov_pin_hotkey(void); /* pin hotkey pressed while capturing */
 void ov_cancel(void);
 bool ov_last_timing(OvTiming *t); /* false before the first capture */

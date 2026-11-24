@@ -143,9 +143,8 @@ static int decode_image(const Image *im)
         const ZXing_Barcode *barcode = ZXing_Barcodes_at(barcodes, i);
         if (!ZXing_Barcode_isValid(barcode))
             continue;
-        int length = 0;
-        uint8_t *payload = ZXing_Barcode_bytes(barcode, &length);
-        if (!payload)
+        char *text = ZXing_Barcode_text(barcode);
+        if (!text)
             continue;
         if (found++) {
             static const char sep[] = "\r\n";
@@ -153,9 +152,10 @@ static int decode_image(const Image *im)
             WriteFile(out, sep, sizeof(sep) - 1, &wrote, NULL);
         }
         DWORD wrote;
+        size_t length = strlen(text);
         if (length > 0)
-            WriteFile(out, payload, (DWORD)length, &wrote, NULL);
-        ZXing_free(payload);
+            WriteFile(out, text, (DWORD)length, &wrote, NULL);
+        ZXing_free(text);
     }
     if (found) {
         static const char end[] = "\r\n";

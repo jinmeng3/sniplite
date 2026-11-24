@@ -3,13 +3,13 @@
 #include "common.h"
 #include "config.h"
 #include "formula.h"
+#include "overlay.h"
 #include "image.h"
 #include "lang.h"
 #include "ov_layout.inc"
 #include "shot.h"
 
 extern uint8_t O[];
-extern bool ov_active(void);
 extern bool formula_installed(void);
 
 #define FORMULA_MAX_PIXELS 16000000u
@@ -56,6 +56,7 @@ typedef struct {
     int w, h;
     int backend;
     bool wrote, response, too_long;
+    uint64_t session;
     char text[FORMULA_OUTPUT_CAP];
 } FormulaJob;
 typedef struct { HANDLE process, input, output; } FormulaHost;
@@ -166,8 +167,6 @@ static DWORD WINAPI formula_worker(void *ctx)
     FormulaRequest req = {(uint32_t)j->w, (uint32_t)j->h, (uint32_t)j->backend};
     j->wrote = formula_pipe_write(formula_host.input, &req, sizeof req) &&
                formula_pipe_write(formula_host.input, j->pixels, j->bytes);
-    VirtualFree(j->pixels, 0, MEM_RELEASE);
-    j->pixels = NULL;
     if (!j->wrote) {
         formula_host_close(true);
         return 0;
@@ -239,6 +238,7 @@ bool formula_scan(void)
     FormulaJob *j = mem_alloc(sizeof *j);
     if (!j) { formula_notice(owner, T(F_ERROR), MB_ICONERROR); return false; }
     current_job = j;
+    j->session = ov_session_id();
     j->w = w;
     j->h = h;
     Config config;
@@ -253,10 +253,23 @@ bool formula_scan(void)
 
     WCHAR exe[MAX_PATH * 2];
     DWORD n = GetModuleFileNameW(NULL, exe, COUNTOF(exe));
-    if (!n || n >= COUNTOF(exe) || !formula_host_start(exe)) goto cleanup;
-    j->worker = CreateThread(NULL, 0, formula_worker, j, 0, NULL);
-    if (!j->worker) { formula_host_close(true); goto cleanup; }
-    formula_wait(owner, j->worker);
+    if (!n || n >= COUNTOF(exe)) goto cleanup;
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        j->wrote = j->response = j->too_long = false;
+        j->used = j->code = 0;
+        if (!formula_host_start(exe)) break;
+        j->worker = CreateThread(NULL, 0, formula_worker, j, 0, NULL);
+        if (!j->worker) { formula_host_close(true); break; }
+        formula_wait(owner, j->worker);
+        CloseHandle(j->worker);
+        j->worker = NULL;
+        if (j->response || j->too_long || attempt || ov_session_id() != j->session)
+            break;
+    }
+    if (ov_session_id() != j->session) {
+        failed = false;
+        goto cleanup;
+    }
     if (!j->wrote || !j->response || j->too_long || j->code != 0) {
         if (j->code == 4) {
             formula_notice(owner, T(F_NO_RESULT), MB_ICONINFORMATION);
@@ -283,6 +296,7 @@ bool formula_scan(void)
     mem_free(text);
 
 cleanup:
+    if (ov_session_id() != j->session) failed = false;
     if (j->pixels) VirtualFree(j->pixels, 0, MEM_RELEASE);
     if (j->worker) CloseHandle(j->worker);
     mem_free(j);

@@ -8,7 +8,7 @@ typedef struct { uint32_t code, bytes; } FormulaReply;
 
 bool formula_installed(void);
 bool formula_remove(void);
-int formula_get(volatile LONG *cancel, void (*progress)(int percent, void *ctx), void *ctx);
+int formula_get(const WCHAR *model_dir, const WCHAR *runtime_dir, volatile LONG *cancel, void (*progress)(int percent, void *ctx), void *ctx);
 int formula_size_mb(void);
 bool formula_run(const uint32_t *bgra, int w, int h, Str *latex);
 void formula_set_backend(int backend); /* INFER_*; changes take effect on the next run */

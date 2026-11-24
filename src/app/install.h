@@ -20,3 +20,4 @@ static inline void uninstall_lnk(int lang, WCHAR *out)
 }
 
 int uninstall_main(bool silent); /* `sniplite.exe --uninstall [/S]` */
+int uninstall_cleanup(const WCHAR *pid_arg); /* internal no-UI cleanup process mode */

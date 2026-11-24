@@ -623,6 +623,12 @@ FUNC ov_active
         movzx eax, byte ptr OV(OV_ACTIVE)
         ret
 ENDF
+/* uint64_t ov_session_id(void): monotonically changes for each successful capture. */
+FUNC ov_session_id
+        ENDPROLOG
+        mov rax, qword ptr [rip + .Lov_session]
+        ret
+ENDF
 
 /* bool ov_last_timing(OvTiming *t): false before the first capture */
 FUNC ov_last_timing
@@ -839,6 +845,7 @@ FUNC ov_begin
         movsd xmm0, qword ptr OV(OV_T_ENUM)
         movsd qword ptr OV(OV_T + OVT_WINDOWS), xmm0
         mov byte ptr OV(OV_ACTIVE), 1
+        inc qword ptr [rip + .Lov_session]
         mov dword ptr OV(OV_PHASE), PH_SELECT
         mov word ptr OV(OV_LDOWN), 0    /* ldown, rubber */
         mov dword ptr OV(OV_DRAG), DR_NONE
@@ -1022,7 +1029,8 @@ ENDF
  * ACT_LONG a long screenshot that begins with it */
 #define FI_OUT 48                       /* Img */
 #define FI_PATH 96                      /* WCHAR[MAX_PATH * 2] */
-#define FI_FRAME (FI_PATH + 2 * W_PATH_CAP)
+#define FI_SESSION (FI_PATH + 2 * W_PATH_CAP)
+#define FI_FRAME (FI_SESSION + 16)
 FUNC finish
         PUSHREG rbx
         PUSHREG rsi
@@ -1030,6 +1038,8 @@ FUNC finish
         ALLOC FI_FRAME
         ENDPROLOG
         mov ebx, ecx
+        call ov_session_id
+        mov qword ptr [rsp + FI_SESSION], rax
         cmp dword ptr OV(OV_PHASE), PH_SELECT
         jne .Lfi_edit
         mov eax, dword ptr OV(OV_HL + RC_R)
@@ -1083,13 +1093,25 @@ FUNC finish
         mov r8d, dword ptr [rsp + FI_OUT + IMG_W]
         mov r9d, r8d
         call clip_put_image
-        call ov_cancel                  /* the capture is over before its file is thought of */
+        test eax, eax
+        jz .Lfi_copy_failed
+        call ov_cancel                  /* the successful clipboard write ends this session */
         mov rcx, qword ptr [rsp + FI_OUT + IMG_PX]
         mov edx, dword ptr [rsp + FI_OUT + IMG_W]
         mov r8d, dword ptr [rsp + FI_OUT + IMG_H]
         call also_save                  /* into a file too, while the settings say so (main.c) */
         lea rcx, [rsp + FI_OUT]
         call img_destroy
+        jmp .Lfi_ret
+.Lfi_copy_failed:
+        lea rcx, [rsp + FI_OUT]
+        call img_destroy
+        call show_overlay
+        mov rcx, qword ptr OV(OV_DAEMON)
+        TR rdx, COPY_FAILED
+        lea r8, [rip + .Lw_title]
+        mov r9d, W_MB_SAVEFAIL
+        API MessageBoxW
         jmp .Lfi_ret
 .Lfi_notcopy:
         cmp ebx, ACT_PIN
@@ -1109,8 +1131,9 @@ FUNC finish
         mov edx, W_PATH_CAP
         call save_dialog
         movzx esi, al
-        cmp byte ptr OV(OV_ACTIVE), 0
-        je .Lfi_drop                    /* quit while the dialog was open */
+        call ov_session_id
+        cmp rax, qword ptr [rsp + FI_SESSION]
+        jne .Lfi_drop                    /* the dialog outlived its capture */
         test esi, esi
         jz .Lfi_back
         mov eax, dword ptr [rsp + FI_OUT + IMG_H]
@@ -1122,11 +1145,15 @@ FUNC finish
         call image_save
         test al, al
         jnz .Lfi_saved
-        xor ecx, ecx
+        lea rcx, [rsp + FI_OUT]
+        call img_destroy
+        call show_overlay
+        mov rcx, qword ptr OV(OV_DAEMON)
         TR rdx, OV_SAVE_FAILED
         lea r8, [rip + .Lw_title]
         mov r9d, W_MB_SAVEFAIL
         API MessageBoxW
+        jmp .Lfi_ret
 .Lfi_saved:
         lea rcx, [rsp + FI_OUT]
         call img_destroy
@@ -2424,3 +2451,6 @@ FUNC on_button
         pop rbx
         jmp refresh
 ENDF
+.section .data$ov_show,"dw"
+.balign 8
+.Lov_session: .quad 0

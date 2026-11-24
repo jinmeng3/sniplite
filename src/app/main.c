@@ -1502,6 +1502,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmdline, int show)
         return formula_helper(argc, argv);
     if (argc > 2 && arg_eq(argv[1], L"--quick-save"))
         return quick_save(argv[2]);
+    if (argc > 2 && arg_eq(argv[1], L"--uninstall-cleanup"))
+        return uninstall_cleanup(argv[2]);
     if (argc > 1 && arg_eq(argv[1], L"--uninstall"))
         return uninstall_main(argc > 2 && (arg_eq(argv[2], L"/S") || arg_eq(argv[2], L"-S")));
 

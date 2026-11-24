@@ -1115,15 +1115,24 @@ SFUNC dib_to_img
         mov r15d, dword ptr [rbx + BIH_SIZE]
         lea r15, [r15 + rcx * 4]        /* off */
         mov eax, dword ptr [rbx + BIH_COMPRESSION]
+        cmp eax, K_BI_BITFIELDS
+        je .Ldi_masks3
+        cmp eax, K_BI_ALPHABITFIELDS
+        jne .Ldi_stride
+        /* Four masks follow a 40-byte header; require all 16 bytes. */
         cmp dword ptr [rbx + BIH_SIZE], BIH_BYTES
         jne .Ldi_stride
-        cmp eax, K_BI_BITFIELDS
-        jne 1f
-        add r15, 12
-        jmp .Ldi_stride
-1:      cmp eax, K_BI_ALPHABITFIELDS
-        jne .Ldi_stride
+        cmp rsi, BIH_BYTES + 16
+        jb .Ldi_fail
         add r15, 16
+        jmp .Ldi_stride
+.Ldi_masks3:
+        cmp dword ptr [rbx + BIH_SIZE], BIH_BYTES
+        jne .Ldi_stride
+        /* The three masks are external only for a 40-byte header. */
+        cmp rsi, BIH_BYTES + 12
+        jb .Ldi_fail
+        add r15, 12
 .Ldi_stride:
         movzx ecx, word ptr [rbx + BIH_BITCOUNT]
         mov r14d, r12d
@@ -1164,6 +1173,12 @@ SFUNC dib_to_img
         jz .Ldi_std32
         cmp eax, K_BI_BITFIELDS
         jne .Ldi_gdi
+        mov ecx, dword ptr [rbx + BIH_SIZE]
+        cmp ecx, BIH_BYTES
+        je .Ldi_masks_safe               /* external masks were length-checked above */
+        cmp ecx, BIH_BYTES + 12
+        jb .Ldi_gdi                     /* 44- and 48-byte headers do not hold three masks */
+.Ldi_masks_safe:
         cmp dword ptr [rbx + BIH_BYTES], 0xFF0000       /* masks after the 40-byte header */
         jne .Ldi_gdi
         cmp dword ptr [rbx + BIH_BYTES + 4], 0xFF00

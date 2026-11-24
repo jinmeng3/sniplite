@@ -3,6 +3,7 @@ rem Build the QR + OCR + formula Vulkan-first portable ZIP. Run build.bat first.
 setlocal
 cd /d "%~dp0"
 if not exist build\sniplite_ocr_vulkan.dll (echo build\sniplite_ocr_vulkan.dll is missing: run build.bat first ^& exit /b 1)
+if not exist build\sniplite_formula_vulkan.dll (echo build\sniplite_formula_vulkan.dll is missing: run build.bat first ^& exit /b 1)
 for %%f in (ggml.dll ggml-base.dll ggml-cpu.dll ggml-vulkan.dll) do if not exist "build\ocr-vulkan-runtime\%%f" (echo build\ocr-vulkan-runtime\%%f is missing: run package-all.bat first ^& exit /b 1)
 for /f "tokens=3" %%v in ('findstr /C:"#define SNIPLITE_VERSION" src\common.h') do set V=%%v
 set V=%V:L"=%
@@ -20,6 +21,7 @@ copy /y build\sniplite.com "%STAGE%\sniplite-cli.com" >nul || exit /b 1
 copy /y build\sniplite_qr.exe "%STAGE%\sniplite_qr.exe" >nul || exit /b 1
 mkdir "%STAGE%\shared-runtime\vulkan" || exit /b 1
 copy /y build\sniplite_formula.dll "%STAGE%\formula\sniplite_formula.dll" >nul || exit /b 1
+copy /y build\sniplite_formula_vulkan.dll "%STAGE%\formula\sniplite_formula_vulkan.dll" >nul || exit /b 1
 for %%f in (ggml.dll ggml-base.dll ggml-cpu.dll ggml-vulkan.dll) do copy /y "build\ocr-vulkan-runtime\%%f" "%STAGE%\shared-runtime\vulkan\%%f" >nul || exit /b 1
 copy /y build\sniplite_ocr_vulkan.dll "%STAGE%\ocr\sniplite_ocr_vulkan.dll" >nul || exit /b 1
 if exist "%ZIP%" del /q "%ZIP%"
