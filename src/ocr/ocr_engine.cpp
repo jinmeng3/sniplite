@@ -191,13 +191,16 @@ bool run(Context &ctx, const uint8_t *rgb, int width, int height) {
         return false;
     };
 
-    for (const auto &b : boxes) {
+    for (auto &b : boxes) {
         if (!std::isfinite(b.x) || !std::isfinite(b.y) || !std::isfinite(b.w) || !std::isfinite(b.h) ||
             !std::isfinite(b.score) || b.x < 0 || b.y < 0 || b.w <= 0 || b.h <= 0 ||
             b.x > width || b.y > height || b.w > width || b.h > height) return fail();
-        for (int k = 0; k < 4; ++k)
-            if (!std::isfinite(b.qx[k]) || !std::isfinite(b.qy[k]) || b.qx[k] < 0 || b.qy[k] < 0 ||
-                b.qx[k] > width || b.qy[k] > height) return fail();
+        for (int k = 0; k < 4; ++k) {
+            if (!std::isfinite(b.qx[k]) || !std::isfinite(b.qy[k])) return fail();
+            // DB postprocessing can unclip a valid border box slightly outside the image.
+            b.qx[k] = std::clamp(b.qx[k], 0.0f, static_cast<float>(width - 1));
+            b.qy[k] = std::clamp(b.qy[k], 0.0f, static_cast<float>(height - 1));
+        }
     }
 
     std::vector<size_t> order(n);
