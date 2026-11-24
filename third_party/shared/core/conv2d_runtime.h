@@ -1,4 +1,4 @@
-// Context-owned storage for immutable convolution weights and CPU tile workers.
+// third_party/shared/core/conv2d_runtime.h — context-owned storage for immutable convolution weights and CPU tile workers.
 #pragma once
 
 #include <algorithm>

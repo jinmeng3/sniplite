@@ -1,4 +1,4 @@
-// src/core/cpu_ops.h — Shared CPU-scalar helper functions for VLM/OCR engines.
+// third_party/shared/core/cpu_ops.h — Shared CPU-scalar helper functions for VLM/OCR engines.
 //
 // Header-only. All functions live in namespace core_cpu with static inline
 // linkage to avoid ODR violations when included from multiple TUs.
@@ -27,7 +27,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "env_gate.h"
+#include "core/env_gate.h"
 #include "conv2d_runtime.h"
 
 #ifdef SNIPLITE_INFERENCE_ASM
@@ -318,76 +318,6 @@ static inline void layernorm_cpu(const float * in, float * out, int D, const ggm
 }
 
 // ---------------------------------------------------------------------------
-// LayerNorm2d — normalize over channel dim for NCHW tensors
-// ---------------------------------------------------------------------------
-// Input/output shape: (C, H, W), normalize over C at each spatial position.
-
-static inline void layernorm2d_cpu(const float * in, float * out, int C, int H, int W, const float * w, const float * b,
-                                   float eps) {
-    // Thread-local gather buffer (avoids per-call heap alloc)
-    static thread_local std::vector<float> buf;
-    if ((int)buf.size() < C) buf.resize(C);
-    int HW = H * W;
-    for (int y = 0; y < H; y++) {
-        for (int x = 0; x < W; x++) {
-            int pos = y * W + x;
-            // Gather: strided → contiguous
-            for (int c = 0; c < C; c++) buf[c] = in[c * HW + pos];
-            // Compute layernorm on contiguous buffer
-            layernorm_cpu(buf.data(), buf.data(), C, w, b, eps);
-            // Scatter: contiguous → strided
-            for (int c = 0; c < C; c++) out[c * HW + pos] = buf[c];
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// RMSNorm — root-mean-square normalization (no mean subtraction)
-// ---------------------------------------------------------------------------
-
-static inline void rmsnorm_cpu(const float * in, float * out, int D, const float * w, float eps) {
-    // Sum of squares (SIMD-accelerated)
-    float ss = 0.0f;
-#if defined(__AVX2__) && defined(__FMA__)
-    {
-        __m256 acc = _mm256_setzero_ps();
-        int i = 0;
-        for (; i + 7 < D; i += 8) {
-            __m256 v = _mm256_loadu_ps(in + i);
-            acc = _mm256_fmadd_ps(v, v, acc);
-        }
-        __m128 lo = _mm256_castps256_ps128(acc);
-        __m128 hi = _mm256_extractf128_ps(acc, 1);
-        lo = _mm_add_ps(lo, hi);
-        lo = _mm_add_ps(lo, _mm_movehl_ps(lo, lo));
-        lo = _mm_add_ss(lo, _mm_shuffle_ps(lo, lo, 1));
-        ss = _mm_cvtss_f32(lo);
-        for (; i < D; i++) ss += in[i] * in[i];
-    }
-#else
-    for (int i = 0; i < D; i++) ss += in[i] * in[i];
-#endif
-    float s = 1.0f / sqrtf(ss / D + eps);
-    // Scale (SIMD-accelerated)
-#if defined(__AVX2__)
-    {
-        __m256 vs = _mm256_set1_ps(s);
-        int i = 0;
-        if (w) {
-            for (; i + 7 < D; i += 8)
-                _mm256_storeu_ps(out + i,
-                                 _mm256_mul_ps(_mm256_mul_ps(_mm256_loadu_ps(in + i), vs), _mm256_loadu_ps(w + i)));
-        } else {
-            for (; i + 7 < D; i += 8) _mm256_storeu_ps(out + i, _mm256_mul_ps(_mm256_loadu_ps(in + i), vs));
-        }
-        for (; i < D; i++) out[i] = in[i] * s * (w ? w[i] : 1.0f);
-    }
-#else
-    for (int i = 0; i < D; i++) out[i] = in[i] * s * (w ? w[i] : 1.0f);
-#endif
-}
-
-// ---------------------------------------------------------------------------
 // Linear (matrix-vector multiply)
 // ---------------------------------------------------------------------------
 // Convention: out[o] = sum_i(w[o*in_dim+i] * in[i]) + b[o]
@@ -444,19 +374,6 @@ static inline void linear_cpu_mt(const float * in, float * out, int in_dim, int 
     }
     run(0, std::min(out_dim, chunk));
     for (auto & th : pool) th.join();
-}
-
-// ---------------------------------------------------------------------------
-// Linear batched (matrix-matrix multiply): N tokens at once
-// ---------------------------------------------------------------------------
-// in:  [N, in_dim] row-major    (N rows of in_dim)
-// out: [N, out_dim] row-major   (N rows of out_dim)
-// w:   [out_dim, in_dim] row-major
-// Equivalent to: for (i=0..N-1) linear_cpu(in+i*in_dim, out+i*out_dim, ...)
-
-static inline void linear_batch_cpu(const float * in, float * out, int N, int in_dim, int out_dim, const float * w,
-                                    const float * b) {
-    for (int i = 0; i < N; i++) linear_cpu(in + i * in_dim, out + i * out_dim, in_dim, out_dim, w, b);
 }
 
 // ---------------------------------------------------------------------------
@@ -1137,21 +1054,6 @@ static inline float gelu(float x) {
     return 0.5f * x * (1.0f + tanhf(0.7978845608f * (x + 0.044715f * x * x * x)));
 }
 
-// GELU (exact, erf-based) — matches PyTorch nn.GELU() default
-static inline float gelu_erf(float x) {
-    return 0.5f * x * (1.0f + erff(x / sqrtf(2.0f)));
-}
-
-// SiLU (Swish): x * sigmoid(x)
-static inline float silu(float x) {
-    return x / (1.0f + expf(-x));
-}
-
-// In-place SiLU over a buffer
-static inline void silu_inplace(float * data, int n) {
-    for (int i = 0; i < n; i++) data[i] = data[i] / (1.0f + expf(-data[i]));
-}
-
 // In-place softmax (SIMD-accelerated max, normalize)
 static inline void softmax(float * data, int n) {
     // Max (SIMD-accelerated)
@@ -1209,75 +1111,10 @@ static inline void hardswish_inplace(float * data, int n) {
     }
 }
 
-// ReLU6: clamp to [0, 6]
-static inline void relu6_inplace(float * data, int n) {
-    for (int i = 0; i < n; i++) {
-        if (data[i] < 0.0f)
-            data[i] = 0.0f;
-        else if (data[i] > 6.0f)
-            data[i] = 6.0f;
-    }
-}
-
 // ReLU: max(0, x)
 static inline void relu_inplace(float * data, int n) {
     for (int i = 0; i < n; i++)
         if (data[i] < 0.0f) data[i] = 0.0f;
-}
-
-// ---------------------------------------------------------------------------
-// Pooling helpers (NCHW layout, explicit output dims for ceil_mode compat)
-// ---------------------------------------------------------------------------
-
-// MaxPool2d: sliding window max, out[c,oy,ox] = max of window starting at (oy*s, ox*s).
-// Caller pre-computes oh/ow (handles ceil_mode by expanding them before calling).
-static inline void maxpool2d_cpu(const float * in, int ch, int ih, int iw, int k, int s, float * out, int oh, int ow) {
-    for (int c = 0; c < ch; c++)
-        for (int y = 0; y < oh; y++)
-            for (int x = 0; x < ow; x++) {
-                float mx = -1e30f;
-                for (int ky = 0; ky < k; ky++)
-                    for (int kx = 0; kx < k; kx++) {
-                        int iy = y * s + ky, ix = x * s + kx;
-                        if (iy < ih && ix < iw) {
-                            float v = in[c * ih * iw + iy * iw + ix];
-                            if (v > mx) mx = v;
-                        }
-                    }
-                out[c * oh * ow + y * ow + x] = mx;
-            }
-}
-
-// AvgPool2d: counts only valid (in-bounds) pixels in the denominator.
-static inline void avgpool2d_cpu(const float * in, int ch, int ih, int iw, int k, int s, float * out, int oh, int ow) {
-    for (int c = 0; c < ch; c++)
-        for (int y = 0; y < oh; y++)
-            for (int x = 0; x < ow; x++) {
-                float sum = 0;
-                int cnt = 0;
-                for (int ky = 0; ky < k; ky++)
-                    for (int kx = 0; kx < k; kx++) {
-                        int iy = y * s + ky, ix = x * s + kx;
-                        if (iy < ih && ix < iw) {
-                            sum += in[c * ih * iw + iy * iw + ix];
-                            cnt++;
-                        }
-                    }
-                out[c * oh * ow + y * ow + x] = cnt > 0 ? sum / cnt : 0.0f;
-            }
-}
-
-// ---------------------------------------------------------------------------
-// BatchNorm (folded, i.e. scale+offset applied in-place)
-// ---------------------------------------------------------------------------
-// data layout: (ch, sp) = CHW flattened. Applies data[c,i] = data[c,i]*scale[c] + offset[c].
-
-static inline void apply_bn_cpu(float * data, int ch, int sp, const float * scale, const float * offset) {
-    for (int c = 0; c < ch; c++) {
-        float s = scale[c], o = offset[c];
-        float * row = data + c * sp;
-        for (int i = 0; i < sp; i++) row[i] = row[i] * s + o;
-    }
 }
 
 // Multi-head attention (single query position)
@@ -1353,38 +1190,6 @@ static inline void mha_1q_cpu(const float * q, const float * k, const float * v,
         }
 #endif
     }
-}
-
-// ---------------------------------------------------------------------------
-// Otsu threshold — interclass variance maximization
-// ---------------------------------------------------------------------------
-// Returns the optimal uint8 threshold for binarizing a grayscale image.
-// Shared across table_parse, cc_detect, classical_preproc, dewarp.
-
-static inline uint8_t otsu_threshold(const uint8_t * gray, int n) {
-    int hist[256] = {};
-    for (int i = 0; i < n; i++) hist[gray[i]]++;
-    double sum = 0;
-    for (int i = 0; i < 256; i++) sum += i * hist[i];
-    double sumB = 0;
-    int wB = 0;
-    double max_var = 0;
-    int best_t = 128;
-    for (int t = 0; t < 256; t++) {
-        wB += hist[t];
-        if (wB == 0) continue;
-        int wF = n - wB;
-        if (wF == 0) break;
-        sumB += t * hist[t];
-        double mB = sumB / wB;
-        double mF = (sum - sumB) / wF;
-        double var = (double)wB * wF * (mB - mF) * (mB - mF);
-        if (var > max_var) {
-            max_var = var;
-            best_t = t;
-        }
-    }
-    return (uint8_t)best_t;
 }
 
 } // namespace core_cpu

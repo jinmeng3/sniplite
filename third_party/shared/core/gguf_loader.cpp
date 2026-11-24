@@ -1,4 +1,4 @@
-// src/core/gguf_loader.cpp — implementation of core_gguf:: helpers.
+// third_party/shared/core/gguf_loader.cpp — implementation of core_gguf:: helpers.
 // See gguf_loader.h for the interface contract.
 
 #include "gguf_loader.h"
@@ -21,7 +21,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include "env_gate.h"
+#include "core/env_gate.h"
 #endif
 
 // ── Metal residency-set teardown guard (ggml v0.10.0 regression) ────────────

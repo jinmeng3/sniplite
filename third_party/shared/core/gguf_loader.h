@@ -1,4 +1,4 @@
-// src/core/gguf_loader.h — shared GGUF weight loading scaffolding.
+// third_party/shared/core/gguf_loader.h — shared GGUF weight loading scaffolding.
 //
 // Every model implementation in src/ has its own copy of the "open a
 // GGUF file, read its hyperparameters, allocate a backend buffer, mmap

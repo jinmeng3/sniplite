@@ -22,19 +22,19 @@ set "OCR_PIXEL_KERNELS=-DSNIPLITE_OCR_PREPROCESS build\pixel_ops.o src\ocr\ocr_p
 rem Build generic CPU, AVX2 CPU, and Vulkan-first formula inference engines.
 for %%n in (ggml ggml-base ggml-cpu) do dlltool -d third_party\formulanet\ggml\%%n.def -l build\%%n-import.a || exit /b 1
 g++ -std=c++17 -O3 -DNOMINMAX -DWIN32_LEAN_AND_MEAN %INFERENCE_KERNELS% ^
- -ffunction-sections -fdata-sections -fno-ident -Ithird_party/formulanet -Ithird_party/formulanet/ggml ^
+ -ffunction-sections -fdata-sections -fno-ident -Ithird_party/shared -Ithird_party/formulanet -Ithird_party/formulanet/ggml ^
  -shared -static-libgcc -static-libstdc++ -s -Wl,--gc-sections,--exclude-all-symbols,--nxcompat,--dynamicbase,--high-entropy-va,--no-insert-timestamp ^
- -o build\sniplite_formula.dll third_party\formulanet\ppformulanet_ocr.cpp third_party\formulanet\core\gguf_loader.cpp ^
+ -o build\sniplite_formula.dll third_party\formulanet\ppformulanet_ocr.cpp third_party\shared\core\gguf_loader.cpp ^
  third_party\formulanet\formula.def build\ggml-import.a build\ggml-base-import.a build\ggml-cpu-import.a || exit /b 1
 g++ -std=c++17 -O3 -mavx2 -mfma -mf16c -DNOMINMAX -DWIN32_LEAN_AND_MEAN %INFERENCE_KERNELS% ^
- -ffunction-sections -fdata-sections -fno-ident -Ithird_party/formulanet -Ithird_party/formulanet/ggml ^
+ -ffunction-sections -fdata-sections -fno-ident -Ithird_party/shared -Ithird_party/formulanet -Ithird_party/formulanet/ggml ^
  -shared -static-libgcc -static-libstdc++ -s -Wl,--gc-sections,--exclude-all-symbols,--nxcompat,--dynamicbase,--high-entropy-va,--no-insert-timestamp ^
- -o build\sniplite_formula_avx2.dll third_party\formulanet\ppformulanet_ocr.cpp third_party\formulanet\core\gguf_loader.cpp ^
+ -o build\sniplite_formula_avx2.dll third_party\formulanet\ppformulanet_ocr.cpp third_party\shared\core\gguf_loader.cpp ^
  third_party\formulanet\formula.def build\ggml-import.a build\ggml-base-import.a build\ggml-cpu-import.a || exit /b 1
 g++ -std=c++17 -O3 -DNOMINMAX -DWIN32_LEAN_AND_MEAN -DSNIPLITE_VULKAN_PREFERRED %INFERENCE_KERNELS% ^
- -ffunction-sections -fdata-sections -fno-ident -Ithird_party/formulanet -Ithird_party/formulanet/ggml ^
+ -ffunction-sections -fdata-sections -fno-ident -Ithird_party/shared -Ithird_party/formulanet -Ithird_party/formulanet/ggml ^
  -shared -static-libgcc -static-libstdc++ -s -Wl,--gc-sections,--exclude-all-symbols,--nxcompat,--dynamicbase,--high-entropy-va,--no-insert-timestamp ^
- -o build\sniplite_formula_vulkan.dll third_party\formulanet\ppformulanet_ocr.cpp third_party\formulanet\core\gguf_loader.cpp ^
+ -o build\sniplite_formula_vulkan.dll third_party\formulanet\ppformulanet_ocr.cpp third_party\shared\core\gguf_loader.cpp ^
  third_party\formulanet\formula.def build\ggml-import.a build\ggml-base-import.a build\ggml-cpu-import.a || exit /b 1
 if exist build\formula\texo-distill-q8_0.gguf (
  copy /y build\sniplite_formula.dll build\formula\sniplite_formula.dll >nul || exit /b 1
@@ -43,27 +43,27 @@ if exist build\formula\texo-distill-q8_0.gguf (
 rem Build generic CPU, AVX2 CPU, and Vulkan-first OCR engines with corrected recognition strides.
 g++ -std=c++17 -O3 -DNOMINMAX -DWIN32_LEAN_AND_MEAN -DSNIPLITE_OCR_BUILD -DSNIPLITE_CPU_ONLY %INFERENCE_KERNELS% %OCR_PIXEL_KERNELS% ^
  -ffunction-sections -fdata-sections -fno-ident -Ithird_party/ppocrv6 ^
- -Ithird_party/formulanet -Ithird_party/formulanet/core -Ithird_party/formulanet/ggml ^
+ -Ithird_party/shared -Ithird_party/formulanet -Ithird_party/formulanet/core -Ithird_party/formulanet/ggml ^
  -shared -static-libgcc -static-libstdc++ -s -Wl,--gc-sections,--exclude-all-symbols,--nxcompat,--dynamicbase,--high-entropy-va,--no-insert-timestamp ^
  -o build\sniplite_ocr.dll src\ocr\ocr_engine.cpp third_party\ppocrv6\ppocrv6_ocr.cpp ^
  third_party\ppocrv6\ppocrv6_det.cpp third_party\ppocrv6\ocr_detect.cpp third_party\ppocrv6\ocr_crop.cpp ^
- third_party\ppocrv6\text_angle.cpp third_party\formulanet\core\gguf_loader.cpp src\ocr\ocr_engine.def ^
+ third_party\ppocrv6\text_angle.cpp third_party\shared\core\gguf_loader.cpp src\ocr\ocr_engine.def ^
  build\ggml-import.a build\ggml-base-import.a build\ggml-cpu-import.a || exit /b 1
 g++ -std=c++17 -O3 -mavx2 -mfma -mf16c -DNOMINMAX -DWIN32_LEAN_AND_MEAN -DSNIPLITE_OCR_BUILD -DSNIPLITE_CPU_ONLY %INFERENCE_KERNELS% %OCR_PIXEL_KERNELS% ^
  -ffunction-sections -fdata-sections -fno-ident -Ithird_party/ppocrv6 ^
- -Ithird_party/formulanet -Ithird_party/formulanet/core -Ithird_party/formulanet/ggml ^
+ -Ithird_party/shared -Ithird_party/formulanet -Ithird_party/formulanet/core -Ithird_party/formulanet/ggml ^
  -shared -static-libgcc -static-libstdc++ -s -Wl,--gc-sections,--exclude-all-symbols,--nxcompat,--dynamicbase,--high-entropy-va,--no-insert-timestamp ^
  -o build\sniplite_ocr_avx2.dll src\ocr\ocr_engine.cpp third_party\ppocrv6\ppocrv6_ocr.cpp ^
  third_party\ppocrv6\ppocrv6_det.cpp third_party\ppocrv6\ocr_detect.cpp third_party\ppocrv6\ocr_crop.cpp ^
- third_party\ppocrv6\text_angle.cpp third_party\formulanet\core\gguf_loader.cpp src\ocr\ocr_engine.def ^
+ third_party\ppocrv6\text_angle.cpp third_party\shared\core\gguf_loader.cpp src\ocr\ocr_engine.def ^
  build\ggml-import.a build\ggml-base-import.a build\ggml-cpu-import.a || exit /b 1
 g++ -std=c++17 -O3 -DNOMINMAX -DWIN32_LEAN_AND_MEAN -DSNIPLITE_OCR_BUILD -DSNIPLITE_VULKAN_PREFERRED %INFERENCE_KERNELS% %OCR_PIXEL_KERNELS% ^
  -ffunction-sections -fdata-sections -fno-ident -Ithird_party/ppocrv6 ^
- -Ithird_party/formulanet -Ithird_party/formulanet/core -Ithird_party/formulanet/ggml ^
+ -Ithird_party/shared -Ithird_party/formulanet -Ithird_party/formulanet/core -Ithird_party/formulanet/ggml ^
  -shared -static-libgcc -static-libstdc++ -s -Wl,--gc-sections,--exclude-all-symbols,--nxcompat,--dynamicbase,--high-entropy-va,--no-insert-timestamp ^
  -o build\sniplite_ocr_vulkan.dll src\ocr\ocr_engine.cpp third_party\ppocrv6\ppocrv6_ocr.cpp ^
  third_party\ppocrv6\ppocrv6_det.cpp third_party\ppocrv6\ocr_detect.cpp third_party\ppocrv6\ocr_crop.cpp ^
- third_party\ppocrv6\text_angle.cpp third_party\formulanet\core\gguf_loader.cpp src\ocr\ocr_engine.def ^
+ third_party\ppocrv6\text_angle.cpp third_party\shared\core\gguf_loader.cpp src\ocr\ocr_engine.def ^
  build\ggml-import.a build\ggml-base-import.a build\ggml-cpu-import.a || exit /b 1
 if exist build\ocr\PP-OCRv6_tiny_rec-f16.gguf (
  copy /y build\sniplite_ocr.dll build\ocr\sniplite_ocr.dll >nul || exit /b 1
