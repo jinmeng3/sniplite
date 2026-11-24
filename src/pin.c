@@ -17,10 +17,15 @@
 
 #define TIMER_LABEL 1
 #define TIMER_REST 2 /* the wheel has stopped zooming */
+#define TIMER_RACK_TRACK 3
+#define RACK_WINDOW_H 264
+#define RACK_EDGE_MS 300
+#define RACK_HIDE_MS 500
+#define RACK_ANIM_MS 220
+#define RACK_PEEK_MS 2500
 #define WM_APP_OUTLINE (WM_APP + 7)
 enum { CM_COPY = 1, CM_SAVE, CM_OCR, CM_RESET, CM_TOP_ALL, CM_TOP, CM_CLOSE, CM_CLOSE_ALL, CM_SETTINGS, CM_RACK, CM_STORE };
-enum { RACK_PAD = 16, RACK_STEP = 112, RACK_CARD = 104, RACK_CARD_H = 124, RACK_Y = 52, RACK_FOOT = 40 };
-
+enum { RACK_PAD = 16, RACK_STEP = 152, RACK_CARD = 128, RACK_CARD_H = 154 };
 typedef struct Pin {
     HWND hwnd; /* NULL: the window is gone, a save still holds the picture */
     Img img;
@@ -56,10 +61,18 @@ static struct {
     int rack_hover, rack_pressed, rack_dpi;
     bool rack_tracking;
     Img rack_img;
+    Img rack_card_img;
     HFONT rack_font, rack_small, rack_hint;
+    HPEN rack_rope_pen;
     bool rack_reorder;
     POINT rack_down_pt;
     int rack_selected;
+    HMONITOR rack_monitor;
+    RECT rack_screen, rack_work;
+    int rack_open_x, rack_open_y, rack_hidden_y;
+    int rack_width, rack_height, rack_current_y, rack_anim_from;
+    ULONGLONG rack_edge_since, rack_away_since, rack_peek_until, rack_anim_start;
+    bool rack_revealed, rack_global_hidden;
 } P;
 
 /* Paint while cloaked. WM_PAINT can finish before DWM picks up the GDI
@@ -167,16 +180,71 @@ static int rack_remove(Pin *p)
 
 static int rack_slots(void)
 {
-    RECT r;
-    GetClientRect(P.rack, &r);
+    RECT r = {0};
+    if (P.rack)
+        GetClientRect(P.rack, &r);
     return MAXI(1, (r.right - rack_px(2 * RACK_PAD)) / rack_px(RACK_STEP));
 }
-static int rack_card_top(void)
+
+static int rack_visible_slots(void)
+{
+    return MINI(rack_slots(), MAXI(0, rack_count() - P.rack_first));
+}
+
+static int rack_slot_x(int slot)
 {
     RECT r;
     GetClientRect(P.rack, &r);
-    int top = rack_px(RACK_Y), bottom = r.bottom - rack_px(RACK_FOOT);
-    return top + MAXI(0, (bottom - top - rack_px(RACK_CARD_H)) / 2);
+    int visible = MAXI(1, rack_visible_slots());
+    int group = rack_px(RACK_CARD + (visible - 1) * RACK_STEP);
+    return (r.right - group) / 2 + rack_px(slot * RACK_STEP);
+}
+
+static void rack_rope_bounds(int width, int *left, int *right)
+{
+    int visible = MAXI(1, rack_visible_slots());
+    int group = rack_px(RACK_CARD + (visible - 1) * RACK_STEP);
+    int margin = rack_px(28);
+    *left = MAXI(0, (width - group) / 2 - margin);
+    *right = MINI(width, (width + group) / 2 + margin);
+    if (*right <= *left) {
+        *left = 0;
+        *right = width;
+    }
+}
+
+static int rack_rope_y(int x, int width)
+{
+    int left, right;
+    rack_rope_bounds(width, &left, &right);
+    float t = right > left ? (float)(x - left) / (float)(right - left) : 0.f;
+    if (t < 0.f)
+        t = 0.f;
+    else if (t > 1.f)
+        t = 1.f;
+    float sag = 4.f * t * (1.f - t) * rack_px(28);
+    int base = P.rack_bottom ? rack_px(RACK_WINDOW_H - 18) : rack_px(18);
+    return base + (P.rack_bottom ? -(int)lroundf(sag) : (int)lroundf(sag));
+}
+
+static RECT rack_surface_rect(int width, int height)
+{
+    int visible = rack_visible_slots();
+    int group = visible ? rack_px(RACK_CARD + (visible - 1) * RACK_STEP) : rack_px(320);
+    int margin = rack_px(28);
+    return (RECT){MAXI(rack_px(8), (width - group) / 2 - margin), rack_px(8),
+                  MINI(width - rack_px(8), (width + group) / 2 + margin), height - rack_px(8)};
+}
+
+static int rack_card_top(int x, int width)
+{
+    int rope = rack_rope_y(x, width);
+    return P.rack_bottom ? rope - rack_px(30 + RACK_CARD_H) : rope + rack_px(18);
+}
+static int rack_card_y(int x, int width, int index)
+{
+    static const int stagger[] = {-8, 3, -4, 8, 0};
+    return rack_card_top(x, width) + rack_px(stagger[index % COUNTOF(stagger)]);
 }
 
 static void rack_refresh(void)
@@ -209,11 +277,12 @@ static int rack_target(POINT pt)
         if (rect_has(&b, pt.x, pt.y))
             return i;
     }
-    int card_top = rack_card_top();
-    if (pt.x >= rack_px(RACK_PAD) && pt.y >= card_top && pt.y < card_top + rack_px(RACK_CARD_H)) {
-        int slot = (pt.x - rack_px(RACK_PAD)) / rack_px(RACK_STEP);
-        int offset = (pt.x - rack_px(RACK_PAD)) % rack_px(RACK_STEP);
-        if (slot < rack_slots() && offset < rack_px(RACK_CARD))
+    int slots = rack_visible_slots();
+    for (int slot = 0; slot < slots; slot++) {
+        int x = rack_slot_x(slot), index = P.rack_first + slot;
+        int y = rack_card_y(x + rack_px(RACK_CARD / 2), r.right, index);
+        RECT card = {x, y, x + rack_px(RACK_CARD), y + rack_px(RACK_CARD_H)};
+        if (rect_has(&card, pt.x, pt.y))
             return slot + 3;
     }
     return -1;
@@ -230,7 +299,8 @@ static void rack_invalidate_target(HWND h, int target)
         RECT client;
         GetClientRect(h, &client);
         int slot = target - 3;
-        int x = rack_px(RACK_PAD + slot * RACK_STEP), y = rack_card_top();
+        int index = P.rack_first + slot;
+        int x = rack_slot_x(slot), y = rack_card_y(x + rack_px(RACK_CARD / 2), client.right, index);
         r = (RECT){x, y, x + rack_px(RACK_CARD), y + rack_px(RACK_CARD_H)};
     }
     InvalidateRect(h, &r, FALSE);
@@ -311,10 +381,155 @@ static void rack_restore(Pin *p)
     rack_refresh();
 }
 
+static bool rack_edge_hot(POINT pt, HMONITOR *monitor)
+{
+    HMONITOR hmon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi = {sizeof mi};
+    if (!GetMonitorInfoW(hmon, &mi))
+        return false;
+    if (monitor)
+        *monitor = hmon;
+    int top = MAXI(4, mi.rcWork.top - mi.rcMonitor.top + 2);
+    int bottom = MAXI(4, mi.rcMonitor.bottom - mi.rcWork.bottom + 2);
+    return P.rack_bottom ? pt.y >= mi.rcMonitor.bottom - bottom : pt.y < mi.rcMonitor.top + top;
+}
+
+static void rack_layout_monitor(HMONITOR monitor)
+{
+    MONITORINFO mi = {sizeof mi};
+    if (!monitor || !GetMonitorInfoW(monitor, &mi))
+        return;
+    POINT at = {mi.rcMonitor.left + (mi.rcMonitor.right - mi.rcMonitor.left) / 2,
+                mi.rcMonitor.top + (mi.rcMonitor.bottom - mi.rcMonitor.top) / 2};
+    float scale = dpi_scale_at(at);
+    int height = (int)lroundf(RACK_WINDOW_H * scale);
+    int width = mi.rcMonitor.right - mi.rcMonitor.left;
+    int open_y = P.rack_bottom ? mi.rcWork.bottom - height : mi.rcWork.top;
+    open_y = CLAMPI(open_y, mi.rcMonitor.top, MAXI(mi.rcMonitor.top, mi.rcMonitor.bottom - height));
+    P.rack_monitor = monitor;
+    P.rack_screen = mi.rcMonitor;
+    P.rack_work = mi.rcWork;
+    P.rack_open_x = mi.rcMonitor.left;
+    P.rack_open_y = open_y;
+    P.rack_hidden_y = P.rack_bottom ? mi.rcMonitor.bottom - (int)lroundf(4.f * scale)
+                                     : mi.rcMonitor.top - height + (int)lroundf(4.f * scale);
+    P.rack_width = width;
+    P.rack_height = height;
+    P.rack_current_y = P.rack_revealed ? P.rack_open_y : P.rack_hidden_y;
+    P.rack_anim_start = 0;
+    if (P.rack) {
+        P.rack_dpi = 0;
+        SetWindowPos(P.rack, NULL, P.rack_open_x, P.rack_current_y, width, height,
+                     SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOSENDCHANGING);
+        rack_refresh();
+    }
+}
+
+static void rack_set_revealed(bool revealed, bool peek)
+{
+    if (!P.rack)
+        return;
+    ULONGLONG now = GetTickCount64();
+    if (P.rack_revealed == revealed) {
+        if (revealed && peek)
+            P.rack_peek_until = now + RACK_PEEK_MS;
+        return;
+    }
+    P.rack_revealed = revealed;
+    P.rack_anim_from = P.rack_current_y;
+    P.rack_anim_start = now;
+    P.rack_edge_since = P.rack_away_since = 0;
+    if (revealed && peek)
+        P.rack_peek_until = now + RACK_PEEK_MS;
+    if (!revealed) {
+        P.rack_peek_until = 0;
+        P.rack_hover = P.rack_pressed = -1;
+        P.rack_tracking = false;
+        if (GetCapture() == P.rack)
+            ReleaseCapture();
+        InvalidateRect(P.rack, NULL, FALSE);
+    }
+}
+
+static void rack_pass_through(bool pass)
+{
+    if (!P.rack)
+        return;
+    LONG_PTR style = GetWindowLongPtrW(P.rack, GWL_EXSTYLE);
+    LONG_PTR changed = pass ? style | WS_EX_TRANSPARENT : style & ~WS_EX_TRANSPARENT;
+    if (style != changed)
+        SetWindowLongPtrW(P.rack, GWL_EXSTYLE, changed);
+}
+
+static void rack_track(void)
+{
+    if (!P.rack || !P.rack_open || P.rack_global_hidden)
+        return;
+    ULONGLONG now = GetTickCount64();
+    POINT cursor;
+    GetCursorPos(&cursor);
+    HMONITOR edge_monitor = NULL;
+    bool edge = rack_edge_hot(cursor, &edge_monitor) && rack_count() > 0;
+    if (edge) {
+        if (edge_monitor != P.rack_monitor)
+            rack_layout_monitor(edge_monitor);
+        if (!P.rack_edge_since)
+            P.rack_edge_since = now;
+        if (!P.rack_revealed && now - P.rack_edge_since >= RACK_EDGE_MS)
+            rack_set_revealed(true, false);
+    } else {
+        P.rack_edge_since = 0;
+    }
+    if (P.rack_peek_until && now >= P.rack_peek_until)
+        P.rack_peek_until = 0;
+    if (P.rack_peek_until && !P.rack_revealed)
+        rack_set_revealed(true, false);
+
+    int target = -1;
+    if (P.rack_revealed) {
+        POINT local = cursor;
+        ScreenToClient(P.rack, &local);
+        target = rack_target(local);
+    }
+    bool over_control = target >= 0;
+    rack_pass_through(!over_control && !P.rack_down);
+    if (over_control) {
+        P.rack_away_since = 0;
+    } else if (!edge && !P.rack_peek_until) {
+        if (!P.rack_away_since)
+            P.rack_away_since = now;
+        if (P.rack_revealed && now - P.rack_away_since >= RACK_HIDE_MS)
+            rack_set_revealed(false, false);
+    }
+
+    int target_y = P.rack_revealed ? P.rack_open_y : P.rack_hidden_y;
+    if (P.rack_current_y != target_y) {
+        if (!P.rack_anim_start) {
+            P.rack_anim_from = P.rack_current_y;
+            P.rack_anim_start = now;
+        }
+        float t = fminf(1.f, (float)(now - P.rack_anim_start) / RACK_ANIM_MS);
+        float eased = 1.f - (1.f - t) * (1.f - t) * (1.f - t);
+        int y = P.rack_anim_from + (int)lroundf((target_y - P.rack_anim_from) * eased);
+        P.rack_current_y = y;
+        SetWindowPos(P.rack, NULL, P.rack_open_x, y, 0, 0,
+                     SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOSENDCHANGING);
+        if (t >= 1.f)
+            P.rack_anim_start = 0;
+    }
+}
+
 static void rack_dismiss(void)
 {
     P.rack_open = false;
-    ShowWindow(P.rack, SW_HIDE);
+    P.rack_revealed = false;
+    P.rack_global_hidden = false;
+    P.rack_peek_until = P.rack_anim_start = 0;
+    if (P.rack) {
+        KillTimer(P.rack, TIMER_RACK_TRACK);
+        rack_pass_through(true);
+        ShowWindow(P.rack, SW_HIDE);
+    }
     for (Pin *p = P.list; p; p = p->next)
         if (p->stored)
             rack_restore(p);
@@ -331,6 +546,46 @@ static void rack_box(HDC dc, RECT r, COLORREF fill, COLORREF edge, int radius)
     SelectObject(dc, brush);
 }
 
+
+
+static void rack_rope_stroke(HDC dc, int width, int offset, COLORREF color)
+{
+    int left, right;
+    rack_rope_bounds(width, &left, &right);
+    int span = right - left;
+    if (span <= 0)
+        return;
+    int base = P.rack_bottom ? rack_px(RACK_WINDOW_H - 18) : rack_px(18);
+    int direction = P.rack_bottom ? -1 : 1;
+    int control = rack_px(28) * 4 / 3;
+    int y = base + offset, cy = y + direction * control;
+    POINT curve[] = {{left, y}, {left + span / 3, cy}, {right - span / 3, cy}, {right, y}};
+    HGDIOBJ old = NULL;
+    if (offset == 0 && P.rack_rope_pen)
+        old = SelectObject(dc, P.rack_rope_pen);
+    else
+        SetDCPenColor(dc, color);
+    PolyBezier(dc, curve, COUNTOF(curve));
+    if (old)
+        SelectObject(dc, old);
+}
+
+static void rack_card_caption(HDC dc, RECT body, const WCHAR *text, bool active, int index)
+{
+    static const COLORREF accents[] = {RGB(76, 132, 211), RGB(67, 153, 130), RGB(211, 160, 68), RGB(222, 125, 82), RGB(179, 112, 155)};
+    RECT chip = {body.left + rack_px(22), body.bottom - rack_px(29), body.right - rack_px(22), body.bottom - rack_px(8)};
+    rack_box(dc, chip, active ? RGB(235, 242, 253) : RGB(244, 246, 249),
+             active ? RGB(211, 224, 246) : RGB(230, 233, 239), 7);
+    RECT marker = {chip.left - rack_px(9), chip.top + rack_px(5), chip.left - rack_px(5), chip.bottom - rack_px(5)};
+    COLORREF color = accents[index % COUNTOF(accents)];
+    rack_box(dc, marker, color, color, 3);
+    HGDIOBJ font = SelectObject(dc, P.rack_small);
+    SetTextColor(dc, active ? RGB(55, 99, 194) : RGB(91, 105, 124));
+    DrawTextW(dc, text, -1, &chip, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+    SelectObject(dc, font);
+}
+
+
 static void rack_paint(HWND h)
 {
     PAINTSTRUCT ps;
@@ -340,7 +595,10 @@ static void rack_paint(HWND h)
     if (P.rack_img.w != rc.right || P.rack_img.h != rc.bottom) {
         img_destroy(&P.rack_img);
         if (!img_create(&P.rack_img, rc.right, rc.bottom)) {
-            FillRect(target, &ps.rcPaint, GetSysColorBrush(COLOR_WINDOW));
+            HGDIOBJ brush = SelectObject(target, GetStockObject(DC_BRUSH));
+            SetDCBrushColor(target, RGB(1, 0, 1));
+            FillRect(target, &ps.rcPaint, GetStockObject(DC_BRUSH));
+            SelectObject(target, brush);
             EndPaint(h, &ps);
             return;
         }
@@ -356,6 +614,10 @@ static void rack_paint(HWND h)
                                    CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, T(FONT));
         P.rack_hint = CreateFontW(-rack_px(12), 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
                                   CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, T(FONT));
+        DeleteObject(P.rack_rope_pen);
+        LOGBRUSH rope_brush = {BS_SOLID, RGB(178, 150, 111), 0};
+        P.rack_rope_pen = ExtCreatePen(PS_GEOMETRIC | PS_SOLID | PS_ENDCAP_ROUND | PS_JOIN_ROUND,
+                                       rack_px(4), &rope_brush, 0, NULL);
         P.rack_dpi = dpi;
     }
     HDC dc = P.rack_img.dc;
@@ -365,24 +627,133 @@ static void rack_paint(HWND h)
     HGDIOBJ font = SelectObject(dc, P.rack_font);
     HGDIOBJ pen = SelectObject(dc, GetStockObject(DC_PEN));
     SetBkMode(dc, TRANSPARENT);
-    rack_box(dc, rc, RGB(250, 251, 253), RGB(216, 222, 231), 16);
+    SetDCBrushColor(dc, RGB(1, 0, 1));
+    FillRect(dc, &rc, GetStockObject(DC_BRUSH));
+
+    int count = rack_count(), slots = rack_visible_slots();
+    WCHAR text[64];
+    RECT tray = rack_surface_rect(rc.right, rc.bottom);
+    RECT tray_shadow = {tray.left, tray.top + rack_px(3), tray.right, tray.bottom + rack_px(3)};
+    rack_box(dc, tray_shadow, RGB(224, 228, 235), RGB(224, 228, 235), 20);
+    rack_box(dc, tray, RGB(248, 249, 252), RGB(225, 229, 236), 20);
+    if (count) {
+        rack_rope_stroke(dc, rc.right, rack_px(1), RGB(145, 123, 92));
+        rack_rope_stroke(dc, rc.right, 0, RGB(178, 150, 111));
+        rack_rope_stroke(dc, rc.right, -rack_px(1), RGB(238, 220, 190));
+    }
+
     RECT accent = {rack_px(16), rack_px(16), rack_px(20), rack_px(30)};
     rack_box(dc, accent, RGB(63, 111, 224), RGB(63, 111, 224), 4);
     RECT title = {rack_px(30), rack_px(8), rc.right - rack_px(100), rack_px(38)};
     SetTextColor(dc, RGB(39, 47, 63));
     DrawTextW(dc, T(RACK_TITLE), -1, &title, DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX);
-
-    int count = rack_count(), slots = rack_slots();
-    WCHAR text[64];
     wsprintfW(text, L"%d", count);
     RECT badge = {rc.right - rack_px(88), rack_px(12), rc.right - rack_px(48), rack_px(34)};
     rack_box(dc, badge, RGB(235, 240, 250), RGB(235, 240, 250), 8);
     SelectObject(dc, P.rack_small);
     SetTextColor(dc, RGB(69, 94, 146));
     DrawTextW(dc, text, -1, &badge, DT_SINGLELINE | DT_VCENTER | DT_CENTER);
-    SetDCPenColor(dc, RGB(232, 235, 241));
-    MoveToEx(dc, rack_px(16), rack_px(44), NULL);
-    LineTo(dc, rc.right - rack_px(16), rack_px(44));
+
+
+    if (!count) {
+        int cx = rc.right / 2, cy = rack_px(96);
+        RECT back = {cx - rack_px(14), cy - rack_px(14), cx + rack_px(12), cy + rack_px(6)};
+        RECT front = {cx - rack_px(8), cy - rack_px(8), cx + rack_px(18), cy + rack_px(12)};
+        rack_box(dc, back, RGB(239, 243, 251), RGB(194, 207, 230), 5);
+        rack_box(dc, front, RGB(250, 251, 253), RGB(124, 151, 201), 5);
+        SelectObject(dc, P.rack_hint);
+        RECT hint = {rack_px(20), rack_px(126), rc.right - rack_px(20), rc.bottom - rack_px(44)};
+        SetTextColor(dc, RGB(112, 123, 144));
+        DrawTextW(dc, T(RACK_HINT), -1, &hint, DT_CENTER | DT_WORDBREAK | DT_NOPREFIX);
+    } else {
+        SetStretchBltMode(dc, HALFTONE);
+        SetBrushOrgEx(dc, 0, 0, NULL);
+        int pad = rack_px(10), card_w = rack_px(RACK_CARD), card_h = rack_px(RACK_CARD_H);
+        int buffer_w = card_w + pad * 2, buffer_h = card_h + pad * 2;
+        bool buffered = P.rack_card_img.w == buffer_w && P.rack_card_img.h == buffer_h && P.rack_card_img.dc;
+        if (!buffered) {
+            img_destroy(&P.rack_card_img);
+            buffered = img_create(&P.rack_card_img, buffer_w, buffer_h);
+            if (!buffered)
+                img_destroy(&P.rack_card_img);
+        }
+        for (int slot = 0; slot < slots; slot++) {
+            int index = P.rack_first + slot;
+            Pin *p = P.rack_items[index];
+            int x = rack_slot_x(slot), cx = x + card_w / 2;
+            int y = rack_card_y(cx, rc.right, index);
+            bool hot = P.rack_hover == slot + 3, pressed = hot && P.rack_pressed == slot + 3;
+            bool selected = index == P.rack_selected;
+            RECT card = {x, y, x + card_w, y + card_h};
+            int rope = rack_rope_y(cx, rc.right);
+            int edge = P.rack_bottom ? card.bottom : card.top;
+            SetDCPenColor(dc, RGB(228, 214, 192));
+            MoveToEx(dc, cx + rack_px(1), rope + rack_px(1), NULL);
+            LineTo(dc, cx + rack_px(1), edge + (P.rack_bottom ? -rack_px(5) : rack_px(5)));
+            SetDCPenColor(dc, RGB(143, 119, 86));
+            MoveToEx(dc, cx, rope, NULL);
+            LineTo(dc, cx, edge);
+            RECT peg = {cx - rack_px(7), P.rack_bottom ? edge - rack_px(12) : edge - rack_px(18),
+                        cx + rack_px(7), P.rack_bottom ? edge + rack_px(18) : edge + rack_px(12)};
+            rack_box(dc, peg, RGB(198, 153, 91), RGB(137, 96, 48), 5);
+            SetDCPenColor(dc, RGB(238, 207, 157));
+            MoveToEx(dc, cx - rack_px(3), peg.top + rack_px(3), NULL);
+            LineTo(dc, cx - rack_px(3), peg.bottom - rack_px(3));
+            SetDCPenColor(dc, RGB(112, 99, 83));
+            MoveToEx(dc, cx - rack_px(4), (peg.top + peg.bottom) / 2, NULL);
+            LineTo(dc, cx + rack_px(4), (peg.top + peg.bottom) / 2);
+            SetDCPenColor(dc, RGB(242, 237, 226));
+            MoveToEx(dc, cx - rack_px(3), (peg.top + peg.bottom) / 2 + rack_px(1), NULL);
+            LineTo(dc, cx + rack_px(3), (peg.top + peg.bottom) / 2 + rack_px(1));
+
+            COLORREF bg = pressed ? RGB(248, 250, 255) : RGB(255, 254, 251);
+            COLORREF card_edge = selected || hot ? RGB(104, 143, 224) : RGB(221, 220, 215);
+            if (buffered) {
+                HDC card_dc = P.rack_card_img.dc;
+                int card_saved = SaveDC(card_dc);
+                HGDIOBJ card_font = SelectObject(card_dc, P.rack_small);
+                SetBkMode(card_dc, TRANSPARENT);
+                SetDCBrushColor(card_dc, RGB(1, 0, 1));
+                RECT whole = {0, 0, buffer_w, buffer_h};
+                FillRect(card_dc, &whole, GetStockObject(DC_BRUSH));
+                RECT shadow = {pad + rack_px(2), pad + rack_px(5), pad + card_w + rack_px(2), pad + card_h + rack_px(5)};
+                rack_box(card_dc, shadow, RGB(207, 211, 218), RGB(207, 211, 218), 13);
+                RECT body = {pad, pad, pad + card_w, pad + card_h};
+                rack_box(card_dc, body, bg, card_edge, 13);
+                RECT photo = {body.left + rack_px(8), body.top + rack_px(8), body.right - rack_px(8), body.bottom - rack_px(42)};
+                rack_box(card_dc, photo, RGB(255, 255, 255), RGB(225, 228, 233), 7);
+                RECT image = {photo.left + rack_px(4), photo.top + rack_px(4), photo.right - rack_px(4), photo.bottom - rack_px(4)};
+                int maxw = image.right - image.left, maxh = image.bottom - image.top;
+                float fit = fminf((float)maxw / p->thumb.w, (float)maxh / p->thumb.h);
+                int w = MAXI(1, (int)lroundf(p->thumb.w * fit));
+                int height = MAXI(1, (int)lroundf(p->thumb.h * fit));
+                int dx = (image.left + image.right - w) / 2, dy = (image.top + image.bottom - height) / 2;
+                if (w == p->thumb.w && height == p->thumb.h)
+                    BitBlt(card_dc, dx, dy, w, height, p->thumb.dc, 0, 0, SRCCOPY);
+                else
+                    StretchBlt(card_dc, dx, dy, w, height, p->thumb.dc, 0, 0, p->thumb.w, p->thumb.h, SRCCOPY);
+                wsprintfW(text, L"%d \x00D7 %d", p->img.w, p->img.h);
+                rack_card_caption(card_dc, body, text, selected || hot, index);
+                if (card_saved)
+                    RestoreDC(card_dc, card_saved);
+                else
+                    SelectObject(card_dc, card_font);
+
+                BitBlt(dc, x - pad, y - pad, buffer_w, buffer_h, card_dc, 0, 0, SRCCOPY);
+            } else {
+                rack_box(dc, card, bg, card_edge, 13);
+                RECT photo = {card.left + rack_px(8), card.top + rack_px(8), card.right - rack_px(8), card.bottom - rack_px(42)};
+                rack_box(dc, photo, RGB(255, 255, 255), RGB(225, 228, 233), 7);
+                RECT image = {photo.left + rack_px(4), photo.top + rack_px(4), photo.right - rack_px(4), photo.bottom - rack_px(4)};
+                float fit = fminf((float)(image.right - image.left) / p->thumb.w, (float)(image.bottom - image.top) / p->thumb.h);
+                int w = MAXI(1, (int)lroundf(p->thumb.w * fit)), height = MAXI(1, (int)lroundf(p->thumb.h * fit));
+                int dx = (image.left + image.right - w) / 2, dy = (image.top + image.bottom - height) / 2;
+                StretchBlt(dc, dx, dy, w, height, p->thumb.dc, 0, 0, p->thumb.w, p->thumb.h, SRCCOPY);
+                wsprintfW(text, L"%d \x00D7 %d", p->img.w, p->img.h);
+                rack_card_caption(dc, card, text, selected || hot, index);
+            }
+        }
+    }
 
     for (int i = 0; i < 3; i++) {
         RECT b = rack_button(i);
@@ -401,48 +772,10 @@ static void rack_paint(HWND h)
             Polyline(dc, arrow, COUNTOF(arrow));
         }
     }
-
-    if (!count) {
-        int cx = rc.right / 2, cy = rack_px(96);
-        RECT back = {cx - rack_px(14), cy - rack_px(14), cx + rack_px(12), cy + rack_px(6)};
-        RECT front = {cx - rack_px(8), cy - rack_px(8), cx + rack_px(18), cy + rack_px(12)};
-        rack_box(dc, back, RGB(239, 243, 251), RGB(194, 207, 230), 5);
-        rack_box(dc, front, RGB(250, 251, 253), RGB(124, 151, 201), 5);
-        SelectObject(dc, P.rack_hint);
-        RECT hint = {rack_px(20), rack_px(126), rc.right - rack_px(20), rc.bottom - rack_px(44)};
-        SetTextColor(dc, RGB(112, 123, 144));
-        DrawTextW(dc, T(RACK_HINT), -1, &hint, DT_CENTER | DT_WORDBREAK | DT_NOPREFIX);
-    } else {
-        int card_y = rack_card_top();
-        SetStretchBltMode(dc, HALFTONE);
-        SetBrushOrgEx(dc, 0, 0, NULL);
-        for (int slot = 0; slot < slots && P.rack_first + slot < count; slot++) {
-            int index = P.rack_first + slot;
-            Pin *p = P.rack_items[index];
-            int x = rack_px(RACK_PAD + slot * RACK_STEP), y = card_y;
-            bool hot = P.rack_hover == slot + 3, pressed = hot && P.rack_pressed == slot + 3;
-            bool selected = index == P.rack_selected;
-            RECT card = {x, y, x + rack_px(RACK_CARD), y + rack_px(RACK_CARD_H)};
-            COLORREF bg = pressed ? RGB(236, 242, 255) : RGB(255, 255, 255);
-            COLORREF edge = selected || hot ? RGB(114, 151, 232) : RGB(225, 230, 239);
-            rack_box(dc, card, bg, edge, 10);
-            RECT preview = {x + rack_px(7), y + rack_px(7), card.right - rack_px(7), y + rack_px(91)};
-            rack_box(dc, preview, RGB(246, 248, 251), RGB(246, 248, 251), 6);
-            float fit = fminf((float)rack_px(84) / p->thumb.w, (float)rack_px(78) / p->thumb.h);
-            int w = MAXI(1, (int)lroundf(p->thumb.w * fit)), height = MAXI(1, (int)lroundf(p->thumb.h * fit));
-            int dx = (preview.left + preview.right - w) / 2, dy = (preview.top + preview.bottom - height) / 2;
-            if (w == p->thumb.w && height == p->thumb.h)
-                BitBlt(dc, dx, dy, w, height, p->thumb.dc, 0, 0, SRCCOPY);
-            else
-                StretchBlt(dc, dx, dy, w, height, p->thumb.dc, 0, 0, p->thumb.w, p->thumb.h, SRCCOPY);
-            RECT label = {x + rack_px(4), y + rack_px(96), card.right - rack_px(4), card.bottom - rack_px(5)};
-            wsprintfW(text, L"%d \x00D7 %d", p->img.w, p->img.h);
-            SetTextColor(dc, selected || hot ? RGB(55, 99, 194) : RGB(121, 132, 151));
-            DrawTextW(dc, text, -1, &label, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-        }
-    }
     SelectObject(dc, P.rack_small);
-    RECT footer = {rack_px(16), rc.bottom - rack_px(34), rc.right - rack_px(168), rc.bottom - rack_px(6)};
+    RECT help_chip = {rack_px(12), rc.bottom - rack_px(34), rack_px(252), rc.bottom - rack_px(6)};
+    rack_box(dc, help_chip, RGB(245, 247, 250), RGB(232, 235, 240), 8);
+    RECT footer = {help_chip.left + rack_px(8), help_chip.top, help_chip.right - rack_px(8), help_chip.bottom};
     SetTextColor(dc, RGB(132, 142, 160));
     DrawTextW(dc, T(RACK_HELP), -1, &footer, DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX);
     RECT page = {rc.right - rack_px(164), rc.bottom - rack_px(34), rc.right - rack_px(84), rc.bottom - rack_px(6)};
@@ -450,15 +783,16 @@ static void rack_paint(HWND h)
         wsprintfW(text, L"%d\x2013%d / %d", P.rack_first + 1, MINI(P.rack_first + slots, count), count);
     else
         lstrcpyW(text, L"0 / 0");
-    SetTextColor(dc, RGB(111, 123, 145));
+    rack_box(dc, page, RGB(245, 247, 250), RGB(232, 235, 240), 8);
+    SetTextColor(dc, RGB(91, 105, 124));
     DrawTextW(dc, text, -1, &page, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
     SelectObject(dc, pen);
     if (saved)
         RestoreDC(dc, saved);
     else
         SelectObject(dc, font);
-    BitBlt(target, ps.rcPaint.left, ps.rcPaint.top, ps.rcPaint.right - ps.rcPaint.left, ps.rcPaint.bottom - ps.rcPaint.top,
-           dc, ps.rcPaint.left, ps.rcPaint.top, SRCCOPY);
+    BitBlt(target, ps.rcPaint.left, ps.rcPaint.top, ps.rcPaint.right - ps.rcPaint.left,
+           ps.rcPaint.bottom - ps.rcPaint.top, dc, ps.rcPaint.left, ps.rcPaint.top, SRCCOPY);
     EndPaint(h, &ps);
 }
 
@@ -475,6 +809,12 @@ static LRESULT CALLBACK rack_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
         }
         break;
     case WM_PAINT: rack_paint(h); return 0;
+    case WM_TIMER:
+        if (wp == TIMER_RACK_TRACK) {
+            rack_track();
+            return 0;
+        }
+        break;
     case WM_NCCALCSIZE:
         if (wp)
             return 0;
@@ -528,7 +868,7 @@ static LRESULT CALLBACK rack_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
     case WM_NCHITTEST: {
         POINT pt = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
         ScreenToClient(h, &pt);
-        return pt.y < rack_px(44) && rack_target(pt) < 0 ? HTCAPTION : HTCLIENT;
+        return rack_target(pt) >= 0 ? HTCLIENT : HTTRANSPARENT;
     }
     case WM_LBUTTONDOWN: {
         POINT pt = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
@@ -586,12 +926,10 @@ static LRESULT CALLBACK rack_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
         P.rack_first += GET_WHEEL_DELTA_WPARAM(wp) > 0 ? -1 : 1;
         rack_refresh();
         return 0;
-    case WM_DPICHANGED: {
-        RECT *r = (RECT *)lp;
-        SetWindowPos(h, NULL, r->left, r->top, r->right - r->left, r->bottom - r->top, SWP_NOZORDER | SWP_NOACTIVATE);
+    case WM_DPICHANGED:
+        rack_layout_monitor(MonitorFromWindow(h, MONITOR_DEFAULTTONEAREST));
         rack_refresh();
         return 0;
-    }
     case WM_RBUTTONUP: {
         POINT pt = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
         Pin *p = rack_hit(pt);
@@ -631,8 +969,12 @@ static LRESULT CALLBACK rack_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
     }
     case WM_CLOSE: rack_dismiss(); return 0;
     case WM_NCDESTROY:
+        KillTimer(h, TIMER_RACK_TRACK);
         P.rack = P.rack_down = NULL;
+        DeleteObject(P.rack_rope_pen);
+        P.rack_rope_pen = NULL;
         img_destroy(&P.rack_img);
+        img_destroy(&P.rack_card_img);
         DeleteObject(P.rack_font);
         DeleteObject(P.rack_small);
         DeleteObject(P.rack_hint);
@@ -640,8 +982,10 @@ static LRESULT CALLBACK rack_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
         P.rack_dpi = 0;
         P.rack_hover = P.rack_pressed = -1;
         P.rack_tracking = false;
-        P.rack_open = false;
+        P.rack_open = P.rack_revealed = P.rack_global_hidden = false;
         P.rack_first = 0;
+        P.rack_monitor = NULL;
+        P.rack_anim_start = P.rack_peek_until = 0;
         break;
     }
     return DefWindowProcW(h, m, wp, lp);
@@ -649,31 +993,37 @@ static LRESULT CALLBACK rack_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
 
 static bool rack_show(HWND pin)
 {
+    RECT pin_rect = {0};
+    HMONITOR monitor = NULL;
+    if (pin && IsWindow(pin) && GetWindowRect(pin, &pin_rect))
+        monitor = MonitorFromRect(&pin_rect, MONITOR_DEFAULTTONEAREST);
+    else {
+        POINT cursor;
+        GetCursorPos(&cursor);
+        monitor = MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST);
+    }
+    if (!P.rack || monitor != P.rack_monitor)
+        rack_layout_monitor(monitor);
     if (!P.rack) {
-        RECT r;
-        GetWindowRect(pin, &r);
-        MONITORINFO mi = {sizeof mi};
-        GetMonitorInfoW(MonitorFromRect(&r, MONITOR_DEFAULTTONEAREST), &mi);
-        POINT at = {r.left, r.top};
-        float s = dpi_scale_at(at);
-        int w = MINI((int)lroundf(480.f * s), mi.rcWork.right - mi.rcWork.left - (int)lroundf(24.f * s));
-        int h = MINI((int)lroundf(224.f * s), mi.rcWork.bottom - mi.rcWork.top - (int)lroundf(24.f * s));
         P.rack_hover = P.rack_pressed = P.rack_selected = -1;
-        P.rack = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW, L"sniplite.rack", T(RACK_TITLE), WS_POPUP | WS_CAPTION,
-                                mi.rcWork.left + (mi.rcWork.right - mi.rcWork.left - w) / 2,
-                                P.rack_bottom ? mi.rcWork.bottom - (int)lroundf(12.f * s) - h : mi.rcWork.top + (int)lroundf(12.f * s),
-                                w, h, P.daemon, NULL, P.inst, NULL);
+        P.rack = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_LAYERED,
+                                L"sniplite.rack", T(RACK_TITLE), WS_POPUP,
+                                P.rack_open_x, P.rack_hidden_y, P.rack_width, P.rack_height,
+                                P.daemon, NULL, P.inst, NULL);
         if (!P.rack)
             return false;
-        MARGINS margins = {0, 0, 0, 1};
-        DwmExtendFrameIntoClientArea(P.rack, &margins);
-        DWORD corner = 2; /* DWMWCP_ROUND; ignored on Windows 10 */
-        DwmSetWindowAttribute(P.rack, DWMWA_WINDOW_CORNER_PREFERENCE, &corner, sizeof corner);
-        SetWindowPos(P.rack, NULL, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+        SetLayeredWindowAttributes(P.rack, RGB(1, 0, 1), 0, LWA_COLORKEY);
+        SetWindowPos(P.rack, HWND_TOPMOST, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED);
     }
     P.rack_open = true;
+    P.rack_global_hidden = false;
+    rack_pass_through(true);
     ShowWindow(P.rack, SW_SHOWNOACTIVATE);
     SetWindowPos(P.rack, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    SetTimer(P.rack, TIMER_RACK_TRACK, 16, NULL);
+    P.rack_peek_until = GetTickCount64() + RACK_PEEK_MS;
+    rack_set_revealed(true, false);
     rack_refresh();
     return true;
 }
@@ -681,20 +1031,10 @@ static bool rack_show(HWND pin)
 void pin_rack_bottom(bool bottom)
 {
     P.rack_bottom = bottom;
-    if (!P.rack || !IsWindow(P.rack))
-        return;
-    RECT r;
-    if (!GetWindowRect(P.rack, &r))
-        return;
-    MONITORINFO mi = {sizeof mi};
-    if (!GetMonitorInfoW(MonitorFromRect(&r, MONITOR_DEFAULTTONEAREST), &mi))
-        return;
-    int w = r.right - r.left, h = r.bottom - r.top;
-    int margin = MulDiv(12, (int)GetDpiForWindow(P.rack), 96);
-    int x = mi.rcWork.left + (mi.rcWork.right - mi.rcWork.left - w) / 2;
-    int y = bottom ? mi.rcWork.bottom - margin - h : mi.rcWork.top + margin;
-    SetWindowPos(P.rack, NULL, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    if (P.rack && IsWindow(P.rack))
+        rack_layout_monitor(P.rack_monitor);
 }
+
 
 static void rack_store(Pin *p, RECT restore)
 {
@@ -706,7 +1046,7 @@ static void rack_store(Pin *p, RECT restore)
         at += q->stored;
     if (q != p || !rack_reserve(P.rack_count + 1))
         return;
-    float fit = fminf((float)rack_px(80) / p->img.w, (float)rack_px(56) / p->img.h);
+    float fit = fminf((float)rack_px(112) / p->img.w, (float)rack_px(90) / p->img.h);
     int w = MAXI(1, (int)lroundf(p->img.w * fit)), h = MAXI(1, (int)lroundf(p->img.h * fit));
     if (!img_create(&p->thumb, w, h))
         return;
@@ -1207,7 +1547,7 @@ void pin_also_save(void) { also_save(P.list->img.px, P.list->img.w, P.list->img.
 
 bool pin_any_visible(void)
 {
-    if (P.rack && IsWindowVisible(P.rack))
+    if (P.rack && P.rack_open && P.rack_revealed && !P.rack_global_hidden)
         return true;
     for (Pin *p = P.list; p; p = p->next)
         if (IsWindowVisible(p->hwnd))
@@ -1218,11 +1558,21 @@ bool pin_any_visible(void)
 void pin_toggle_all(void)
 {
     bool any_visible = pin_any_visible();
-    if (P.rack && P.rack_open)
-        ShowWindow(P.rack, any_visible ? SW_HIDE : SW_SHOWNOACTIVATE);
     if (any_visible) {
+        if (P.rack && P.rack_open) {
+            P.rack_global_hidden = true;
+            rack_set_revealed(false, false);
+            rack_pass_through(true);
+            ShowWindow(P.rack, SW_HIDE);
+        }
         for (Pin *p = P.list; p; p = p->next)
             ShowWindow(p->hwnd, SW_HIDE);
+    } else if (P.rack && P.rack_open) {
+        P.rack_global_hidden = false;
+        ShowWindow(P.rack, SW_SHOWNOACTIVATE);
+        P.rack_peek_until = GetTickCount64() + RACK_PEEK_MS;
+        rack_set_revealed(true, false);
+        rack_refresh();
     } else if (P.list) {
         pin_reveal(P.list, NULL);
     }
