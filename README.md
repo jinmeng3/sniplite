@@ -130,6 +130,7 @@ QR 使用同一张测试码；OCR 使用 1000×260 RGB 单行文本；FormulaNet
 `build.bat` 从 PP-OCRv6 和 FormulaNet 源码构建 CPU、AVX2 与 Vulkan 引擎，并构建内嵌的 MicroTeX 公式预览。便携包包含相应第三方许可文件。二维码识别使用 [ZXing-C++](https://github.com/zxing-cpp/zxing-cpp)，仅启用 QR Code 解码。
 
 OCR 与 FormulaNet 共用的原生 CPU 卷积会在微内核启用时检查 AVX2/FMA 和操作系统的 YMM 支持。通用、AVX2 和 Vulkan DLL 都能在支持的机器上使用这个汇编微内核。PP-OCRv6 检测器的原生 CPU 回退也使用汇编计算 2×2 转置卷积。
+OCR CPU 与 AVX2 包共用逐字节相同的 `ggml.dll` 和 `ggml-base.dll`，AVX2 目录保留专用的 `ggml-cpu.dll`。FormulaNet+AVX2 包复用 FormulaNet 的 AVX2 运行库；FormulaNet+Vulkan 包只在 `formula/` 中保留一份 Vulkan GGML 运行库。
 
 卷积汇编同时处理 8 个输出通道和 8 个位置，按 K 维展开四次，并保留每个输出的串行 FMA 累加顺序；不足 8 个位置时使用 8×4 微内核及原有点积尾部。`CRISPEMBED_CONV2D_MK=0` 可关闭微内核，`=1` 可显式启用。转置卷积保留输入通道累加顺序及最后加偏置：通用/Vulkan 构建使用 SSE2 分离乘加，AVX2 构建使用 FMA。GGML 计算图继续使用其自身算子。
 

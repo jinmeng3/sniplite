@@ -153,7 +153,7 @@ static bool extract_engine_file(const WCHAR *dir, const WCHAR *name, int id)
     return ok || fail(L"Could not install the current OCR engine");
 }
 
-static bool load_backend(const WCHAR *engine, const WCHAR *runtime_dir, const WCHAR *formula,
+static bool load_backend(const WCHAR *engine, const WCHAR *runtime_dir, const WCHAR *fallback_dir,
                          bool shared, bool vulkan_engine)
 {
     static const WCHAR *const runtime[] = {L"ggml.dll", L"ggml-cpu.dll", L"ggml-vulkan.dll"};
@@ -162,7 +162,7 @@ static bool load_backend(const WCHAR *engine, const WCHAR *runtime_dir, const WC
     for (int i = 0; i < runtime_count; ++i) {
         WCHAR path[MAX_PATH * 2];
         if (!path_in(runtime_dir, runtime[i], path, COUNTOF(path)) &&
-            !(shared && path_in(formula, runtime[i], path, COUNTOF(path)))) {
+            !(shared && path_in(fallback_dir, runtime[i], path, COUNTOF(path)))) {
             unload();
             return false;
         }
@@ -194,7 +194,9 @@ bool ocr_load(const WCHAR *dir, int threads)
     if (G.ctx) return true;
     bool default_dir = !dir;
     WCHAR own[MAX_PATH * 2], formula[MAX_PATH * 2], path[MAX_PATH * 2], engine_path[MAX_PATH * 2];
-    WCHAR avx2_dir[MAX_PATH * 2], avx2_engine[MAX_PATH * 2], det[MAX_PATH * 2], rec[MAX_PATH * 2];
+    WCHAR avx2_dir[MAX_PATH * 2], avx2_engine[MAX_PATH * 2], formula_avx2[MAX_PATH * 2];
+    const WCHAR *avx2_runtime_dir = NULL, *avx2_shared_dir = NULL;
+    WCHAR det[MAX_PATH * 2], rec[MAX_PATH * 2];
     if (default_dir) {
         ocr_dir(own, COUNTOF(own));
         dir = own;
@@ -214,13 +216,40 @@ bool ocr_load(const WCHAR *dir, int threads)
         if (lstrlenW(dir) + 10 >= COUNTOF(avx2_dir)) avx2 = false;
         else wsprintfW(avx2_dir, L"%s\\cpu-avx2", dir);
     }
-    if (avx2 && (!path_in(avx2_dir, L"sniplite_ocr.dll", avx2_engine, COUNTOF(avx2_engine)) ||
-                 !path_in(avx2_dir, L"ggml.dll", path, COUNTOF(path)) ||
-                 !path_in(avx2_dir, L"ggml-base.dll", path, COUNTOF(path)) ||
-                 !path_in(avx2_dir, L"ggml-cpu.dll", path, COUNTOF(path)))) avx2 = false;
+    if (avx2 && !path_in(avx2_dir, L"sniplite_ocr.dll", avx2_engine, COUNTOF(avx2_engine)))
+        avx2 = false;
+    if (avx2 && shared && lstrlenW(formula) + 10 < COUNTOF(formula_avx2)) {
+        wsprintfW(formula_avx2, L"%s\\cpu-avx2", formula);
+        if (path_in(formula_avx2, L"ggml.dll", path, COUNTOF(path)) &&
+            path_in(formula_avx2, L"ggml-base.dll", path, COUNTOF(path)) &&
+            path_in(formula_avx2, L"ggml-cpu.dll", path, COUNTOF(path))) {
+            avx2_runtime_dir = formula_avx2;
+            avx2_shared_dir = formula_avx2;
+        }
+    }
+    if (avx2 && !avx2_runtime_dir &&
+        path_in(avx2_dir, L"ggml.dll", path, COUNTOF(path)) &&
+        path_in(avx2_dir, L"ggml-base.dll", path, COUNTOF(path)) &&
+        path_in(avx2_dir, L"ggml-cpu.dll", path, COUNTOF(path))) {
+        avx2_runtime_dir = avx2_dir;
+        avx2_shared_dir = avx2_dir;
+    }
+    if (avx2 && !avx2_runtime_dir) {
+        bool common_in_ocr = path_in(dir, L"ggml.dll", path, COUNTOF(path)) &&
+                             path_in(dir, L"ggml-base.dll", path, COUNTOF(path));
+        bool common_in_formula = shared && path_in(formula, L"ggml.dll", path, COUNTOF(path)) &&
+                                 path_in(formula, L"ggml-base.dll", path, COUNTOF(path));
+        if (path_in(avx2_dir, L"ggml-cpu.dll", path, COUNTOF(path)) &&
+            (common_in_ocr || common_in_formula)) {
+            avx2_runtime_dir = avx2_dir;
+            avx2_shared_dir = common_in_ocr ? dir : formula;
+        } else {
+            avx2 = false;
+        }
+    }
     int selected = -1;
     if (try_vulkan && vulkan_engine && load_backend(engine_path, dir, formula, shared, true)) selected = 2;
-    if (selected < 0 && avx2 && load_backend(avx2_engine, avx2_dir, formula, false, false)) selected = 1;
+    if (selected < 0 && avx2 && load_backend(avx2_engine, avx2_runtime_dir, avx2_shared_dir, true, false)) selected = 1;
     if (selected < 0) {
         if (vulkan_engine &&
             (!extract_engine_file(dir, L"sniplite_ocr.dll", IDR_OCR_ENGINE) ||
@@ -238,7 +267,7 @@ bool ocr_load(const WCHAR *dir, int threads)
     DWORD ncpu = GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
     int nthreads = threads > 0 ? threads : (ncpu > 4 ? 4 : ncpu ? (int)ncpu : 1);
     G.ctx = G.init(det8, rec8, nthreads);
-    if (!G.ctx && selected == 2 && avx2 && load_backend(avx2_engine, avx2_dir, formula, false, false)) {
+    if (!G.ctx && selected == 2 && avx2 && load_backend(avx2_engine, avx2_runtime_dir, avx2_shared_dir, true, false)) {
         selected = 1;
         G.ctx = G.init(det8, rec8, nthreads);
     }
