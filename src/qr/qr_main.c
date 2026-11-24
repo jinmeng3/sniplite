@@ -13,7 +13,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "../third_party/zxing-cpp/core/src/ZXingC.h"
+#include "../../third_party/zxing-cpp/core/src/ZXingC.h"
 #include "pixel_ops.h"
 
 #define MAX_PIXELS (16u * 1024u * 1024u)

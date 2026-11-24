@@ -22,7 +22,7 @@ IDR_OCR_ENGINE_LICENSE RCDATA "../third_party/ppocrv6/LICENSE"
 
 /* The dialogs give the places and sizes only. Every text is set when a dialog opens,
  * from src/lang_text.h, and the font named here is replaced by the font of the
- * language in use (src/lang.c). Controls are wide and tall enough for the longest
+ * language in use (src/app/lang.c). Controls are wide and tall enough for the longest
  * language. */
 
 /* Preferences: compact window, tabs on top, one page per area. */

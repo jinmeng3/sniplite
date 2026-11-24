@@ -14,7 +14,7 @@ IDR_MICROTEX_LICENSE RCDATA "third_party/microtex/LICENSE"
 IDR_TINYXML2_LICENSE RCDATA "third_party/tinyxml2/LICENSE.txt"
 
 /* Places and sizes only: the texts come from src/lang_text.h and the font is replaced
- * by the one of the language in use (src/lang.c). */
+ * by the one of the language in use (src/app/lang.c). */
 IDD_SETUP DIALOGEX 0, 0, 236, 127
 STYLE DS_SHELLFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
 EXSTYLE WS_EX_APPWINDOW

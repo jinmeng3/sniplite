@@ -3,9 +3,9 @@
 ## Project layout
 
 - SnipLite targets Windows 10/11 x64.
-- The main GUI, CLI, and installer are mostly C in `src/`; performance-sensitive capture, drawing, and presentation paths use x86-64 assembly in `src/*.S`. The executables use a custom startup and link without the C runtime. Avoid introducing CRT dependencies into those targets.
-- Localized strings live in `src/lang_text.h` and related `src/lang*` files. Keep user-visible text consistent across supported languages.
-- `src/qr/` builds the QR-only helper with ZXing-C++; `src/microtex/` builds the native formula renderer. OCR and FormulaNet DLLs are built from the wrappers in `src/` and sources in `third_party/ppocrv6/` and `third_party/formulanet/`.
+- The main GUI, CLI, and installer are mostly C in `src/app/`; capture and presentation assembly is in `src/overlay/`. OCR, formula inference, scrolling, CPU kernels, and shared pixel operations live in `src/ocr/`, `src/formula/`, `src/scroll/`, `src/inference/`, and `src/pixels/`. Shared assembly includes remain in `src/`. The executables use a custom startup and link without the C runtime.
+- Localized strings live in `src/lang_text.h` and `src/app/lang.*`. Keep user-visible text consistent across supported languages.
+- `src/qr/` builds the QR-only helper with ZXing-C++; `src/microtex/` builds the native formula renderer. OCR and FormulaNet DLLs use wrappers under `src/ocr/` and sources in `third_party/ppocrv6/` and `third_party/formulanet/`.
 - Windows resources and installer resources live in `res/`. Markdown documentation is in the root README and `docs/`; referenced screenshots live in `pics/`.
 
 ## Build and package

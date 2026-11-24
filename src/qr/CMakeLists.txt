@@ -22,8 +22,12 @@ add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../../third_party/zxing-cpp/core"
                  "${CMAKE_CURRENT_BINARY_DIR}/zxing")
 
 add_executable(sniplite_qr
-    "${CMAKE_CURRENT_LIST_DIR}/../qr_main.c"
-    "${CMAKE_CURRENT_LIST_DIR}/../pixel_ops.S"
+    "${CMAKE_CURRENT_LIST_DIR}/qr_main.c"
+    "${CMAKE_CURRENT_LIST_DIR}/../pixels/pixel_ops.S"
+)
+target_include_directories(sniplite_qr PRIVATE
+    "${CMAKE_CURRENT_LIST_DIR}/.."
+    "${CMAKE_CURRENT_LIST_DIR}/../pixels"
 )
 target_link_libraries(sniplite_qr PRIVATE ZXing::ZXing ole32 uuid windowscodecs)
 set_target_properties(sniplite_qr PROPERTIES LINKER_LANGUAGE CXX)
