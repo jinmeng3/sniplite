@@ -47,6 +47,16 @@ static bool sibling_dir(const WCHAR *name, WCHAR *dir, int cap)
     lstrcpynW(dir + n, name, cap - (int)n);
     return true;
 }
+static bool app_dir(WCHAR *dir, int cap)
+{
+    DWORD n = GetModuleFileNameW(NULL, dir, cap);
+    if (!n || n >= (DWORD)cap) return false;
+    while (n && dir[n - 1] != L'\\' && dir[n - 1] != L'/') n--;
+    if (n && (dir[n - 1] == L'\\' || dir[n - 1] == L'/')) n--;
+    dir[n] = 0;
+    return true;
+}
+
 
 static bool path_in(const WCHAR *dir, const WCHAR *name, WCHAR *path, int cap)
 {
@@ -89,7 +99,8 @@ static bool runtime_aux(const WCHAR *dir)
 bool ocr_installed(void)
 {
     static const WCHAR *const models[] = {OCR_DET_MODEL, OCR_REC_MODEL};
-    WCHAR dir[MAX_PATH * 2], formula[MAX_PATH * 2], path[MAX_PATH * 2];
+    WCHAR dir[MAX_PATH * 2], package[MAX_PATH * 2], formula[MAX_PATH * 2], path[MAX_PATH * 2];
+    WCHAR package_generic[MAX_PATH * 2], package_vulkan[MAX_PATH * 2];
     WCHAR own_generic[MAX_PATH * 2], own_vulkan[MAX_PATH * 2];
     WCHAR formula_generic[MAX_PATH * 2], formula_vulkan[MAX_PATH * 2];
     ocr_dir(dir, COUNTOF(dir));
@@ -97,19 +108,25 @@ bool ocr_installed(void)
     bool vulkan_engine = path_in(dir, L"sniplite_ocr_vulkan.dll", path, COUNTOF(path));
     for (int i = 0; i < COUNTOF(models); ++i)
         if (!path_in(dir, models[i], path, COUNTOF(path))) return false;
+    bool have_package = app_dir(package, COUNTOF(package));
     bool have_formula = sibling_dir(L"formula", formula, COUNTOF(formula));
+    bool package_gen = have_package && shared_runtime_dir(package, L"cpu-generic", package_generic, COUNTOF(package_generic));
+    bool package_vk = have_package && shared_runtime_dir(package, L"vulkan", package_vulkan, COUNTOF(package_vulkan));
     bool own_gen = shared_runtime_dir(dir, L"cpu-generic", own_generic, COUNTOF(own_generic));
     bool own_vk = shared_runtime_dir(dir, L"vulkan", own_vulkan, COUNTOF(own_vulkan));
     bool formula_gen = have_formula && shared_runtime_dir(formula, L"cpu-generic", formula_generic, COUNTOF(formula_generic));
     bool formula_vk = have_formula && shared_runtime_dir(formula, L"vulkan", formula_vulkan, COUNTOF(formula_vulkan));
-    bool generic_core = (own_gen && runtime_core(own_generic, false)) ||
+    bool generic_core = (package_gen && runtime_core(package_generic, false)) ||
+                        (own_gen && runtime_core(own_generic, false)) ||
                         (formula_gen && runtime_core(formula_generic, false)) || runtime_core(dir, false) ||
                         (have_formula && runtime_core(formula, false));
-    bool vulkan_core = (own_vk && runtime_core(own_vulkan, true)) ||
+    bool vulkan_core = (package_vk && runtime_core(package_vulkan, true)) ||
+                       (own_vk && runtime_core(own_vulkan, true)) ||
                        (formula_vk && runtime_core(formula_vulkan, true)) || runtime_core(dir, true) ||
                        (have_formula && runtime_core(formula, true));
-    bool auxiliary = (own_gen && runtime_aux(own_generic)) || (formula_gen && runtime_aux(formula_generic)) ||
-                     (own_vk && runtime_aux(own_vk)) || (formula_vk && runtime_aux(formula_vk)) ||
+    bool auxiliary = (package_gen && runtime_aux(package_generic)) || (package_vk && runtime_aux(package_vulkan)) ||
+                     (own_gen && runtime_aux(own_generic)) || (formula_gen && runtime_aux(formula_generic)) ||
+                     (own_vk && runtime_aux(own_vulkan)) || (formula_vk && runtime_aux(formula_vulkan)) ||
                      runtime_aux(dir) || (have_formula && runtime_aux(formula));
     return auxiliary && (vulkan_engine ? vulkan_core : generic_core || vulkan_core);
 }
@@ -230,14 +247,16 @@ bool ocr_load(const WCHAR *dir, int threads)
         return fail(L"The embedded OCR module could not be extracted");
     if (G.ctx) return true;
     bool default_dir = !dir;
-    WCHAR own[MAX_PATH * 2], formula[MAX_PATH * 2], path[MAX_PATH * 2], engine_path[MAX_PATH * 2];
+    WCHAR own[MAX_PATH * 2], package[MAX_PATH * 2], formula[MAX_PATH * 2], path[MAX_PATH * 2], engine_path[MAX_PATH * 2];
     WCHAR avx2_dir[MAX_PATH * 2], avx2_engine[MAX_PATH * 2];
+    WCHAR package_generic[MAX_PATH * 2], package_vulkan[MAX_PATH * 2], package_avx2[MAX_PATH * 2];
     WCHAR own_generic[MAX_PATH * 2], own_vulkan[MAX_PATH * 2], own_avx2[MAX_PATH * 2];
     WCHAR formula_generic[MAX_PATH * 2], formula_vulkan[MAX_PATH * 2], formula_avx2[MAX_PATH * 2];
     WCHAR det[MAX_PATH * 2], rec[MAX_PATH * 2];
     const WCHAR *generic_runtime = NULL, *generic_fallback = NULL;
     const WCHAR *vulkan_runtime = NULL, *vulkan_fallback = NULL;
     const WCHAR *avx2_runtime = NULL, *avx2_fallback = NULL;
+    bool have_package = default_dir && app_dir(package, COUNTOF(package));
     bool have_formula = default_dir && sibling_dir(L"formula", formula, COUNTOF(formula));
     if (!have_formula) formula[0] = 0;
     if (default_dir) {
@@ -252,25 +271,33 @@ bool ocr_load(const WCHAR *dir, int threads)
           !path_in(dir, L"sniplite_ocr.dll", engine_path, COUNTOF(engine_path)))) ||
         !extract_engine_file(dir, L"LICENSE-OCREngine.txt", IDR_OCR_ENGINE_LICENSE)) return false;
     if (default_dir) {
+        bool package_gen = have_package && shared_runtime_dir(package, L"cpu-generic", package_generic, COUNTOF(package_generic));
+        bool package_vk = have_package && shared_runtime_dir(package, L"vulkan", package_vulkan, COUNTOF(package_vulkan));
+        bool package_avx = have_package && shared_runtime_dir(package, L"cpu-avx2", package_avx2, COUNTOF(package_avx2));
         bool own_gen = shared_runtime_dir(dir, L"cpu-generic", own_generic, COUNTOF(own_generic));
         bool own_vk = shared_runtime_dir(dir, L"vulkan", own_vulkan, COUNTOF(own_vulkan));
         bool own_avx = shared_runtime_dir(dir, L"cpu-avx2", own_avx2, COUNTOF(own_avx2));
         bool formula_gen = have_formula && shared_runtime_dir(formula, L"cpu-generic", formula_generic, COUNTOF(formula_generic));
         bool formula_vk = have_formula && shared_runtime_dir(formula, L"vulkan", formula_vulkan, COUNTOF(formula_vulkan));
         bool formula_avx = have_formula && shared_runtime_dir(formula, L"cpu-avx2", formula_avx2, COUNTOF(formula_avx2));
-        if (formula_gen && runtime_core(formula_generic, false)) generic_runtime = formula_generic;
+        if (package_gen && runtime_core(package_generic, false)) generic_runtime = package_generic;
+        else if (formula_gen && runtime_core(formula_generic, false)) generic_runtime = formula_generic;
         else if (own_gen && runtime_core(own_generic, false)) generic_runtime = own_generic;
+        else if (package_vk && runtime_core(package_vulkan, true)) generic_runtime = package_vulkan;
         else if (formula_vk && runtime_core(formula_vulkan, true)) generic_runtime = formula_vulkan;
         else if (own_vk && runtime_core(own_vulkan, true)) generic_runtime = own_vulkan;
         else generic_runtime = dir;
-        generic_fallback = formula_gen && generic_runtime != formula_generic ? formula_generic :
+        generic_fallback = package_gen && generic_runtime != package_generic ? package_generic :
+                           formula_gen && generic_runtime != formula_generic ? formula_generic :
                            own_gen && generic_runtime != own_generic ? own_generic :
                            have_formula ? formula : dir;
-        if (formula_vk && runtime_core(formula_vulkan, true)) vulkan_runtime = formula_vulkan;
+        if (package_vk && runtime_core(package_vulkan, true)) vulkan_runtime = package_vulkan;
+        else if (formula_vk && runtime_core(formula_vulkan, true)) vulkan_runtime = formula_vulkan;
         else if (own_vk && runtime_core(own_vulkan, true)) vulkan_runtime = own_vulkan;
         else vulkan_runtime = dir;
         vulkan_fallback = generic_runtime;
-        if (formula_avx && path_in(formula_avx2, L"ggml-cpu.dll", path, COUNTOF(path))) avx2_runtime = formula_avx2;
+        if (package_avx && path_in(package_avx2, L"ggml-cpu.dll", path, COUNTOF(path))) avx2_runtime = package_avx2;
+        else if (formula_avx && path_in(formula_avx2, L"ggml-cpu.dll", path, COUNTOF(path))) avx2_runtime = formula_avx2;
         else if (own_avx && path_in(own_avx2, L"ggml-cpu.dll", path, COUNTOF(path))) avx2_runtime = own_avx2;
         else if (have_formula && lstrlenW(formula) + 10 < COUNTOF(avx2_dir)) {
             wsprintfW(avx2_dir, L"%s\\cpu-avx2", formula);

@@ -12,6 +12,7 @@ typedef const char *(*CrispRecognize)(void *ctx, const uint8_t *pixels, int widt
 
 static struct {
     HMODULE runtime[5];
+    HMODULE dll;
     void *ctx;
     CrispModelInit model_init;
     CrispModelFree model_free;
@@ -35,6 +36,19 @@ static bool find_path(const WCHAR *name, WCHAR *path, int cap)
     lstrcatW(path, name);
     return true;
 }
+static bool app_path(const WCHAR *name, WCHAR *path, int cap)
+{
+    DWORD n = GetModuleFileNameW(NULL, path, cap - 16);
+    if (!n || n >= (DWORD)(cap - 16)) return false;
+    while (n && path[n - 1] != L'\\' && path[n - 1] != L'/') n--;
+    if (n && (path[n - 1] == L'\\' || path[n - 1] == L'/')) n--;
+    path[n] = 0;
+    if (lstrlenW(path) + lstrlenW(name) + 2 >= cap) return false;
+    lstrcatW(path, L"\\");
+    lstrcatW(path, name);
+    return true;
+}
+
 static bool runtime_path(const WCHAR *name, WCHAR *path, int cap)
 {
     return find_path(name, path, cap) && GetFileAttributesW(path) != INVALID_FILE_ATTRIBUTES;
@@ -45,7 +59,7 @@ static bool shared_runtime_dir(const WCHAR *backend, WCHAR *dir, int cap)
     WCHAR relative[64];
     if (lstrlenW(backend) + 16 >= COUNTOF(relative)) return false;
     wsprintfW(relative, L"shared-runtime\\%s", backend);
-    if (!find_path(relative, dir, cap)) return false;
+    if (!app_path(relative, dir, cap)) return false;
     DWORD attr = GetFileAttributesW(dir);
     return attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY);
 }
@@ -112,6 +126,7 @@ static bool load(void)
     if (F.ready) return true;
     WCHAR model_path[MAX_PATH * 2], vk_engine[MAX_PATH * 2], avx_engine[MAX_PATH * 2];
     WCHAR generic_engine[MAX_PATH * 2], root_engine[MAX_PATH * 2];
+    WCHAR vk_runtime[MAX_PATH * 2], avx_runtime[MAX_PATH * 2], generic_runtime[MAX_PATH * 2];
     WCHAR legacy_root[MAX_PATH * 2], legacy_avx[MAX_PATH * 2], legacy_generic[MAX_PATH * 2];
     struct Candidate { const WCHAR *engine, *runtime, *fallback; bool vulkan; } candidate[3];
     int count = 0;

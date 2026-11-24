@@ -9,7 +9,7 @@
 /* The published OCR zip. Its size is used for download progress. */
 #define MODULE_TAG UPDATE_REPO L"/releases/download/v" SNIPLITE_VERSION L"/"
 #define MODULE_PATH MODULE_TAG L"sniplite_ocr.zip"
-#define MODULE_BYTES 10878329u
+#define MODULE_BYTES 10879753u
 #define QR_MODULE_PATH UPDATE_REPO L"/releases/download/v" SNIPLITE_VERSION L"/sniplite_" SNIPLITE_VERSION L"_portable_QR_x64.zip"
 #define QR_ARCHIVE_LIMIT (8u * 1024u * 1024u)
 #define QR_HELPER_SIZE 3248056u
@@ -375,8 +375,7 @@ static bool formula_shared_file(const WCHAR *name)
     DWORD n = GetModuleFileNameW(NULL, path, COUNTOF(path) - 16);
     if (!n || n >= COUNTOF(path) - 16) return false;
     while (n && path[n - 1] != L'\\' && path[n - 1] != L'/') n--;
-    lstrcpyW(path + n, L"formula\\");
-    n += 8;
+    path[n] = 0;
     if (n + lstrlenW(name) + 1 >= COUNTOF(path)) return false;
     lstrcatW(path, name);
     DWORD attr = GetFileAttributesW(path);

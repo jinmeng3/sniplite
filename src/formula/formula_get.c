@@ -28,6 +28,15 @@ static const FormulaFile files[] = {
 };
 
 static bool paths(const WCHAR *name, WCHAR *dir, WCHAR *path, WCHAR *tmp, int cap);
+static bool app_dir(WCHAR *dir, int cap)
+{
+    DWORD n = GetModuleFileNameW(NULL, dir, cap - 16);
+    if (!n || n >= (DWORD)(cap - 16)) return false;
+    while (n && dir[n - 1] != L'\\' && dir[n - 1] != L'/') n--;
+    if (n && (dir[n - 1] == L'\\' || dir[n - 1] == L'/')) n--;
+    dir[n] = 0;
+    return true;
+}
 
 static bool shared_runtime_file(const WCHAR *name)
 {
@@ -43,13 +52,14 @@ static bool shared_runtime_file(const WCHAR *name)
 
 static bool shared_target_paths(const WCHAR *name, WCHAR *dir, WCHAR *path, WCHAR *tmp, int cap)
 {
-    DWORD n = GetModuleFileNameW(NULL, dir, cap - 16);
-    if (!n || n >= (DWORD)(cap - 16)) return false;
-    while (n && dir[n - 1] != L'\\' && dir[n - 1] != L'/') n--;
-    lstrcpyW(dir + n, L"formula");
     if (shared_runtime_file(name)) {
-        if (lstrlenW(dir) + 29 >= cap) return false;
+        if (!app_dir(dir, cap) || lstrlenW(dir) + 27 >= cap) return false;
         lstrcatW(dir, L"\\shared-runtime\\vulkan");
+    } else {
+        DWORD n = GetModuleFileNameW(NULL, dir, cap - 16);
+        if (!n || n >= (DWORD)(cap - 16)) return false;
+        while (n && dir[n - 1] != L'\\' && dir[n - 1] != L'/') n--;
+        lstrcpyW(dir + n, L"formula");
     }
     if (lstrlenW(dir) + lstrlenW(name) + 8 >= cap) return false;
     wsprintfW(path, L"%s\\%s", dir, name);
@@ -64,14 +74,14 @@ static bool paths(const WCHAR *name, WCHAR *dir, WCHAR *path, WCHAR *tmp, int ca
     while (n && dir[n - 1] != L'\\' && dir[n - 1] != L'/') n--;
     lstrcpyW(dir + n, L"formula");
     if (shared_runtime_file(name)) {
-        WCHAR candidate[MAX_PATH * 2], shared[MAX_PATH * 2];
+        WCHAR app[MAX_PATH * 2], candidate[MAX_PATH * 2], shared[MAX_PATH * 2];
         const WCHAR *backend = !lstrcmpiW(name, L"ggml-vulkan.dll") ? L"vulkan" : L"cpu-generic";
-        if (lstrlenW(dir) + lstrlenW(backend) + 17 >= COUNTOF(shared)) return false;
-        wsprintfW(shared, L"%s\\shared-runtime\\%s", dir, backend);
+        if (!app_dir(app, COUNTOF(app)) || lstrlenW(app) + lstrlenW(backend) + 18 >= COUNTOF(shared)) return false;
+        wsprintfW(shared, L"%s\\shared-runtime\\%s", app, backend);
         if (lstrlenW(shared) + lstrlenW(name) + 2 >= COUNTOF(candidate)) return false;
         wsprintfW(candidate, L"%s\\%s", shared, name);
         if (GetFileAttributesW(candidate) == INVALID_FILE_ATTRIBUTES && lstrcmpW(backend, L"vulkan")) {
-            wsprintfW(shared, L"%s\\shared-runtime\\vulkan", dir);
+            wsprintfW(shared, L"%s\\shared-runtime\\vulkan", app);
             wsprintfW(candidate, L"%s\\%s", shared, name);
         }
         if (GetFileAttributesW(candidate) != INVALID_FILE_ATTRIBUTES)
@@ -82,6 +92,7 @@ static bool paths(const WCHAR *name, WCHAR *dir, WCHAR *path, WCHAR *tmp, int ca
     wsprintfW(tmp, L"%s.part", path);
     return true;
 }
+
 
 static bool file_size(const WCHAR *path, DWORD size)
 {
@@ -206,8 +217,9 @@ int formula_get(volatile LONG *cancel, void (*progress)(int, void *), void *ctx)
         return FORMULA_GET_WRITE;
 
     WCHAR runtime_dir[MAX_PATH * 2];
-    if (lstrlenW(dir) + 25 >= COUNTOF(runtime_dir)) return FORMULA_GET_WRITE;
-    wsprintfW(runtime_dir, L"%s\\shared-runtime", dir);
+    if (!app_dir(runtime_dir, COUNTOF(runtime_dir)) || lstrlenW(runtime_dir) + 25 >= COUNTOF(runtime_dir))
+        return FORMULA_GET_WRITE;
+    lstrcatW(runtime_dir, L"\\shared-runtime");
     if (!CreateDirectoryW(runtime_dir, NULL) && GetLastError() != ERROR_ALREADY_EXISTS) return FORMULA_GET_WRITE;
     if (lstrlenW(runtime_dir) + 8 >= COUNTOF(runtime_dir)) return FORMULA_GET_WRITE;
     lstrcatW(runtime_dir, L"\\vulkan");
@@ -283,9 +295,9 @@ static bool remove_known_dir_files(const WCHAR *root, const WCHAR *subdir, bool 
 
 bool formula_remove(void)
 {
-    WCHAR dir[MAX_PATH * 2], path[MAX_PATH * 2], tmp[MAX_PATH * 2];
+    WCHAR dir[MAX_PATH * 2], path[MAX_PATH * 2], tmp[MAX_PATH * 2], app[MAX_PATH * 2];
     bool good = true, keep_runtime = ocr_installed();
-    if (!paths(L"*", dir, path, tmp, COUNTOF(dir))) return false;
+    if (!paths(L"*", dir, path, tmp, COUNTOF(dir)) || !app_dir(app, COUNTOF(app))) return false;
     WIN32_FIND_DATAW fd;
     HANDLE search = FindFirstFileW(path, &fd);
     if (search != INVALID_HANDLE_VALUE) {
@@ -312,10 +324,10 @@ bool formula_remove(void)
     wsprintfW(path, L"%s\\onnx", dir);
     RemoveDirectoryW(path);
     if (!keep_runtime) {
-        remove_known_dir_files(dir, L"shared-runtime\\cpu-generic", true, false, &good);
-        remove_known_dir_files(dir, L"shared-runtime\\cpu-avx2", true, false, &good);
-        remove_known_dir_files(dir, L"shared-runtime\\vulkan", true, false, &good);
-        wsprintfW(path, L"%s\\shared-runtime", dir);
+        remove_known_dir_files(app, L"shared-runtime\\cpu-generic", true, false, &good);
+        remove_known_dir_files(app, L"shared-runtime\\cpu-avx2", true, false, &good);
+        remove_known_dir_files(app, L"shared-runtime\\vulkan", true, false, &good);
+        wsprintfW(path, L"%s\\shared-runtime", app);
         RemoveDirectoryW(path);
     }
     remove_known_dir_files(dir, L"cpu-generic", !keep_runtime, true, &good);

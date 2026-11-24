@@ -18,12 +18,13 @@ if exist "%STAGE%" rmdir /s /q "%STAGE%"
 xcopy /e /i /q /y "%CPU%\*" "%STAGE%\" >nul
 if errorlevel 2 exit /b 1
 mkdir "%STAGE%\ocr\cpu-avx2" || exit /b 1
-mkdir "%STAGE%\formula\shared-runtime\cpu-avx2" || exit /b 1
+mkdir "%STAGE%\shared-runtime\cpu-avx2" || exit /b 1
+mkdir "%STAGE%\formula\cpu-avx2" || exit /b 1
 copy /y "build\ocr\cpu-avx2\sniplite_ocr.dll" "%STAGE%\ocr\cpu-avx2\sniplite_ocr.dll" >nul || exit /b 1
-for %%f in (ggml.dll ggml-base.dll ggml-cpu.dll) do copy /y "build\cpu-runtime-avx2\%%f" "%STAGE%\formula\shared-runtime\cpu-avx2\%%f" >nul || exit /b 1
+for %%f in (ggml.dll ggml-base.dll ggml-cpu.dll) do copy /y "build\cpu-runtime-avx2\%%f" "%STAGE%\shared-runtime\cpu-avx2\%%f" >nul || exit /b 1
 copy /y build\sniplite_formula_avx2.dll "%STAGE%\formula\cpu-avx2\sniplite_formula.dll" >nul || exit /b 1
 if exist "%ZIP%" del /q "%ZIP%"
-"%SystemRoot%\System32\tar.exe" -a -c -f "%ZIP%" -C "%STAGE%" sniplite.exe sniplite-cli.com sniplite_qr.exe LICENSE-ZXing.txt LICENSE-MicroTeX.txt LICENSE-TinyXML2.txt ocr formula || exit /b 1
+"%SystemRoot%\System32\tar.exe" -a -c -f "%ZIP%" -C "%STAGE%" sniplite.exe sniplite-cli.com sniplite_qr.exe LICENSE-ZXing.txt LICENSE-MicroTeX.txt LICENSE-TinyXML2.txt ocr formula shared-runtime || exit /b 1
 if exist "%D%" rmdir /s /q "%D%"
 move "%STAGE%" "%D%" >nul || exit /b 1
 for %%f in ("%ZIP%") do echo %%~nxf  %%~zf bytes
