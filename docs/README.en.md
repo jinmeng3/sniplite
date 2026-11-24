@@ -49,16 +49,16 @@ QR used the same test code; OCR used a 1000×260 RGB image with one text line; F
 
 ## Download
 
-Get the current version from [GitHub Releases](https://github.com/jinmeng3/sniplite/releases). Version 1.5.1.5 provides an installer and seven portable ZIPs:
+Get the current version from [GitHub Releases](https://github.com/jinmeng3/sniplite/releases). Version 1.5.1.6 provides an installer and seven portable ZIPs:
 
-- [Windows installer](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.5/sniplite_win_setup_amd64.exe)
-- [QR portable package](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.5/sniplite_1.5.1.5_portable_QR_x64.zip)
-- [QR + OCR CPU](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.5/sniplite_1.5.1.5_portable_QR_OCR_CPU_x64.zip)
-- [QR + OCR AVX2](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.5/sniplite_1.5.1.5_portable_QR_OCR_AVX2_x64.zip)
-- [QR + OCR Vulkan](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.5/sniplite_1.5.1.5_portable_QR_OCR_Vulkan_x64.zip)
-- [QR + OCR + FormulaNet CPU](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.5/sniplite_1.5.1.5_portable_QR_OCR_FormulaNet_CPU_x64.zip)
-- [QR + OCR + FormulaNet AVX2](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.5/sniplite_1.5.1.5_portable_QR_OCR_FormulaNet_AVX2_x64.zip)
-- [QR + OCR + FormulaNet Vulkan](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.5/sniplite_1.5.1.5_portable_QR_OCR_FormulaNet_Vulkan_x64.zip)
+- [Windows installer](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.6/sniplite_win_setup_amd64.exe)
+- [QR portable package](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.6/sniplite_1.5.1.6_portable_QR_x64.zip)
+- [QR + OCR CPU](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.6/sniplite_1.5.1.6_portable_QR_OCR_CPU_x64.zip)
+- [QR + OCR AVX2](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.6/sniplite_1.5.1.6_portable_QR_OCR_AVX2_x64.zip)
+- [QR + OCR Vulkan](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.6/sniplite_1.5.1.6_portable_QR_OCR_Vulkan_x64.zip)
+- [QR + OCR + FormulaNet CPU](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.6/sniplite_1.5.1.6_portable_QR_OCR_FormulaNet_CPU_x64.zip)
+- [QR + OCR + FormulaNet AVX2](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.6/sniplite_1.5.1.6_portable_QR_OCR_FormulaNet_AVX2_x64.zip)
+- [QR + OCR + FormulaNet Vulkan](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.6/sniplite_1.5.1.6_portable_QR_OCR_FormulaNet_Vulkan_x64.zip)
 
 Extract the ZIP and run `sniplite.exe`. The `sniplite-cli.com` companion provides command-line features; it is included in the QR ZIPs and is a separate download for single-file portable builds. Keep it beside the app. Portable builds can download or remove OCR from the OCR tab in Preferences. After checking for updates in the Update tab, portable builds can download and replace existing program files locally; optional OCR and formula model folders are preserved. The QR helper can also be installed or removed from the QR tab. Portable builds can enable “Start with Windows” in Preferences. The shortcut points to the current program location, so do not move or rename its directory afterward. If you move it, turn the option off and on again to update the shortcut.
 
@@ -151,7 +151,7 @@ The app follows the Windows language by default. Open Preferences from the syste
 ## Build from source
 
 The project-local `w64devkit` can build the project directly. Alternatively, install MinGW-w64, CMake, and Ninja. Run `build.bat`, install the formula module from the Formula tab in `build\sniplite.exe` Preferences, then run `package-all.bat`. Packaging invokes `build-cpu-runtime.bat` to build a baseline x64 CPU GGML runtime from pinned CrispEmbed `v0.17.19` sources with Vulkan disabled. `package-qr-ocr-formula.bat` creates the all-CPU inference package; `package-qr-ocr-formula-vulkan.bat` overlays the Vulkan runtime and engines. Sources are under `E:\浏览器下载`; output goes to `build\dist`.
-OCR packaging also needs `PP-OCRv6_tiny_det-f16.gguf`, `PP-OCRv6_tiny_rec-f16.gguf`, and `crispembed-windows-x86_64-vulkan` in `E:\浏览器下载`. Their pinned model checksums are in `res/ocr-notice.txt`; remove any ` (1)` download suffix from the detector filename. `build.bat` compiles `build/sniplite_ocr.dll` from native PP-OCRv6 sources, with official `(2, 1)` height/width downsampling in tiny recognizer stages 3 and 4. `package-all.bat` includes the engine and complete `third_party/ppocrv6/LICENSE` in the OCR module and CPU package; the Vulkan package uses the original Vulkan GGML runtime. After changing the engine, models, or OCR notices, repack and update `MODULE_BYTES` in `src/ocr/ocr_get.c` to the actual `build/sniplite_ocr.zip` size, then rebuild and repack. Publish the ZIP under the `ocr-5` release tag.
+OCR packaging also needs `PP-OCRv6_tiny_det-f16.gguf`, `PP-OCRv6_tiny_rec-f16.gguf`, and `crispembed-windows-x86_64-vulkan` in `E:\浏览器下载`. Their pinned model checksums are in `res/ocr-notice.txt`; remove any ` (1)` download suffix from the detector filename. `build.bat` compiles `build/sniplite_ocr.dll` from native PP-OCRv6 sources, with official `(2, 1)` height/width downsampling in tiny recognizer stages 3 and 4. `package-all.bat` includes the engine and complete `third_party/ppocrv6/LICENSE` in the OCR module and CPU package; the Vulkan package uses the original Vulkan GGML runtime. After changing the engine, models, or OCR notices, run `package-all.bat`, update `MODULE_BYTES` in `src/ocr/ocr_get.c` to the resulting `build/sniplite_ocr.zip` size, then rebuild and repack. Publish `build/sniplite_ocr.zip` as an asset of the matching `v<version>` GitHub release.
 `build.bat` builds `src/microtex` with CMake, Ninja, and g++, producing `build/sniplite_microtex.dll`, then archives `res` and `LICENSE` from `third_party/microtex` as `build/microtex-assets.zip`. The DLL, resources, and license are embedded in the main executable. The installer and all four portable ZIPs include native MicroTeX preview without an additional preview runtime. Each portable package includes `LICENSE-MicroTeX.txt` beside the executable; font licenses remain in the resources.
 
 The native renderer also uses TinyXML2 10.0.0; see `third_party/tinyxml2/LICENSE.txt`. The installer and all portable ZIPs include `LICENSE-TinyXML2.txt` beside the executable.

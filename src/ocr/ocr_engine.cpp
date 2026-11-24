@@ -13,6 +13,7 @@
 #include "core/gpu_backend_pref.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstdint>
@@ -179,65 +180,109 @@ bool run(Context &ctx, const uint8_t *rgb, int width, int height) {
     if (boxes.empty()) return true;
     if (boxes.size() > static_cast<size_t>(std::numeric_limits<int>::max())) return false;
 
-    std::vector<std::vector<uint8_t>> crops;
-    std::vector<int> widths, heights;
-    std::vector<ocr_crop::orientation_info> orientations;
-    crops.reserve(boxes.size());
-    widths.reserve(boxes.size());
-    heights.reserve(boxes.size());
-    orientations.reserve(boxes.size());
-    for (size_t i = 0; i < boxes.size(); ++i) {
-        const auto &b = boxes[i];
+    constexpr size_t crop_batch_limit = 8;
+    constexpr int text_capacity = 4096;
+    const size_t n = boxes.size();
+    ctx.texts.resize(n);
+    ctx.results.reserve(n);
+    const size_t result_count = ctx.results.size();
+    auto fail = [&]() {
+        ctx.results.resize(result_count);
+        return false;
+    };
+
+    for (const auto &b : boxes) {
         if (!std::isfinite(b.x) || !std::isfinite(b.y) || !std::isfinite(b.w) || !std::isfinite(b.h) ||
             !std::isfinite(b.score) || b.x < 0 || b.y < 0 || b.w <= 0 || b.h <= 0 ||
-            b.x > width || b.y > height || b.w > width || b.h > height) return false;
+            b.x > width || b.y > height || b.w > width || b.h > height) return fail();
         for (int k = 0; k < 4; ++k)
             if (!std::isfinite(b.qx[k]) || !std::isfinite(b.qy[k]) || b.qx[k] < 0 || b.qy[k] < 0 ||
-                b.qx[k] > width || b.qy[k] > height) return false;
-        int cw = 0, ch = 0;
-        const bool quad = std::hypot(b.qx[1] - b.qx[0], b.qy[1] - b.qy[0]) > 1.0f;
-        auto crop = quad ? ocr_crop::extract_quad(rgb, width, height, 3, b.qx, b.qy, 2, &cw, &ch)
-                         : ocr_crop::extract(rgb, width, height, 3, int(b.x), int(b.y), int(b.w), int(b.h),
-                                             2, &cw, &ch);
-        if (crop.empty() || cw <= 0 || ch <= 0) return false;
-        auto orientation = ocr_crop::orient_180_rgb_info(crop, cw, ch);
-        widths.push_back(cw);
-        heights.push_back(ch);
-        orientations.push_back(orientation);
-        crops.push_back(std::move(crop));
+                b.qx[k] > width || b.qy[k] > height) return fail();
     }
 
-    const size_t n = crops.size();
-    std::vector<const uint8_t *> pixels(n);
-    std::vector<char *> outputs(n);
-    constexpr int text_capacity = 4096;
-    std::vector<int> channels(n, 3), capacities(n, text_capacity), lengths(n, 0);
-    ctx.texts.resize(n);
-    for (size_t i = 0; i < n; ++i) {
-        ctx.texts[i].resize(text_capacity);
-        pixels[i] = crops[i].data();
-        outputs[i] = ctx.texts[i].data();
-    }
-    if (ppocrv6_ocr_recognize_raw_batch(ctx.recognizer.get(), pixels.data(), widths.data(), heights.data(),
-                                       channels.data(), static_cast<int>(n), outputs.data(), capacities.data(),
-                                       lengths.data()) != static_cast<int>(n)) return false;
-    ctx.results.reserve(n);
-    for (size_t i = 0; i < n; ++i) {
-        int length = lengths[i];
-        if (length < 0 || length >= text_capacity) return false;
-        if (length == text_capacity - 1) {
-            // The vendor batch API truncates without reporting the full size.
-            // Recover a saturated line through its unbounded single-line API.
-            const char *text = ppocrv6_ocr_recognize_raw(ctx.recognizer.get(), pixels[i], widths[i], heights[i],
-                                                       3, &length);
-            if (!text || length < 0) return false;
-            ctx.texts[i].assign(text, static_cast<size_t>(length));
-        } else {
-            ctx.texts[i].resize(static_cast<size_t>(length));
+    std::vector<size_t> order(n);
+    for (size_t i = 0; i < n; ++i) order[i] = i;
+    auto aspect_ratio = [&](size_t i) {
+        const auto &b = boxes[i];
+        if (std::hypot(b.qx[1] - b.qx[0], b.qy[1] - b.qy[0]) <= 1.0f)
+            return (b.w + 4.0f) / (b.h + 4.0f);
+        std::array<float, 4> edges{};
+        for (int k = 0; k < 4; ++k) {
+            const int next = (k + 1) & 3;
+            edges[k] = std::hypot(b.qx[next] - b.qx[k], b.qy[next] - b.qy[k]);
         }
-        if (length == 0) continue;
+        std::sort(edges.begin(), edges.end(), [](float a, float b) { return a > b; });
+        return (edges[0] + edges[1] + 4.0f) / (edges[2] + edges[3] + 4.0f);
+    };
+    std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) {
+        return aspect_ratio(a) < aspect_ratio(b);
+    });
+
+    std::vector<std::vector<uint8_t>> crops;
+    std::vector<int> widths, heights, channels, capacities, lengths;
+    std::vector<ocr_crop::orientation_info> orientations(n);
+    std::vector<const uint8_t *> pixels;
+    std::vector<char *> outputs;
+    std::vector<char> output_storage(crop_batch_limit * text_capacity);
+    crops.reserve(crop_batch_limit);
+    widths.reserve(crop_batch_limit);
+    heights.reserve(crop_batch_limit);
+
+    for (size_t start = 0; start < n; start += crop_batch_limit) {
+        const size_t count = std::min(crop_batch_limit, n - start);
+        crops.clear();
+        widths.clear();
+        heights.clear();
+        for (size_t position = start; position < start + count; ++position) {
+            const size_t i = order[position];
+            const auto &b = boxes[i];
+            int cw = 0, ch = 0;
+            const bool quad = std::hypot(b.qx[1] - b.qx[0], b.qy[1] - b.qy[0]) > 1.0f;
+            auto crop = quad ? ocr_crop::extract_quad(rgb, width, height, 3, b.qx, b.qy, 2, &cw, &ch)
+                             : ocr_crop::extract(rgb, width, height, 3, int(b.x), int(b.y), int(b.w), int(b.h),
+                                                 2, &cw, &ch);
+            if (crop.empty() || cw <= 0 || ch <= 0) return fail();
+            orientations[i] = ocr_crop::orient_180_rgb_info(crop, cw, ch);
+            widths.push_back(cw);
+            heights.push_back(ch);
+            crops.push_back(std::move(crop));
+        }
+
+        pixels.resize(count);
+        outputs.resize(count);
+        channels.assign(count, 3);
+        capacities.assign(count, text_capacity);
+        lengths.assign(count, 0);
+        for (size_t j = 0; j < count; ++j) {
+            pixels[j] = crops[j].data();
+            outputs[j] = output_storage.data() + j * text_capacity;
+        }
+        if (ppocrv6_ocr_recognize_raw_batch(ctx.recognizer.get(), pixels.data(), widths.data(), heights.data(),
+                                            channels.data(), static_cast<int>(count), outputs.data(), capacities.data(),
+                                            lengths.data()) != static_cast<int>(count)) return fail();
+
+        for (size_t j = 0; j < count; ++j) {
+            const size_t i = order[start + j];
+            int length = lengths[j];
+            if (length < 0 || length >= text_capacity) return fail();
+            if (length == text_capacity - 1) {
+                // The vendor batch API truncates without reporting the full size.
+                // Recover a saturated line through its unbounded single-line API.
+                const char *text = ppocrv6_ocr_recognize_raw(ctx.recognizer.get(), pixels[j], widths[j], heights[j],
+                                                            3, &length);
+                if (!text || length < 0) return fail();
+                ctx.texts[i].assign(text, static_cast<size_t>(length));
+            } else {
+                ctx.texts[i].assign(outputs[j], static_cast<size_t>(length));
+            }
+        }
+    }
+
+    for (size_t i = 0; i < n; ++i) {
+        if (ctx.texts[i].empty()) continue;
         const auto &b = boxes[i];
         const auto &o = orientations[i];
+        const int length = static_cast<int>(ctx.texts[i].size());
         // This vendor API exposes detector confidence, as did the orchestrator.
         ctx.results.push_back({b.x, b.y, b.w, b.h, b.score, ctx.texts[i].c_str(), length,
                                o.corrected ? 1 : 0, o.angle, o.confidence});
