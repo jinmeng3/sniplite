@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="../pics/icon.png" width="96" alt="sniplite icon">
+<img src="../pics/snaprail.png" width="96" alt="SnapRail icon">
 
-# sniplite
+# SnapRail
 
 **A lightweight, fast screenshot and pinning tool for Windows**
 
@@ -60,7 +60,7 @@ Get the current version from [GitHub Releases](https://github.com/jinmeng3/snipl
 - [QR + OCR + FormulaNet AVX2](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.7/sniplite_1.5.1.7_portable_QR_OCR_FormulaNet_AVX2_x64.zip)
 - [QR + OCR + FormulaNet Vulkan](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.7/sniplite_1.5.1.7_portable_QR_OCR_FormulaNet_Vulkan_x64.zip)
 
-Extract the ZIP and run `sniplite.exe`. The `sniplite-cli.com` companion provides command-line features; it is included in the QR ZIPs and is a separate download for single-file portable builds. Keep it beside the app. Portable builds can download or remove OCR from the OCR tab in Preferences. After checking for updates in the Update tab, portable builds can download and replace existing program files locally; optional OCR and formula model folders are preserved. The QR helper can also be installed or removed from the QR tab. Portable builds can enable “Start with Windows” in Preferences. The shortcut points to the current program location, so do not move or rename its directory afterward. If you move it, turn the option off and on again to update the shortcut.
+Extract the ZIP and run `SnapRail.exe`. The `SnapRail-cli.com` companion provides command-line features; it is included in the QR ZIPs and is a separate download for single-file portable builds. Keep it beside the app. Portable builds can download or remove OCR from the OCR tab in Preferences. After checking for updates in the Update tab, portable builds can download and replace existing program files locally; optional OCR and formula model folders are preserved. The QR helper can also be installed or removed from the QR tab. Portable builds can enable “Start with Windows” in Preferences. The shortcut points to the current program location, so do not move or rename its directory afterward. If you move it, turn the option off and on again to update the shortcut.
 
 If the app is running as administrator, run the CLI as administrator too; a standard-integrity CLI cannot send commands to the elevated app.
 
@@ -100,7 +100,7 @@ The CrispEmbed formula module can be installed from the local model and runtime 
 
 ### How do I scan a QR code?
 
-Capture and select the area containing the code, then click the QR toolbar button or press `Ctrl+Q`. The app uses `sniplite_qr.exe` from the same directory to decode it locally. Results appear in a message box and can be copied with `Ctrl+C`. The app does not open recognized URLs automatically. Only screenshot selections are supported; pins and clipboard images are not connected yet. See the [QR recognition guide](qr-code-recognition.en.md) or its [Simplified Chinese version](qr-code-recognition.md).
+Capture and select the area containing the code, then click the QR toolbar button or press `Ctrl+Q`. The app uses `SnapRail_qr.exe` from the same directory to decode it locally. Results appear in a message box and can be copied with `Ctrl+C`. The app does not open recognized URLs automatically. Only screenshot selections are supported; pins and clipboard images are not connected yet. See the [QR recognition guide](qr-code-recognition.en.md) or its [Simplified Chinese version](qr-code-recognition.md).
 The QR tab in Preferences can install or remove the helper. After installation, use the QR button or `Ctrl+Q` in the capture editor; after removal, both are unavailable.
 
 ### How do I extract text from a screenshot?
@@ -109,11 +109,11 @@ Select an area and click the text recognition button or press `Ctrl+O`. Results 
 
 ### How do I translate OCR text from English to Chinese?
 
-The OCR result panel can translate recognized English text to Chinese and toggle back to the original. It uses the shared GGML runtime selected by OCR (generic CPU, AVX2, or Vulkan) and `translation/opus-mt-en-zh-q8_0.gguf` beside the app. The installer and OCR portable packages include backend-specific translation engines; the large GGUF model must be supplied separately. Convert weights from [Helsinki-NLP/opus-mt-en-zh](https://huggingface.co/Helsinki-NLP/opus-mt-en-zh) to F16 GGUF with the [CrispASR Marian converter](https://github.com/CrispStrobe/CrispASR/blob/main/models/convert-marian-to-gguf.py), then follow [CrispASR's quantization guide](https://github.com/CrispStrobe/CrispASR/blob/main/docs/quantize.md): `crispasr-quantize <f16.gguf> translation/opus-mt-en-zh-q8_0.gguf q8_0`. Keep the model’s `zho` target metadata and original license notices.
+The OCR result panel can translate recognized English text to Chinese and toggle back to the original. All six OCR portable packages and the installer now include the Q8_0 model (about 83 MiB) and translation engine; the QR-only package excludes translation. The model is from [Helsinki-NLP/opus-mt-en-zh](https://huggingface.co/Helsinki-NLP/opus-mt-en-zh) under Apache-2.0; each portable package’s `translation/` directory includes its license and source notice.
 
 ### How do I recognize a formula in a screenshot?
 
-Select the formula in the capture editor and click the “∫” button to recognize and copy LaTeX directly. The capture editor closes after the copy succeeds. The adjacent eye button opens sniplite’s native MicroTeX preview window, where LaTeX remains editable and changes render live. Edited formulas can be copied with the button or `Ctrl+Enter`; syntax errors are flagged in the preview. If the current capture or selection has no matching recognition result, the eye button recognizes it before opening; it does not open an empty page when no formula is found. The preview opens on the monitor containing the selection. Extra spaces around braces and operators are removed while word separators are preserved. The formula module is about 82 MB installed and uses the local Texo-Distill GGUF with CrispEmbed; Preferences offer Auto, Vulkan, AVX2, or CPU, with CPU fallback when an accelerated backend fails.
+Select the formula in the capture editor and click the “∫” button to recognize and copy LaTeX directly. The capture editor closes after the copy succeeds. The adjacent eye button opens SnapRail’s native MicroTeX preview window, where LaTeX remains editable and changes render live. Edited formulas can be copied with the button or `Ctrl+Enter`; syntax errors are flagged in the preview. If the current capture or selection has no matching recognition result, the eye button recognizes it before opening; it does not open an empty page when no formula is found. The preview opens on the monitor containing the selection. Extra spaces around braces and operators are removed while word separators are preserved. The formula module is about 82 MB installed and uses the local Texo-Distill GGUF with CrispEmbed; Preferences offer Auto, Vulkan, AVX2, or CPU, with CPU fallback when an accelerated backend fails.
 No progress dialog appears during recognition. Failures and incomplete output leave the clipboard unchanged. Solid-color blank selections are rejected.
 
 
@@ -145,17 +145,17 @@ The app follows the Windows language by default. Open Preferences from the syste
 
 ## Comparison with PixPin
 
-| Metric | sniplite 1.4.0 | PixPin 3.6.6.0 |
+| Metric | SnapRail 1.4.0 | PixPin 3.6.6.0 |
 | --- | --- | --- |
 | Program size | Main program 291 KiB; QR portable ZIP 0.96 MiB | `PixPin.exe` 6.53 MiB; installation directory 190.99 MiB |
 | Idle working set | 35.48 MiB | 124.43 MiB |
 | F1 to capture UI ready (20 runs) | Median 16.35 ms; P95 30.99 ms | Median 31.02 ms; P95 78.69 ms; max 695.16 ms |
 
-<sub>Measurements were taken on the same PC on November 18, 2026; sniplite measurements are from version 1.4.0. Idle working set was sampled 20 times at 250 ms intervals, five seconds after 20 hotkey activations. UI readiness was measured 20 times; PixPin succeeded 20/20 times. Package sizes cover different items and are provided for reference only. Results vary with software versions, system state, display drivers, and measurement methods.</sub>
+<sub>Measurements were taken on the same PC on November 18, 2026; SnapRail measurements are from version 1.4.0. Idle working set was sampled 20 times at 250 ms intervals, five seconds after 20 hotkey activations. UI readiness was measured 20 times; PixPin succeeded 20/20 times. Package sizes cover different items and are provided for reference only. Results vary with software versions, system state, display drivers, and measurement methods.</sub>
 
 ## Build from source
 
-The project-local `w64devkit` can build the project directly. Alternatively, install MinGW-w64, CMake, and Ninja. Run `build.bat`, install the formula module from the Formula tab in `build\sniplite.exe` Preferences, then run `package-all.bat`. Packaging invokes `build-cpu-runtime.bat` to build a baseline x64 CPU GGML runtime from pinned CrispEmbed `v0.17.19` sources with Vulkan disabled. `package-qr-ocr-formula.bat` creates the all-CPU inference package; `package-qr-ocr-formula-vulkan.bat` overlays the Vulkan runtime and engines. Sources are under `E:\浏览器下载`; output goes to `build\dist`.
+The project-local `w64devkit` can build the project directly. Alternatively, install MinGW-w64, CMake, and Ninja. Run `build.bat`, install the formula module from the Formula tab in `build\SnapRail.exe` Preferences, then run `package-all.bat`. Packaging invokes `build-cpu-runtime.bat` to build a baseline x64 CPU GGML runtime from pinned CrispEmbed `v0.17.19` sources with Vulkan disabled. `package-qr-ocr-formula.bat` creates the all-CPU inference package; `package-qr-ocr-formula-vulkan.bat` overlays the Vulkan runtime and engines. Sources are under `E:\浏览器下载`; output goes to `build\dist`.
 
 Portable packages place `shared-runtime/` beside `ocr/` and `formula/`. The standalone OCR module ZIP keeps its runtime under `ocr/shared-runtime/` for module installation. CPU packages use the generic runtime; AVX2 and Vulkan packages share the generic and AVX2 runtime sets and add Vulkan files when needed.
 OCR packaging also needs `PP-OCRv6_tiny_det-f16.gguf`, `PP-OCRv6_tiny_rec-f16.gguf`, and `crispembed-windows-x86_64-vulkan` in `E:\浏览器下载`. Their pinned model checksums are in `res/ocr-notice.txt`; remove any ` (1)` download suffix from the detector filename. `build.bat` compiles `build/sniplite_ocr.dll` from native PP-OCRv6 sources, with official `(2, 1)` height/width downsampling in tiny recognizer stages 3 and 4. `package-all.bat` includes the engine and complete `third_party/ppocrv6/LICENSE` in the OCR module and CPU package; the Vulkan package uses the original Vulkan GGML runtime. After changing the engine, models, or OCR notices, run `package-all.bat`, update `MODULE_BYTES` in `src/ocr/ocr_get.c` to the resulting `build/sniplite_ocr.zip` size, then rebuild and repack. Publish `build/sniplite_ocr.zip` as an asset of the matching `v<version>` GitHub release.

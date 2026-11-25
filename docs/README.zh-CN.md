@@ -1,8 +1,8 @@
-# sniplite 文档
+# SnapRail 文档
 
 项目主页和完整简体中文使用说明：[README.md](../README.md)。
 
-# sniplite
+# SnapRail
 
 **极度轻量的截图贴图工具，核心用汇编开发**
 
@@ -40,7 +40,7 @@
 提供七种免安装便携 ZIP：QR 专用一种、QR+OCR 的 CPU／AVX2／Vulkan 版，以及 QR+OCR+FormulaNet 的 CPU／AVX2／Vulkan 版。文件名分别使用 `_portable_QR_OCR_<CPU|AVX2|Vulkan>_x64.zip` 和 `_portable_QR_OCR_FormulaNet_<CPU|AVX2|Vulkan>_x64.zip`。Vulkan 版依次尝试 Vulkan、AVX2、通用 CPU。全部内建 MicroTeX 原生公式预览，支持 LaTeX 编辑、实时渲染、语法错误提示，以及按钮或 `Ctrl+Enter` 复制；不需另装预览运行库。`LICENSE-MicroTeX.txt` 随程序提供。
 
 > [!TIP]
-> 图标在任务栏右下角，没看到的话点一下那里的小箭头。想让它一直显示，在 Windows 设置里搜索“其他系统托盘图标”，把 sniplite 打开。
+> 图标在任务栏右下角，没看到的话点一下那里的小箭头。想让它一直显示，在 Windows 设置里搜索“其他系统托盘图标”，把 SnapRail 打开。
 
 ## 默认快捷键
 
@@ -78,7 +78,7 @@
 
 | 软件 | 下载大小 | 空闲时内存 | 按下热键到可以截图 |
 | --- | --- | --- | --- |
-| **sniplite** | 0.4 MB | 11 MB | 12 毫秒 |
+| **SnapRail** | 0.4 MB | 11 MB | 12 毫秒 |
 | Snipaste 2.11.3 | 19 MB | 50 MB | 121 毫秒 |
 | PixPin 3.6.6 | 66 MB | 31 MB | 142 毫秒 |
 | Greenshot 1.3.328 | 4 MB | 16 MB | 252 毫秒 |
@@ -93,7 +93,7 @@
 
 **怎么截长图？**
 
-框选区域，点长截图按钮（Ctrl+L），然后自己滚动页面。sniplite 会把滚过的内容自动拼起来，旁边的预览条显示已经拼好的部分。按 Enter 复制，按 Esc 取消，也可以保存、贴图或者识别其中的文字。
+框选区域，点长截图按钮（Ctrl+L），然后自己滚动页面。SnapRail 会把滚过的内容自动拼起来，旁边的预览条显示已经拼好的部分。按 Enter 复制，按 Esc 取消，也可以保存、贴图或者识别其中的文字。
 
 **截图保存在哪里？**
 
@@ -101,7 +101,7 @@
 
 **快捷键和游戏冲突怎么办？**
 
-在首选项的控制页勾选“全屏程序（如游戏）在前台时让出快捷键”后，只要占满屏幕的程序在前台，sniplite 就会暂时放开快捷键，按键直接交给那个程序，切走后再拿回来。不是全屏运行的程序，可以加到“让出快捷键的程序”里：点“管理”，用“新建”填程序的文件名（比如 `game.exe`），或者用“浏览”直接选中程序。
+在首选项的控制页勾选“全屏程序（如游戏）在前台时让出快捷键”后，只要占满屏幕的程序在前台，SnapRail 就会暂时放开快捷键，按键直接交给那个程序，切走后再拿回来。不是全屏运行的程序，可以加到“让出快捷键的程序”里：点“管理”，用“新建”填程序的文件名（比如 `game.exe`），或者用“浏览”直接选中程序。
 
 **占多少内存？**
 
@@ -144,7 +144,7 @@
 
 ## 第三方开源组件
 
-sniplite 本身只用到 Windows 自带的系统库。可选的文字识别模块是别人的成果，原样提供，并附带它们的许可证或许可条款的链接（在模块的 `ocr` 文件夹里，也在[模块的发布页](https://github.com/MrTangLuyao/sniplite/releases/tag/ocr-4)）：
+SnapRail 本身只用到 Windows 自带的系统库。可选的文字识别模块是别人的成果，原样提供，并附带它们的许可证或许可条款的链接（在模块的 `ocr` 文件夹里，也在[模块的发布页](https://github.com/MrTangLuyao/sniplite/releases/tag/ocr-4)）：
 
 - [CrispEmbed](https://github.com/CrispStrobe/CrispEmbed) 运行库，MIT 许可证；CrispEmbed、GGML 与组件的版权声明随 OCR 模块提供
 - [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) 的 PP-OCRv6 模型，Copyright (c) PaddlePaddle Authors，Apache 2.0 许可证；GGUF 版本由 CrispEmbed 提供

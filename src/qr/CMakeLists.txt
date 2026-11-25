@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(sniplite_qr LANGUAGES C CXX ASM)
+project(SnapRail_qr LANGUAGES C CXX ASM)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -21,19 +21,19 @@ set(ZXING_ENABLE_QRCODE ON CACHE BOOL "" FORCE)
 add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../../third_party/zxing-cpp/core"
                  "${CMAKE_CURRENT_BINARY_DIR}/zxing")
 
-add_executable(sniplite_qr
+add_executable(SnapRail_qr
     "${CMAKE_CURRENT_LIST_DIR}/qr_main.c"
     "${CMAKE_CURRENT_LIST_DIR}/../pixels/pixel_ops.S"
 )
-target_include_directories(sniplite_qr PRIVATE
+target_include_directories(SnapRail_qr PRIVATE
     "${CMAKE_CURRENT_LIST_DIR}/.."
     "${CMAKE_CURRENT_LIST_DIR}/../pixels"
 )
-target_link_libraries(sniplite_qr PRIVATE ZXing::ZXing ole32 uuid windowscodecs)
-set_target_properties(sniplite_qr PROPERTIES LINKER_LANGUAGE CXX)
+target_link_libraries(SnapRail_qr PRIVATE ZXing::ZXing ole32 uuid windowscodecs)
+set_target_properties(SnapRail_qr PROPERTIES LINKER_LANGUAGE CXX)
 
 if(MINGW)
-    target_link_options(sniplite_qr PRIVATE
+    target_link_options(SnapRail_qr PRIVATE
         -municode
         -Wl,--subsystem,console
         -static-libgcc

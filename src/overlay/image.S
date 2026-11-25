@@ -1896,7 +1896,7 @@ FUNC save_dialog
         ret
         ENDF
 
-/* int save_dialog_helper(int argc, WCHAR **argv): body of `sniplite.exe --save-dialog` */
+/* int save_dialog_helper(int argc, WCHAR **argv): body of `SnapRail.exe --save-dialog` */
 #define SH_OFN 48
 #define SH_N 200
 #define SH_FILE 208                     /* WCHAR[MAX_PATH * 2] */

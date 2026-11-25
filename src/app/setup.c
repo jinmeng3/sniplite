@@ -1,4 +1,4 @@
-/* sniplite_win_setup_amd64.exe: the installer.
+/* SnapRail_setup_amd64.exe: the installer.
  *
  * Per-user (no admin, no UAC), no registry. Copies the two program files that are
  * embedded as resources into the install folder, adds a Start menu folder (sniplite and
@@ -12,12 +12,12 @@
  * A first install may choose another folder in the window; an installation is replaced
  * where it is (to move it, uninstall it first).
  *
- *   sniplite_win_setup_amd64.exe            window: the folder, and two checkboxes: start with
+ *   SnapRail_setup_amd64.exe            window: the folder, and two checkboxes: start with
  *                                           Windows, and the text recognition module (off unless
- *                                           ticked: sniplite then downloads it, in its preferences)
- *   sniplite_win_setup_amd64.exe /S         silent; a fresh install turns start with Windows on
- *   sniplite_win_setup_amd64.exe /update    silent, keeps the current choice
- *   sniplite_win_setup_amd64.exe /portable-update silent, replaces existing files in place
+ *                                           ticked: SnapRail then downloads it, in its preferences)
+ *   SnapRail_setup_amd64.exe /S         silent; a fresh install turns start with Windows on
+ *   SnapRail_setup_amd64.exe /update    silent, keeps the current choice
+ *   SnapRail_setup_amd64.exe /portable-update silent, replaces existing files in place
  *   ... "/D=C:\some folder\sniplite"        into that folder (a whole path, not a drive alone)
  * Exit code 0 = installed, 1 = failed or cancelled.
  *
@@ -91,14 +91,14 @@ static bool set_dir(const WCHAR *dir)
         return false;
     while (n > 0 && full[n - 1] == L'\\')
         full[--n] = 0;
-    if (!join(I.exe, full, L"sniplite.exe"))
+    if (!join(I.exe, full, L"SnapRail.exe"))
         return false;
     lstrcpyW(I.dir, full);
     return true;
 }
 
-/* Where sniplite is installed: the folder its Start menu shortcut points into, if the
- * program is still there. The shortcut is read as it is, nothing is searched for. */
+/* Where the app is installed: the folder its Start menu shortcut points into, if the
+ * program is still there. Accept the legacy executable once for in-place upgrades. */
 static bool installed_dir(WCHAR *dir)
 {
     WCHAR menu[MAX_PATH], lnk[MAX_PATH], exe[MAX_PATH] = L"";
@@ -115,7 +115,7 @@ static bool installed_dir(WCHAR *dir)
         IShellLinkW_Release(sl);
     }
     WCHAR *name = wcsrchr(exe, L'\\');
-    if (!name || lstrcmpiW(name + 1, L"sniplite.exe") || !exists(exe))
+    if (!name || (lstrcmpiW(name + 1, L"SnapRail.exe") && lstrcmpiW(name + 1, L"sniplite.exe")) || !exists(exe))
         return false;
     *name = 0;
     lstrcpyW(dir, exe);
@@ -168,9 +168,13 @@ static void stop_running(void)
     HANDLE p = pid ? OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid) : NULL;
     if (!p)
         return;
-    WCHAR exe[MAX_PATH];
+    WCHAR exe[MAX_PATH], old_exe[MAX_PATH];
     DWORD n = COUNTOF(exe);
-    if (!QueryFullProcessImageNameW(p, 0, exe, &n) || CompareStringOrdinal(exe, -1, I.exe, -1, TRUE) != CSTR_EQUAL) {
+    bool found = QueryFullProcessImageNameW(p, 0, exe, &n);
+    bool same = found && CompareStringOrdinal(exe, -1, I.exe, -1, TRUE) == CSTR_EQUAL;
+    if (found && !same && join(old_exe, I.dir, L"sniplite.exe"))
+        same = CompareStringOrdinal(exe, -1, old_exe, -1, TRUE) == CSTR_EQUAL;
+    if (!same) {
         CloseHandle(p);
         return;
     }
@@ -179,26 +183,29 @@ static void stop_running(void)
     CloseHandle(p);
 }
 
-/* Program files and their third-party notices, embedded as resources. */
+/* Program files, models, and third-party notices, embedded as resources. */
 static const struct {
     int id;
     const WCHAR *name;
-} kFiles[] = {{IDR_APP_EXE, L"sniplite.exe"}, {IDR_APP_COM, L"sniplite.com"},
-              {IDR_APP_QR, L"sniplite_qr.exe"}, {IDR_QR_LICENSE, L"LICENSE-ZXing.txt"},
+} kFiles[] = {{IDR_APP_EXE, L"SnapRail.exe"}, {IDR_APP_COM, L"SnapRail.com"},
+              {IDR_APP_QR, L"SnapRail_qr.exe"}, {IDR_QR_LICENSE, L"LICENSE-ZXing.txt"},
               {IDR_MICROTEX_LICENSE, L"LICENSE-MicroTeX.txt"}, {IDR_TINYXML2_LICENSE, L"LICENSE-TinyXML2.txt"},
               {IDR_TRANSLATE_ENGINE, L"translation\\sniplite_translate.dll"},
               {IDR_TRANSLATE_AVX2_ENGINE, L"translation\\cpu-avx2\\sniplite_translate.dll"},
               {IDR_TRANSLATE_VULKAN_ENGINE, L"translation\\vulkan\\sniplite_translate.dll"},
-              {IDR_TRANSLATE_LICENSE, L"translation\\LICENSE-Translation.txt"}};
+              {IDR_TRANSLATE_LICENSE, L"translation\\LICENSE-Translation.txt"},
+              {IDR_TRANSLATE_MODEL, L"translation\\opus-mt-en-zh-q8_0.gguf"}};
 static bool g_had[COUNTOF(kFiles)]; /* the file existed and was moved to *.old by swap() */
 
 static bool paths(int i, WCHAR *path, WCHAR *tmp, WCHAR *old)
 {
     if (I.portable_update && i == 1) {
-        WCHAR cli[MAX_PATH];
-        if (join(cli, I.dir, L"sniplite-cli.com") && exists(cli)) {
-            if (!join(path, I.dir, L"sniplite-cli.com") || !join(tmp, I.dir, L"sniplite.com.new") ||
-                !join(old, I.dir, L"sniplite.com.old"))
+        WCHAR cli[MAX_PATH], legacy[MAX_PATH];
+        bool have_new = join(cli, I.dir, L"SnapRail-cli.com") && exists(cli);
+        bool have_legacy = join(legacy, I.dir, L"sniplite-cli.com") && exists(legacy);
+        if (have_new || have_legacy) {
+            if (!join(path, I.dir, L"SnapRail-cli.com") || !join(tmp, I.dir, L"SnapRail-cli.com.new") ||
+                !join(old, I.dir, L"SnapRail-cli.com.old"))
                 return false;
             return lstrlenW(old) < MAX_PATH;
         }
@@ -290,6 +297,30 @@ static void delete_new(void)
             DeleteFileW(tmp);
 }
 
+static void retire_legacy_file(const WCHAR *name)
+{
+    WCHAR path[MAX_PATH], old[MAX_PATH + 8];
+    if (!join(path, I.dir, name) || !exists(path))
+        return;
+    wsprintfW(old, L"%s.old", path);
+    if (!MoveFileExW(path, old, MOVEFILE_REPLACE_EXISTING))
+        MoveFileExW(path, NULL, MOVEFILE_DELAY_UNTIL_REBOOT);
+}
+
+static void remove_legacy_files(void)
+{
+    static const WCHAR *legacy[] = {L"sniplite.exe", L"sniplite.com", L"sniplite-cli.com", L"sniplite_qr.exe"};
+    static const WCHAR *temporary[] = {L"sniplite.exe.new", L"sniplite.com.new", L"sniplite-cli.com.new",
+                                       L"sniplite_qr.exe.new", L"sniplite_qr.exe.part"};
+    WCHAR path[MAX_PATH];
+    for (int i = 0; i < COUNTOF(legacy); i++)
+        retire_legacy_file(legacy[i]);
+    for (int i = 0; i < COUNTOF(temporary); i++)
+        if (join(path, I.dir, temporary[i]))
+            DeleteFileW(path);
+}
+
+
 /* autostart: 1 on, 0 off, -1 leave as it is. ocr: start the OCR download after install.
  * portable_update: replace only files present in the target and leave shortcuts alone. */
 static bool install(int autostart, bool ocr, bool portable_update)
@@ -318,6 +349,11 @@ static bool install(int autostart, bool ocr, bool portable_update)
                 return false;
             }
             update_file[i] = exists(path);
+            if ((i == 1 || i == 2) && !update_file[i]) {
+                WCHAR legacy_file[MAX_PATH];
+                const WCHAR *legacy_name = i == 1 ? L"sniplite-cli.com" : L"sniplite_qr.exe";
+                update_file[i] = join(legacy_file, I.dir, legacy_name) && exists(legacy_file);
+            }
         }
         if (update_file[i] && !write_new(i)) {
             delete_new();
@@ -340,6 +376,8 @@ static bool install(int autostart, bool ocr, bool portable_update)
             if (swapped[i])
                 unswap(i);
     delete_new();
+    if (ok)
+        remove_legacy_files();
     if (ok && !portable_update) {
         WCHAR menu[MAX_PATH], lnk[MAX_PATH];
         if (special(CSIDL_PROGRAMS, MENU_FOLDER, menu)) {

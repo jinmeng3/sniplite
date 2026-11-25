@@ -22,9 +22,10 @@ static bool module_path(const WCHAR *name, WCHAR *path, int cap)
     if (!n || n >= (DWORD)(cap - 32))
         return false;
     while (n && path[n - 1] != L'\\' && path[n - 1] != L'/') n--;
-    if (lstrlenW(path + n) + lstrlenW(name) + 1 >= cap)
+    if (!n || n + (DWORD)lstrlenW(name) >= (DWORD)cap)
         return false;
-    lstrcatW(path, name);
+    path[n] = 0;
+    lstrcpyW(path + n, name);
     return true;
 }
 

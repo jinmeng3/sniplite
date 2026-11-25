@@ -1,18 +1,18 @@
 <div align="center">
 
-<img src="pics/icon.png" width="96" alt="SnipLite 图标">
+<img src="pics/snaprail.png" width="96" alt="SnapRail 图标">
 
-# SnipLite
+# SnapRail
 
 **轻量、快速、本地运行的 Windows 截图与贴图工具**
 
-[![English](https://img.shields.io/badge/English-eaeef2?style=flat-square)](docs/README.en.md) [![简体中文](https://img.shields.io/badge/%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-1677e5?style=flat-square)](#sniplite) [![繁體中文](https://img.shields.io/badge/%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87-eaeef2?style=flat-square)](docs/README.zh-TW.md) [![日本語](https://img.shields.io/badge/%E6%97%A5%E6%9C%AC%E8%AA%9E-eaeef2?style=flat-square)](docs/README.ja.md) [![한국어](https://img.shields.io/badge/%ED%95%9C%EA%B5%AD%EC%96%B4-eaeef2?style=flat-square)](docs/README.ko.md) [![Français](https://img.shields.io/badge/Fran%C3%A7ais-eaeef2?style=flat-square)](docs/README.fr.md) [![Deutsch](https://img.shields.io/badge/Deutsch-eaeef2?style=flat-square)](docs/README.de.md) [![Español](https://img.shields.io/badge/Espa%C3%B1ol-eaeef2?style=flat-square)](docs/README.es.md) · [下载 Releases](https://github.com/jinmeng3/sniplite/releases)
+[![English](https://img.shields.io/badge/English-eaeef2?style=flat-square)](docs/README.en.md) [![简体中文](https://img.shields.io/badge/%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-1677e5?style=flat-square)](#snaprail) [![繁體中文](https://img.shields.io/badge/%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87-eaeef2?style=flat-square)](docs/README.zh-TW.md) [![日本語](https://img.shields.io/badge/%E6%97%A5%E6%9C%AC%E8%AA%9E-eaeef2?style=flat-square)](docs/README.ja.md) [![한국어](https://img.shields.io/badge/%ED%95%9C%EA%B5%AD%EC%96%B4-eaeef2?style=flat-square)](docs/README.ko.md) [![Français](https://img.shields.io/badge/Fran%C3%A7ais-eaeef2?style=flat-square)](docs/README.fr.md) [![Deutsch](https://img.shields.io/badge/Deutsch-eaeef2?style=flat-square)](docs/README.de.md) [![Español](https://img.shields.io/badge/Espa%C3%B1ol-eaeef2?style=flat-square)](docs/README.es.md) · [下载 Releases](https://github.com/jinmeng3/sniplite/releases)
 
 [![版本](https://img.shields.io/github/v/tag/jinmeng3/sniplite?sort=date&label=%E7%89%88%E6%9C%AC&style=flat-square&color=1677e5)](https://github.com/jinmeng3/sniplite/releases) [![系统](https://img.shields.io/badge/%E7%B3%BB%E7%BB%9F-Windows%2010%20%2F%2011-3b82f6?style=flat-square)](#系统要求) [![许可证](https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF%E8%AF%81-AGPL--3.0-3b82f6?style=flat-square)](LICENSE-AGPL-3.0)
 
 </div>
 
-SnipLite 将截图、标注、贴图、长截图、二维码识别和本地 OCR 放在一个小巧的 Windows 工具中。可选的公式识别模块使用本机 GGUF 模型；识别内容留在本机处理。
+SnapRail 将截图、标注、贴图、长截图、二维码识别和本地 OCR 放在一个小巧的 Windows 工具中。可选的公式识别模块使用本机 GGUF 模型；识别内容留在本机处理。
 
 <p align="center">
   <img src="pics/zh/demo-select.png" width="49%" alt="窗口识别、放大镜与像素级选区">
@@ -67,7 +67,7 @@ QR 使用同一张测试码；OCR 使用 1000×260 RGB 单行文本；FormulaNet
 - 二维码 + OCR： [CPU](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.7/sniplite_1.5.1.7_portable_QR_OCR_CPU_x64.zip) · [AVX2](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.7/sniplite_1.5.1.7_portable_QR_OCR_AVX2_x64.zip) · [Vulkan](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.7/sniplite_1.5.1.7_portable_QR_OCR_Vulkan_x64.zip)
 - 二维码 + OCR + FormulaNet： [CPU](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.7/sniplite_1.5.1.7_portable_QR_OCR_FormulaNet_CPU_x64.zip) · [AVX2](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.7/sniplite_1.5.1.7_portable_QR_OCR_FormulaNet_AVX2_x64.zip) · [Vulkan](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.7/sniplite_1.5.1.7_portable_QR_OCR_FormulaNet_Vulkan_x64.zip)
 
-便携版解压后运行 `sniplite.exe`。二维码 ZIP 已包含命令行程序 `sniplite-cli.com`。OCR 和公式识别模块可在首选项对应页面安装或删除；FormulaNet 模块也可从本机模型与运行库文件安装。安装版和便携版均包含 MicroTeX 原生公式预览。
+便携版解压后运行 `SnapRail.exe`。二维码 ZIP 已包含命令行程序 `SnapRail-cli.com`。OCR 和公式识别模块可在首选项对应页面安装或删除；FormulaNet 模块也可从本机模型与运行库文件安装。安装版和便携版均包含 MicroTeX 原生公式预览。
 
 便携版支持在首选项开启开机启动。开启后快捷方式会指向当前程序位置；移动或重命名程序目录后，请重新关闭并开启此选项。
 
@@ -102,7 +102,7 @@ QR 使用同一张测试码；OCR 使用 1000×260 RGB 单行文本；FormulaNet
 
 ### 英译中
 
-OCR 结果面板可将英文识别结果翻译为中文，并可切回原文。需要与 OCR 实际所选后端匹配的共享 GGML 运行库（通用 CPU、AVX2 或 Vulkan），以及放在程序目录 `translation/` 下的 `opus-mt-en-zh-q8_0.gguf`。安装器和带 OCR 的便携包提供对应翻译引擎；GGUF 模型因体积较大需另行提供。可从 [Helsinki-NLP/opus-mt-en-zh](https://huggingface.co/Helsinki-NLP/opus-mt-en-zh) 获取权重，用 [CrispASR Marian 转换器](https://github.com/CrispStrobe/CrispASR/blob/main/models/convert-marian-to-gguf.py) 生成 F16 GGUF，再按 [CrispASR 量化说明](https://github.com/CrispStrobe/CrispASR/blob/main/docs/quantize.md) 执行 `crispasr-quantize <f16.gguf> translation/opus-mt-en-zh-q8_0.gguf q8_0`。模型的 GGUF 元数据需保留目标语言 `zho` 及原有许可声明。
+OCR 结果面板可将英文识别结果翻译为中文，并可切回原文。六种带 OCR 的便携包和安装器现都包含 Q8_0 翻译模型（约 83 MiB）及对应翻译引擎；纯二维码包不含翻译。模型来自 [Helsinki-NLP/opus-mt-en-zh](https://huggingface.co/Helsinki-NLP/opus-mt-en-zh)，采用 Apache-2.0 许可；便携包的 `translation/` 目录包含许可证和来源说明。
 
 
 ### 公式识别
@@ -119,7 +119,7 @@ OCR 结果面板可将英文识别结果翻译为中文，并可切回原文。�
   <img src="pics/ui/pin-rack.png" width="72%" alt="横向晾衣架中的贴图缩略图、状态和翻页控件">
 </p>
 
-晾衣架中的贴图只在当前运行期间保留；退出 SnipLite 时会释放。
+晾衣架中的贴图只在当前运行期间保留；退出 SnapRail 时会释放。
 
 ## 系统要求
 
@@ -148,4 +148,4 @@ CPU 识别图的完整 logits 在同步计算结束后直接从主机缓冲区�
 
 ## 许可证
 
-SnipLite 使用 [GNU Affero 通用公共许可证 v3.0（AGPL-3.0）](LICENSE-AGPL-3.0)。公式识别、OCR、MicroTeX 和其他第三方组件遵循各自许可；相关许可文件随源码或对应模块提供。
+SnapRail 使用 [GNU Affero 通用公共许可证 v3.0（AGPL-3.0）](LICENSE-AGPL-3.0)。公式识别、OCR、MicroTeX 和其他第三方组件遵循各自许可；相关许可文件随源码或对应模块提供。

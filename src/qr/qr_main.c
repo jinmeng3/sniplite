@@ -172,7 +172,7 @@ int wmain(int argc, WCHAR **argv)
 {
     bool raw = argc == 4 && !wcscmp(argv[1], L"--raw");
     if (!raw && argc != 2) {
-        fwprintf(stderr, L"Usage: sniplite_qr.exe <image-file> | --raw <width> <height>\n");
+        fwprintf(stderr, L"Usage: SnapRail_qr.exe <image-file> | --raw <width> <height>\n");
         return 2;
     }
     if (raw) {

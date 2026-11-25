@@ -1,4 +1,4 @@
-/* sniplite.exe: the background process (hotkeys, tray icon, capture overlay, pins, IPC),
+/* SnapRail.exe: the background process (hotkeys, tray icon, capture overlay, pins, IPC),
  * plus the internal helper modes (--save-dialog, --settings, --shortcuts,
  * --update-check, --ocr, --quick-save, --uninstall), each its own short-lived process. */
 #include "common.h"
@@ -385,7 +385,7 @@ static void status_json(Str *out)
 static void tray_tip(WCHAR *tip, int cap)
 {
     WCHAR t[200];
-    lstrcpyW(t, L"sniplite");
+    lstrcpyW(t, L"SnapRail");
     if (D.hk[HK_CAPTURE].vk)
         wsprintfW(t + lstrlenW(t), T(TRAY_CAPTURE), D.hk[HK_CAPTURE].text);
     if (D.hk[HK_PIN].vk)
@@ -544,7 +544,7 @@ static DWORD WINAPI settings_wait(void *proc)
     return 0;
 }
 
-/* Start sniplite.exe with a helper switch (its own short-lived process). quiet: a
+/* Start SnapRail.exe with a helper switch (its own short-lived process). quiet: a
  * background job, so no busy cursor while it starts. */
 static bool run_helper(const WCHAR *args, bool quiet)
 {
@@ -930,7 +930,7 @@ static int cmd_run(int argc, WCHAR **argv, const WCHAR *cwd, Str *out)
         return EXIT_OK;
     }
     if (arg_eq(c, L"version") || arg_eq(c, L"--version")) {
-        str_addf(out, L"sniplite %s\n", SNIPLITE_VERSION);
+        str_addf(out, L"SnapRail %s\n", SNIPLITE_VERSION);
         return EXIT_OK;
     }
     str_addf(out, T(ERR_UNKNOWN_CMD), c);
@@ -1042,7 +1042,7 @@ void save_dialog_file(int argc, WCHAR **argv, WCHAR *file)
         n = lstrlenW(file);
     if (n && file[n - 1] != L'\\')
         file[n++] = L'\\';
-    lstrcpynW(file + n, argc > 2 ? argv[2] : L"sniplite.png", 2 * MAX_PATH - n);
+    lstrcpynW(file + n, argc > 2 ? argv[2] : L"SnapRail.png", 2 * MAX_PATH - n);
 }
 
 /* ---- the quick capture: the screen the mouse is on, into a file, at once and without a window ---- */
@@ -1081,7 +1081,7 @@ static void quick_close(HANDLE give[2])
             CloseHandle(give[i]);
 }
 
-/* sniplite.exe --quick-save <mapping>,<event>, with those two handles inherited and no
+/* SnapRail.exe --quick-save <mapping>,<event>, with those two handles inherited and no
  * other. A thread: it takes some milliseconds, and the pixels are copied meanwhile. */
 static DWORD WINAPI quick_helper(void *give)
 {
@@ -1473,14 +1473,17 @@ static int daemon_main(HINSTANCE inst, int argc, WCHAR **argv, bool from_cli)
             *sl = 0;
             SetCurrentDirectoryW(exe_dir);
             /* left by an update that had to move running files aside */
+            static const WCHAR *patterns[] = {L"SnapRail.*.old", L"sniplite.*.old"};
             WIN32_FIND_DATAW fd;
-            HANDLE fh = FindFirstFileW(L"sniplite.*.old", &fd);
-            if (fh != INVALID_HANDLE_VALUE) {
-                do
-                    if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
-                        DeleteFileW(fd.cFileName);
-                while (FindNextFileW(fh, &fd));
-                FindClose(fh);
+            for (int i = 0; i < COUNTOF(patterns); i++) {
+                HANDLE fh = FindFirstFileW(patterns[i], &fd);
+                if (fh != INVALID_HANDLE_VALUE) {
+                    do
+                        if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+                            DeleteFileW(fd.cFileName);
+                    while (FindNextFileW(fh, &fd));
+                    FindClose(fh);
+                }
             }
         }
     }
@@ -1491,7 +1494,7 @@ static int daemon_main(HINSTANCE inst, int argc, WCHAR **argv, bool from_cli)
     wc.lpszClassName = DAEMON_CLASS;
     if (!RegisterClassW(&wc))
         return EXIT_FAIL;
-    D.hwnd = CreateWindowExW(WS_EX_TOOLWINDOW, DAEMON_CLASS, L"sniplite", WS_POPUP, 0, 0, 0, 0, NULL, NULL, inst, NULL);
+    D.hwnd = CreateWindowExW(WS_EX_TOOLWINDOW, DAEMON_CLASS, L"SnapRail", WS_POPUP, 0, 0, 0, 0, NULL, NULL, inst, NULL);
     if (!D.hwnd)
         return EXIT_FAIL;
     /* Keep UIPI's default filter for WM_COPYDATA. Otherwise lower-integrity callers can use an
@@ -1531,14 +1534,14 @@ static int daemon_main(HINSTANCE inst, int argc, WCHAR **argv, bool from_cli)
         str_add(&msg, T(HK_WARN_1));
         status_text(&msg);
         str_add(&msg, T(HK_WARN_2));
-        MessageBoxW(NULL, msg.p, L"sniplite", MB_OK | MB_ICONWARNING);
+        MessageBoxW(NULL, msg.p, L"SnapRail", MB_OK | MB_ICONWARNING);
         str_free(&msg);
     }
-    if (!start) { /* e.g. `sniplite.exe capture` or `sniplite.exe pin a.png` */
+    if (!start) { /* e.g. `SnapRail.exe capture` or `SnapRail.exe pin a.png` */
         Str out = {0};
         int code = cmd_run(argc, argv, cwd, &out);
         if (code && out.n && !from_cli)
-            MessageBoxW(NULL, out.p, L"sniplite", MB_OK | MB_ICONWARNING);
+            MessageBoxW(NULL, out.p, L"SnapRail", MB_OK | MB_ICONWARNING);
         str_free(&out);
     }
 
@@ -1606,7 +1609,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmdline, int show)
         Str reply = {0};
         int code = ac ? ipc_call(d, ac, av, &reply) : ipc_call(d, 1, again, &reply);
         if (code != 0 && reply.n)
-            MessageBoxW(NULL, reply.p, L"sniplite", MB_OK | MB_ICONWARNING);
+            MessageBoxW(NULL, reply.p, L"SnapRail", MB_OK | MB_ICONWARNING);
         str_free(&reply);
         return code < 0 ? EXIT_FAIL : code;
     }

@@ -511,11 +511,11 @@ int ocr_get(volatile LONG *cancel, void (*progress)(int percent, void *ctx), voi
 
 /* ---- carried by the program itself ----
  *
- * sniplite_<version>_portable_with_OCR_x64.exe is sniplite.exe with the zip put after it
+ * SnapRail_<version>_portable_with_OCR_x64.exe is SnapRail.exe with the zip put after it
  * (package-all.bat: copy /b), so the module travels in the one file. The zip's last record says how
  * long its directory is and where that begins, counted from the zip's own start: so where the
  * zip begins in the program's file is known from the file's end. The first time text is to be
- * read, the folder is written beside the program. A sniplite.exe without the zip is not slowed
+ * read, the folder is written beside the program. A SnapRail.exe without the zip is not slowed
  * by any of this: the last 22 bytes of the file are looked at once. */
 
 typedef struct {
@@ -668,14 +668,14 @@ static bool qr_file_size(const WCHAR *name, uint64_t *size)
 bool qr_installed(void)
 {
     uint64_t exe, license;
-    return qr_file_size(L"sniplite_qr.exe", &exe) && exe == QR_HELPER_SIZE &&
+    return qr_file_size(L"SnapRail_qr.exe", &exe) && exe == QR_HELPER_SIZE &&
            qr_file_size(L"LICENSE-ZXing.txt", &license) && license == QR_LICENSE_SIZE;
 }
 
 int qr_size_mb(void)
 {
     uint64_t exe = 0, license = 0;
-    qr_file_size(L"sniplite_qr.exe", &exe);
+    qr_file_size(L"SnapRail_qr.exe", &exe);
     qr_file_size(L"LICENSE-ZXing.txt", &license);
     return (int)((exe + license + 512 * 1024) >> 20);
 }
@@ -693,8 +693,10 @@ static bool qr_delete_file(const WCHAR *name, const WCHAR *suffix)
 
 bool qr_remove(void)
 {
-    bool ok = qr_delete_file(L"sniplite_qr.exe", L"");
+    bool ok = qr_delete_file(L"SnapRail_qr.exe", L"");
+    ok = qr_delete_file(L"sniplite_qr.exe", L"") && ok;
     ok = qr_delete_file(L"LICENSE-ZXing.txt", L"") && ok;
+    qr_delete_file(L"SnapRail_qr.exe", L".part");
     qr_delete_file(L"sniplite_qr.exe", L".part");
     qr_delete_file(L"LICENSE-ZXing.txt", L".part");
     return ok;
@@ -755,9 +757,12 @@ static bool qr_entry(const uint8_t *zip, size_t dir_at, const uint8_t *e, uint32
 
 static int qr_zip_unpack(const uint8_t *zip, size_t n)
 {
-    static const uint8_t helper_sha[32] = {
+    static const uint8_t legacy_helper_sha[32] = {
         0x52,0x54,0x2e,0xf7,0x67,0x5e,0x46,0x23,0x55,0x29,0x3f,0x4b,0x76,0xdf,0x2e,0x00,
         0x23,0x25,0x3c,0xc8,0xc2,0x17,0xd6,0x83,0x0e,0x71,0x57,0xf6,0xad,0x5a,0xe4,0x46};
+    static const uint8_t snaprail_helper_sha[32] = {
+        0x94,0xe0,0x5b,0xe9,0x47,0x7a,0xd1,0x0c,0x7a,0x66,0x27,0xb2,0x44,0x72,0x14,0xc2,
+        0x7d,0x19,0x8e,0x44,0xbf,0x41,0xa5,0xae,0xcc,0x2d,0xcc,0xe1,0xac,0x46,0x26,0xea};
     static const uint8_t license_sha[32] = {
         0x2e,0x54,0xcd,0x84,0xa6,0x45,0xbe,0xa2,0x59,0x43,0xc7,0x5d,0xd8,0xae,0x67,0xcb,
         0x29,0x1e,0x66,0xa4,0x7a,0x11,0x57,0x83,0x33,0xc9,0xb4,0xb3,0xb6,0xb8,0x6c,0x85};
@@ -782,9 +787,14 @@ static int qr_zip_unpack(const uint8_t *zip, size_t n)
             goto done;
         const uint8_t *entry = e;
         e += 46 + nlen + rd16(e + 30) + rd16(e + 32);
-        if (nlen == sizeof("sniplite_qr.exe") - 1 && !memcmp(entry + 46, "sniplite_qr.exe", nlen)) {
+        bool snaprail_helper = nlen == sizeof("SnapRail_qr.exe") - 1 && !memcmp(entry + 46, "SnapRail_qr.exe", nlen);
+        bool legacy_helper = nlen == sizeof("sniplite_qr.exe") - 1 && !memcmp(entry + 46, "sniplite_qr.exe", nlen);
+        if (snaprail_helper || legacy_helper) {
+            const char *entry_name = snaprail_helper ? "SnapRail_qr.exe" : "sniplite_qr.exe";
             if (got_helper || !qr_entry(zip, dir_at, entry, nlen, at, csize, usize, method, flags,
-                                        "sniplite_qr.exe", QR_HELPER_SIZE, helper_sha, &helper, &helper_mem))
+                                        entry_name, QR_HELPER_SIZE,
+                                        snaprail_helper ? snaprail_helper_sha : legacy_helper_sha,
+                                        &helper, &helper_mem))
                 goto done;
             got_helper = true;
         } else if (nlen == sizeof("LICENSE-ZXing.txt") - 1 && !memcmp(entry + 46, "LICENSE-ZXing.txt", nlen)) {
@@ -797,7 +807,7 @@ static int qr_zip_unpack(const uint8_t *zip, size_t n)
     if (!got_helper || !got_license)
         goto done;
     if (!qr_file_write(L"LICENSE-ZXing.txt", license, QR_LICENSE_SIZE) ||
-        !qr_file_write(L"sniplite_qr.exe", helper, QR_HELPER_SIZE)) {
+        !qr_file_write(L"SnapRail_qr.exe", helper, QR_HELPER_SIZE)) {
         result = QR_GET_WRITE;
         goto done;
     }

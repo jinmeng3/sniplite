@@ -1,7 +1,7 @@
 /* Update check: GitHub answers /releases/latest with a redirect to
  * /releases/tag/<newest tag>, so one request without following redirects gives
  * the newest version: no API, no JSON, no rate limit worries. The installer is
- * then at /releases/download/<tag>/sniplite_win_setup_amd64.exe.
+ * then at /releases/download/<tag>/SnapRail_setup_amd64.exe.
  * WinHTTP is loaded on demand and uses the system proxy settings. */
 #include "update.h"
 #include <winhttp.h>
@@ -78,7 +78,7 @@ static bool http_get(Http *h, const WCHAR *host, const WCHAR *path, const WCHAR 
 {
     memset(h, 0, sizeof *h);
     *status = 0;
-    const WCHAR *ua = L"sniplite/" SNIPLITE_VERSION;
+    const WCHAR *ua = L"SnapRail/" SNIPLITE_VERSION;
     h->s = WH.open(ua, WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!h->s) /* before Windows 8.1 */
         h->s = WH.open(ua, WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
@@ -288,7 +288,7 @@ bool update_installed_copy(void)
     WCHAR com[MAX_PATH + 16];
     if (!own_dir(com))
         return false;
-    lstrcatW(com, L"sniplite.com");
+    lstrcatW(com, L"SnapRail.com");
     return GetFileAttributesW(com) != INVALID_FILE_ATTRIBUTES;
 }
 

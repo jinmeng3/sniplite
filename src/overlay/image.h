@@ -24,4 +24,4 @@ void save_dialog_args(Str *cmd);
 void save_dialog_done(const WCHAR *path);
 /* main.c, in the helper: the file the dialog begins with (file: MAX_PATH * 2 characters) */
 void save_dialog_file(int argc, WCHAR **argv, WCHAR *file);
-int save_dialog_helper(int argc, WCHAR **argv); /* body of `sniplite.exe --save-dialog` */
+int save_dialog_helper(int argc, WCHAR **argv); /* body of `SnapRail.exe --save-dialog` */

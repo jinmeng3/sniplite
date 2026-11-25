@@ -1,6 +1,6 @@
 /* Where the installer puts things, shared by the installer and the uninstaller.
  * Per-user, no admin rights, no registry: the Start menu shortcut is the only record of
- * where sniplite was installed, and the installer reads it to find an installation. */
+ * where SnapRail was installed, and the installer reads it to find an installation. */
 #pragma once
 #include "lang.h"
 
@@ -10,7 +10,7 @@
 #define STARTUP_LNK L"sniplite.lnk"              /* under the user's Startup folder (same as the preferences) */
 
 /* The uninstaller's shortcut in MENU_FOLDER is named in the installer's language
- * ("Uninstall sniplite.lnk", "卸载 sniplite.lnk"). The installer writes the one of its
+ * ("Uninstall SnapRail.lnk", "卸载 SnapRail.lnk"). The installer writes the one of its
  * language and removes the others; the uninstaller removes them all. */
 #define UNINSTALL_LNK_MAX 64
 static inline void uninstall_lnk(int lang, WCHAR *out)
@@ -19,5 +19,5 @@ static inline void uninstall_lnk(int lang, WCHAR *out)
     lstrcatW(out, L".lnk");
 }
 
-int uninstall_main(bool silent); /* `sniplite.exe --uninstall [/S]` */
+int uninstall_main(bool silent); /* `SnapRail.exe --uninstall [/S]` */
 int uninstall_cleanup(const WCHAR *pid_arg); /* internal no-UI cleanup process mode */

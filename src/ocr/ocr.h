@@ -37,7 +37,7 @@ bool ocr_runtime_dir(WCHAR *dir, int cap); /* directory used by the loaded GGML 
 bool ocr_run(const uint32_t *px, int stride, int w, int h, float screen, OcrOut *out);
 
 /* ocr_ui.c, the background program's side: what the user asks for. All of it is done
- * by a helper process (sniplite.exe --ocr) that also owns the windows. */
+ * by a helper process (SnapRail.exe --ocr) that also owns the windows. */
 extern uint8_t ocr_panel_on; /* the text panel shows, or a text capture waits for its selection: refresh calls ocr_follow */
 extern uint8_t ocr_there;    /* the module is installed: the text buttons and menu entries show */
 extern uint8_t qr_there; /* the helper is installed: the QR toolbar button and Ctrl+Q work */
@@ -61,7 +61,7 @@ void ocr_copy(void);   /* the selection's text to the clipboard */
 bool ocr_picture(const uint32_t *px, int w, int h, RECT beside, HWND owner);
 bool ocr_picture_shown(void); /* false once that panel was closed from its own side, or its helper left before showing it */
 void ocr_picture_hide(void);
-int ocr_helper(int argc, WCHAR **argv); /* body of `sniplite.exe --ocr` and `--ocr-file` */
+int ocr_helper(int argc, WCHAR **argv); /* body of `SnapRail.exe --ocr` and `--ocr-file` */
 /* For the helper of a quick capture, and for "also save" when no helper started: the notice in
  * the lower right corner of the monitor with that point, and the wait until it has faded. */
 void notice_corner(const WCHAR *line, const WCHAR *path, POINT on_monitor, int stay_ms);

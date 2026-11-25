@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="../pics/icon.png" width="96" alt="icono de sniplite">
+<img src="../pics/snaprail.png" width="96" alt="icono de SnapRail">
 
-# sniplite
+# SnapRail
 
 **Una herramienta diminuta y rápida para capturar la pantalla y fijar imágenes, con el núcleo escrito en ensamblador**
 
@@ -40,7 +40,7 @@ Descarga el instalador más reciente en [Releases](https://github.com/MrTangLuya
 Hay siete paquetes ZIP portables, sin instalación y con reconocimiento QR: uno solo para QR, QR+OCR en versiones CPU, AVX2 y Vulkan, y QR+OCR+FormulaNet en esas mismas tres versiones. Los nombres usan `_portable_QR_OCR_<CPU|AVX2|Vulkan>_x64.zip` y `_portable_QR_OCR_FormulaNet_<CPU|AVX2|Vulkan>_x64.zip`. Vulkan prueba primero Vulkan, luego AVX2 y finalmente la CPU genérica. Todos incluyen la vista previa nativa de MicroTeX.
 
 > [!TIP]
-> El icono está en el extremo derecho de la barra de tareas; si no lo ves, haz clic en la flecha pequeña. Para tenerlo siempre a la vista, busca «Otros iconos de la bandeja del sistema» en la configuración de Windows y activa sniplite.
+> El icono está en el extremo derecho de la barra de tareas; si no lo ves, haz clic en la flecha pequeña. Para tenerlo siempre a la vista, busca «Otros iconos de la bandeja del sistema» en la configuración de Windows y activa SnapRail.
 
 ## Atajos predeterminados
 
@@ -78,7 +78,7 @@ Las partes que deben ser rápidas (captura, composición, dibujo y la pantalla d
 
 | Programa | Descarga | Memoria en reposo | Del atajo a listo |
 | --- | --- | --- | --- |
-| **sniplite** | 0,4 MB | 11 MB | 12 ms |
+| **SnapRail** | 0,4 MB | 11 MB | 12 ms |
 | Snipaste 2.11.3 | 19 MB | 50 MB | 121 ms |
 | PixPin 3.6.6 | 66 MB | 31 MB | 142 ms |
 | Greenshot 1.3.328 | 4 MB | 16 MB | 252 ms |
@@ -93,7 +93,7 @@ Selecciona una zona y pulsa el botón de texto (Ctrl+O): el texto aparece en un 
 
 **¿Cómo hago una captura larga?**
 
-Selecciona la zona, pulsa el botón de captura con desplazamiento (Ctrl+L) y desplaza la página tú mismo. sniplite une lo que va pasando, y una franja junto a la zona muestra el resultado. Enter copia y Esc cancela; también puedes guardarla, fijarla o leer su texto.
+Selecciona la zona, pulsa el botón de captura con desplazamiento (Ctrl+L) y desplaza la página tú mismo. SnapRail une lo que va pasando, y una franja junto a la zona muestra el resultado. Enter copia y Esc cancela; también puedes guardarla, fijarla o leer su texto.
 
 **¿Dónde se guardan las capturas?**
 
@@ -101,7 +101,7 @@ Ctrl+S abre el cuadro de diálogo de guardar en la última carpeta que usaste; l
 
 **¿Y si los atajos molestan en un juego?**
 
-En la pestaña Atajos de los ajustes, marca «Ceder los atajos en pantalla completa (juegos, etc.)»: mientras un programa que ocupa toda la pantalla está en primer plano, sniplite libera sus atajos y las teclas le llegan a ese programa; los recupera cuando cambias a otra cosa. Los programas que no se ejecutan a pantalla completa se pueden añadir en «Ceder los atajos a»: haz clic en «Gestionar» y luego en «Nuevo» para escribir un nombre de archivo como `game.exe`, o en «Examinar» para elegir el programa.
+En la pestaña Atajos de los ajustes, marca «Ceder los atajos en pantalla completa (juegos, etc.)»: mientras un programa que ocupa toda la pantalla está en primer plano, SnapRail libera sus atajos y las teclas le llegan a ese programa; los recupera cuando cambias a otra cosa. Los programas que no se ejecutan a pantalla completa se pueden añadir en «Ceder los atajos a»: haz clic en «Gestionar» y luego en «Nuevo» para escribir un nombre de archivo como `game.exe`, o en «Examinar» para elegir el programa.
 
 **¿Cuánta memoria usa?**
 
@@ -113,11 +113,11 @@ No necesita permisos de administrador ni toca el registro. Al cambiar un ajuste,
 
 **¿Cómo cambio el idioma?**
 
-sniplite sigue el idioma de Windows. Para usar otro, abre los ajustes desde el icono de la bandeja y elígelo en Idioma.
+SnapRail sigue el idioma de Windows. Para usar otro, abre los ajustes desde el icono de la bandeja y elígelo en Idioma.
 
 **¿Cómo se actualiza?**
 
-Una vez al día, sniplite pregunta a GitHub si hay una versión más reciente. Si la hay, aparece un aviso abajo a la derecha y un clic lo actualiza. Solo se comprueba el número de versión y no se envía nada; puedes desactivarlo en los ajustes. Las versiones portables no buscan actualizaciones: descarga la nueva en [Releases](https://github.com/MrTangLuyao/sniplite/releases/latest).
+Una vez al día, SnapRail pregunta a GitHub si hay una versión más reciente. Si la hay, aparece un aviso abajo a la derecha y un clic lo actualiza. Solo se comprueba el número de versión y no se envía nada; puedes desactivarlo en los ajustes. Las versiones portables no buscan actualizaciones: descarga la nueva en [Releases](https://github.com/MrTangLuyao/sniplite/releases/latest).
 
 **¿Cómo se desinstala?**
 
@@ -141,7 +141,7 @@ Instala [w64devkit](https://github.com/skeeto/w64devkit) (u otro MinGW-w64), añ
 
 ## Software libre de terceros
 
-sniplite en sí solo usa las bibliotecas del sistema de Windows. El módulo opcional de reconocimiento de texto es obra de otros y se distribuye sin cambios, con sus licencias o enlaces a ellas (en la carpeta `ocr` del módulo y en la [página del módulo](https://github.com/MrTangLuyao/sniplite/releases/tag/ocr-4)):
+SnapRail en sí solo usa las bibliotecas del sistema de Windows. El módulo opcional de reconocimiento de texto es obra de otros y se distribuye sin cambios, con sus licencias o enlaces a ellas (en la carpeta `ocr` del módulo y en la [página del módulo](https://github.com/MrTangLuyao/sniplite/releases/tag/ocr-4)):
 
 - Runtime de [CrispEmbed](https://github.com/CrispStrobe/CrispEmbed), licencia MIT; los avisos de CrispEmbed, GGML y sus componentes se incluyen en el módulo OCR
 - Modelos PP-OCRv6 de [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR), Copyright (c) PaddlePaddle Authors, licencia Apache 2.0; CrispEmbed distribuye la versión GGUF

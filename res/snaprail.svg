@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="64" y1="42" x2="448" y2="470" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2563EB"/>
+      <stop offset="1" stop-color="#312E81"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="315" y1="292" x2="423" y2="408" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#67E8F9"/>
+      <stop offset="1" stop-color="#22D3EE"/>
+    </linearGradient>
+    <filter id="shadow" x="64" y="70" width="390" height="386" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="12"/>
+    </filter>
+  </defs>
+
+  <!-- App tile -->
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#bg)"/>
+  <circle cx="414" cy="92" r="78" fill="#FFFFFF" opacity=".055"/>
+  <circle cx="82" cy="432" r="112" fill="#06B6D4" opacity=".09"/>
+
+  <!-- Soft shadow -->
+  <rect x="82" y="92" width="348" height="310" rx="34" fill="#0B1B55" opacity=".34" filter="url(#shadow)"/>
+
+  <!-- Back screenshot sheet -->
+  <rect x="126" y="78" width="300" height="284" rx="28" fill="#BFDBFE" opacity=".9"/>
+  <rect x="96" y="108" width="320" height="284" rx="30" fill="#FFFFFF"/>
+
+  <!-- Window header -->
+  <path d="M96 138C96 121.431 109.431 108 126 108H386C402.569 108 416 121.431 416 138V158H96V138Z" fill="#EFF6FF"/>
+  <circle cx="126" cy="133" r="6" fill="#93C5FD"/>
+  <circle cx="148" cy="133" r="6" fill="#93C5FD"/>
+  <circle cx="170" cy="133" r="6" fill="#93C5FD"/>
+
+  <!-- Selection frame -->
+  <rect x="145" y="184" width="222" height="164" rx="16" stroke="#2563EB" stroke-width="8" stroke-dasharray="1 0" opacity=".14"/>
+  <path d="M164 220V204C164 195.163 171.163 188 180 188H196" stroke="#2563EB" stroke-width="12" stroke-linecap="round"/>
+  <path d="M316 188H332C340.837 188 348 195.163 348 204V220" stroke="#2563EB" stroke-width="12" stroke-linecap="round"/>
+  <path d="M348 312V328C348 336.837 340.837 344 332 344H316" stroke="#2563EB" stroke-width="12" stroke-linecap="round"/>
+  <path d="M196 344H180C171.163 344 164 336.837 164 328V312" stroke="#2563EB" stroke-width="12" stroke-linecap="round"/>
+
+  <!-- Capture lens badge -->
+  <circle cx="370" cy="366" r="66" fill="#1D4ED8"/>
+  <circle cx="370" cy="366" r="57" fill="url(#accent)" stroke="#FFFFFF" stroke-width="8"/>
+  <circle cx="370" cy="366" r="23" fill="#0F3D91" opacity=".9"/>
+  <circle cx="370" cy="366" r="12" fill="#E0F2FE"/>
+  <path d="M337 327L346 336M394 396L403 405M403 327L394 336M346 396L337 405" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" opacity=".9"/>
+
+  <!-- Tiny capture glint -->
+  <path d="M424 245L431 263L449 270L431 277L424 295L417 277L399 270L417 263L424 245Z" fill="#FDE68A"/>
+</svg>

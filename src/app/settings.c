@@ -138,7 +138,7 @@ static bool autostart_set(bool on)
     if (SUCCEEDED(com_create(&CLSID_ShellLink, &IID_IShellLinkW, (void **)&sh))) {
         IShellLinkW_SetPath(sh, exe);
         IShellLinkW_SetWorkingDirectory(sh, dir);
-        IShellLinkW_SetDescription(sh, L"sniplite");
+        IShellLinkW_SetDescription(sh, L"SnapRail");
         if (SUCCEEDED(IShellLinkW_QueryInterface(sh, &IID_IPersistFile, (void **)&pf))) {
             ok = SUCCEEDED(IPersistFile_Save(pf, link, TRUE));
             IPersistFile_Release(pf);
@@ -928,7 +928,7 @@ static DWORD WINAPI fetch_thread(void *p)
 }
 
 /* The installer (/update) closes the background process, swaps the files (a running
- * exe like this one is moved aside) and starts sniplite again. */
+ * exe like this one is moved aside) and starts SnapRail again. */
 static DWORD WINAPI install_thread(void *proc)
 {
     DWORD code = 1;
@@ -940,7 +940,7 @@ static DWORD WINAPI install_thread(void *proc)
     return 0;
 }
 
-/* Number of pins on screen; updating restarts sniplite, which closes them. */
+/* Number of pins on screen; updating restarts SnapRail, which closes them. */
 static int daemon_pins(void)
 {
     HWND d = ipc_find();
@@ -1669,7 +1669,7 @@ static INT_PTR CALLBACK main_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
         backend_fill(S.page[PG_FORMULA], IDC_F_BACKEND, S.cfg.formula_backend);
         CheckDlgButton(c, IDC_ALSO_SAVE, S.cfg.also_save ? BST_CHECKED : BST_UNCHECKED);
         SetDlgItemTextW(S.page[PG_ABOUT], IDC_VERSION,
-                        S.portable ? L"sniplite " SNIPLITE_VERSION L" portable" : L"sniplite " SNIPLITE_VERSION);
+                        S.portable ? L"SnapRail " SNIPLITE_VERSION L" portable" : L"SnapRail " SNIPLITE_VERSION);
         SetDlgItemTextW(S.page[PG_ABOUT], IDC_PROJECT, UPDATE_HOST UPDATE_REPO); /* the link is its own text */
         HWND u = S.page[PG_UPDATE];
         wsprintfW(t, T(U_VERSION), SNIPLITE_VERSION);

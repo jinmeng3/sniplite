@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="../pics/icon.png" width="96" alt="icône de sniplite">
+<img src="../pics/snaprail.png" width="96" alt="icône de SnapRail">
 
-# sniplite
+# SnapRail
 
 **Un outil de capture d'écran et d'épinglage minuscule et rapide, dont le cœur est écrit en assembleur**
 
@@ -40,7 +40,7 @@ Récupérez le dernier installeur dans [Releases](https://github.com/MrTangLuyao
 Sept archives ZIP portables, sans installation et avec lecture des QR codes : une version QR seule, QR+OCR en versions CPU, AVX2 et Vulkan, et QR+OCR+FormulaNet dans ces trois versions. Les noms utilisent `_portable_QR_OCR_<CPU|AVX2|Vulkan>_x64.zip` et `_portable_QR_OCR_FormulaNet_<CPU|AVX2|Vulkan>_x64.zip`. Vulkan essaie d’abord Vulkan, puis AVX2, puis le CPU générique. Tous incluent l’aperçu natif MicroTeX.
 
 > [!TIP]
-> L'icône se trouve à droite de la barre des tâches ; si vous ne la voyez pas, cliquez sur la petite flèche. Pour la garder visible, cherchez « Autres icônes de la barre d'état système » dans les paramètres de Windows et activez sniplite.
+> L'icône se trouve à droite de la barre des tâches ; si vous ne la voyez pas, cliquez sur la petite flèche. Pour la garder visible, cherchez « Autres icônes de la barre d'état système » dans les paramètres de Windows et activez SnapRail.
 
 ## Raccourcis par défaut
 
@@ -78,7 +78,7 @@ Les parties qui doivent aller vite (capture, composition, dessin et écran de ca
 
 | Outil | Téléchargement | Mémoire au repos | Délai après le raccourci |
 | --- | --- | --- | --- |
-| **sniplite** | 0,4 Mo | 11 Mo | 12 ms |
+| **SnapRail** | 0,4 Mo | 11 Mo | 12 ms |
 | Snipaste 2.11.3 | 19 Mo | 50 Mo | 121 ms |
 | PixPin 3.6.6 | 66 Mo | 31 Mo | 142 ms |
 | Greenshot 1.3.328 | 4 Mo | 16 Mo | 252 ms |
@@ -93,7 +93,7 @@ Sélectionnez une zone et cliquez sur le bouton de texte (Ctrl+O) : le texte app
 
 **Comment faire une capture défilante ?**
 
-Sélectionnez la zone, cliquez sur le bouton de capture défilante (Ctrl+L) et faites défiler la page vous-même. sniplite assemble ce qui défile, et une bande à côté de la zone montre le résultat. Enter copie et Esc annule ; vous pouvez aussi enregistrer, épingler ou lire le texte.
+Sélectionnez la zone, cliquez sur le bouton de capture défilante (Ctrl+L) et faites défiler la page vous-même. SnapRail assemble ce qui défile, et une bande à côté de la zone montre le résultat. Enter copie et Esc annule ; vous pouvez aussi enregistrer, épingler ou lire le texte.
 
 **Où sont enregistrées les captures ?**
 
@@ -101,7 +101,7 @@ Ctrl+S ouvre la fenêtre d'enregistrement dans le dernier dossier utilisé ; la 
 
 **Et si les raccourcis gênent un jeu ?**
 
-Dans l'onglet Raccourcis des préférences, cochez « Laisser les raccourcis aux applis plein écran (jeux…) » : tant qu'un programme qui occupe tout l'écran est au premier plan, sniplite libère ses raccourcis et les touches vont à ce programme ; il les reprend quand vous passez à autre chose. Les programmes qui ne tournent pas en plein écran peuvent être ajoutés sous « Laisser les raccourcis à » : cliquez sur « Gérer », puis sur « Nouveau » pour taper un nom de fichier comme `game.exe`, ou sur « Parcourir » pour choisir le programme.
+Dans l'onglet Raccourcis des préférences, cochez « Laisser les raccourcis aux applis plein écran (jeux…) » : tant qu'un programme qui occupe tout l'écran est au premier plan, SnapRail libère ses raccourcis et les touches vont à ce programme ; il les reprend quand vous passez à autre chose. Les programmes qui ne tournent pas en plein écran peuvent être ajoutés sous « Laisser les raccourcis à » : cliquez sur « Gérer », puis sur « Nouveau » pour taper un nom de fichier comme `game.exe`, ou sur « Parcourir » pour choisir le programme.
 
 **Combien de mémoire utilise-t-il ?**
 
@@ -113,11 +113,11 @@ Il ne demande pas de droits d'administrateur et ne touche pas au registre. Modif
 
 **Comment changer de langue ?**
 
-sniplite suit la langue de Windows. Pour en utiliser une autre, ouvrez les préférences depuis l'icône de la zone de notification et choisissez-la dans Langue.
+SnapRail suit la langue de Windows. Pour en utiliser une autre, ouvrez les préférences depuis l'icône de la zone de notification et choisissez-la dans Langue.
 
 **Comment le mettre à jour ?**
 
-Une fois par jour, sniplite demande à GitHub s'il existe une version plus récente. Si oui, une notification apparaît en bas à droite, et un clic suffit pour mettre à jour. Seul le numéro de version est vérifié, rien n'est envoyé ; vous pouvez désactiver cela dans les préférences. Les versions portables ne recherchent pas les mises à jour : téléchargez la nouvelle depuis [Releases](https://github.com/MrTangLuyao/sniplite/releases/latest).
+Une fois par jour, SnapRail demande à GitHub s'il existe une version plus récente. Si oui, une notification apparaît en bas à droite, et un clic suffit pour mettre à jour. Seul le numéro de version est vérifié, rien n'est envoyé ; vous pouvez désactiver cela dans les préférences. Les versions portables ne recherchent pas les mises à jour : téléchargez la nouvelle depuis [Releases](https://github.com/MrTangLuyao/sniplite/releases/latest).
 
 **Comment le désinstaller ?**
 
@@ -141,7 +141,7 @@ Installez [w64devkit](https://github.com/skeeto/w64devkit) (ou un autre MinGW-w6
 
 ## Logiciels libres tiers
 
-sniplite lui-même n'utilise que les bibliothèques système de Windows. Le module facultatif de reconnaissance de texte est le travail d'autres personnes, redistribué tel quel avec leurs licences ou des liens vers celles-ci (dans le dossier `ocr` du module et sur la [page du module](https://github.com/MrTangLuyao/sniplite/releases/tag/ocr-4)) :
+SnapRail lui-même n'utilise que les bibliothèques système de Windows. Le module facultatif de reconnaissance de texte est le travail d'autres personnes, redistribué tel quel avec leurs licences ou des liens vers celles-ci (dans le dossier `ocr` du module et sur la [page du module](https://github.com/MrTangLuyao/sniplite/releases/tag/ocr-4)) :
 
 - Moteur [CrispEmbed](https://github.com/CrispStrobe/CrispEmbed), licence MIT ; les mentions CrispEmbed, GGML et composants figurent dans le module OCR
 - Modèles PP-OCRv6 de [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR), Copyright (c) PaddlePaddle Authors, licence Apache 2.0 ; leur version GGUF est fournie par CrispEmbed

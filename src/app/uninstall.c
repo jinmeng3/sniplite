@@ -1,4 +1,4 @@
-/* `sniplite.exe --uninstall [/S]`: removes exactly what the installer and the app
+/* `SnapRail.exe --uninstall [/S]`: removes exactly what the installer and the app
  * created, by name: the Start menu folder, the Startup shortcut, the program files
  * and sniplite.ini next to this exe. Never deletes anything recursively; the folder
  * itself is only removed when it is empty. A hidden instance deletes the running exe
@@ -118,30 +118,35 @@ int uninstall_main(bool silent)
     for (int i = 0; i < 20 && !formula_remove(); i++) /* the formula worker exits when its pipe closes */
         Sleep(100);
     static const WCHAR *files[] = {
-        L"sniplite.com", L"sniplite_qr.exe", L"LICENSE-ZXing.txt", L"LICENSE-MicroTeX.txt", L"LICENSE-TinyXML2.txt",
-        L"translation\\sniplite_translate.dll", L"translation\\LICENSE-Translation.txt",
+        L"SnapRail.com", L"SnapRail-cli.com", L"SnapRail_qr.exe", L"sniplite.exe", L"sniplite.com",
+        L"sniplite-cli.com", L"sniplite_qr.exe", L"LICENSE-ZXing.txt", L"LICENSE-MicroTeX.txt",
+        L"LICENSE-TinyXML2.txt", L"translation\\sniplite_translate.dll", L"translation\\LICENSE-Translation.txt",
         L"translation\\cpu-avx2\\sniplite_translate.dll", L"translation\\vulkan\\sniplite_translate.dll",
         L"translation\\sniplite_translate.dll.new", L"translation\\LICENSE-Translation.txt.new",
         L"translation\\sniplite_translate.dll.old", L"translation\\LICENSE-Translation.txt.old",
         L"translation\\cpu-avx2\\sniplite_translate.dll.new", L"translation\\cpu-avx2\\sniplite_translate.dll.old",
         L"translation\\vulkan\\sniplite_translate.dll.new", L"translation\\vulkan\\sniplite_translate.dll.old",
-        L"sniplite.ini", L"sniplite.exe.new", L"sniplite.com.new", L"sniplite_qr.exe.new", L"LICENSE-ZXing.txt.new",
-        L"LICENSE-MicroTeX.txt.new", L"LICENSE-TinyXML2.txt.new", L"LICENSE-ZXing.txt.old", L"LICENSE-MicroTeX.txt.old",
-        L"LICENSE-TinyXML2.txt.old"};
+        L"sniplite.ini", L"SnapRail.exe.new", L"SnapRail.com.new", L"SnapRail-cli.com.new", L"SnapRail_qr.exe.new",
+        L"sniplite.exe.new", L"sniplite.com.new", L"sniplite-cli.com.new", L"sniplite_qr.exe.new",
+        L"LICENSE-ZXing.txt.new", L"LICENSE-MicroTeX.txt.new", L"LICENSE-TinyXML2.txt.new",
+        L"LICENSE-ZXing.txt.old", L"LICENSE-MicroTeX.txt.old", L"LICENSE-TinyXML2.txt.old"};
     for (int i = 0; i < COUNTOF(files); i++)
         if (join(p, dir, files[i]))
             DeleteFileW(p);
     if (join(p, dir, L"translation\\cpu-avx2")) RemoveDirectoryW(p);
     if (join(p, dir, L"translation\\vulkan")) RemoveDirectoryW(p);
     if (join(p, dir, L"translation")) RemoveDirectoryW(p);
-    WIN32_FIND_DATAW fd; /* sniplite.exe.old, sniplite.com.old, sniplite.exe.<n>.old */
-    HANDLE fh = join(q, dir, L"sniplite.*.old") ? FindFirstFileW(q, &fd) : INVALID_HANDLE_VALUE;
-    if (fh != INVALID_HANDLE_VALUE) {
-        do
-            if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) && join(p, dir, fd.cFileName))
-                DeleteFileW(p);
-        while (FindNextFileW(fh, &fd));
-        FindClose(fh);
+    WIN32_FIND_DATAW fd; /* old or current executable backups */
+    static const WCHAR *patterns[] = {L"sniplite.*.old", L"SnapRail.*.old"};
+    for (int i = 0; i < COUNTOF(patterns); i++) {
+        HANDLE fh = join(q, dir, patterns[i]) ? FindFirstFileW(q, &fd) : INVALID_HANDLE_VALUE;
+        if (fh != INVALID_HANDLE_VALUE) {
+            do
+                if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) && join(p, dir, fd.cFileName))
+                    DeleteFileW(p);
+            while (FindNextFileW(fh, &fd));
+            FindClose(fh);
+        }
     }
 
     if (!silent)

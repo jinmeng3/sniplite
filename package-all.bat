@@ -3,8 +3,8 @@ setlocal
 chcp 65001 >nul
 cd /d "%~dp0"
 rem Build the installer and portable ZIPs into build\dist. Run build.bat first.
-if not exist build\sniplite.com (echo build\sniplite.com is missing: run build.bat first ^& exit /b 1)
-if not exist build\sniplite_win_setup_amd64.exe (echo the installer is missing: run build.bat first ^& exit /b 1)
+if not exist build\SnapRail.com (echo build\SnapRail.com is missing: run build.bat first ^& exit /b 1)
+if not exist build\SnapRail_setup_amd64.exe (echo the installer is missing: run build.bat first ^& exit /b 1)
 if not exist build\sniplite_ocr.dll (echo build\sniplite_ocr.dll is missing: run build.bat first & exit /b 1)
 if not exist build\sniplite_ocr_avx2.dll (echo build\sniplite_ocr_avx2.dll is missing: run build.bat first & exit /b 1)
 if not exist build\sniplite_formula_avx2.dll (echo build\sniplite_formula_avx2.dll is missing: run build.bat first ^& exit /b 1)
@@ -53,8 +53,8 @@ set V=%V:"=%
 set D=build\dist
 if not exist "%D%" mkdir "%D%" || exit /b 1
 for %%f in (LICENSE-ZXing.txt LICENSE-WebView2.txt NOTICE-WebView2.txt) do if exist "%D%\%%f" del /q "%D%\%%f"
-for %%f in ("%D%\sniplite_%V%_portable_x64.exe" "%D%\sniplite_%V%_portable_with_OCR_x64.exe") do if exist "%%~f" del /q "%%~f"
-copy /y build\sniplite_win_setup_amd64.exe "%D%\sniplite_win_setup_amd64.exe" >nul || exit /b 1
+rem Remove legacy single-file portable executables after all new packages succeed.
+copy /y build\SnapRail_setup_amd64.exe "%D%\SnapRail_setup_amd64.exe" >nul || exit /b 1
 copy /y third_party\zxing-cpp\LICENSE "%D%\LICENSE-ZXing.txt" >nul || exit /b 1
 copy /y third_party\microtex\LICENSE "%D%\LICENSE-MicroTeX.txt" >nul || exit /b 1
 copy /y third_party\tinyxml2\LICENSE.txt "%D%\LICENSE-TinyXML2.txt" >nul || exit /b 1
@@ -65,8 +65,8 @@ call package-qr-ocr-vulkan.bat || exit /b 1
 call package-qr-ocr-formula.bat || exit /b 1
 call package-qr-ocr-formula-avx2.bat || exit /b 1
 call package-qr-ocr-formula-vulkan.bat || exit /b 1
-for %%f in ("%D%\sniplite_%V%_portable_QR_OCR_x64.zip" "%D%\sniplite_%V%_portable_QR_OCR_Formula_CPU_x64.zip" "%D%\sniplite_%V%_portable_QR_OCR_Formula_Vulkan_x64.zip") do if exist "%%~f" del /q "%%~f"
-for %%f in ("%D%\sniplite_%V%_portable_QR_OCR_x64" "%D%\sniplite_%V%_portable_QR_OCR_Formula_CPU_x64" "%D%\sniplite_%V%_portable_QR_OCR_Formula_Vulkan_x64") do if exist "%%~f" rmdir /s /q "%%~f"
-for %%f in ("%D%\sniplite_%V%_portable_QR_OCR_CrispEmbed_WebView2_x64.zip" "%D%\sniplite_%V%_portable_QR_OCR_FormulaNet_WebView2_x64.zip") do if exist "%%~f" del /q "%%~f"
+for %%f in ("%D%\sniplite_*_portable_*.zip" "%D%\sniplite_win_setup_amd64.exe" "%D%\sniplite_%V%_portable_x64.exe" "%D%\sniplite_%V%_portable_with_OCR_x64.exe") do if exist "%%~f" del /q "%%~f"
+for /d %%f in ("%D%\sniplite_*_portable_*") do if exist "%%~f" rmdir /s /q "%%~f"
+for %%f in ("%D%\SnapRail_%V%_portable_x64.exe" "%D%\SnapRail_%V%_portable_with_OCR_x64.exe") do if exist "%%~f" del /q "%%~f"
 for %%f in (%D%\*) do echo %%~nxf  %%~zf bytes
 exit /b 0

@@ -1,0 +1,8 @@
+Model: Helsinki-NLP/opus-mt-en-zh
+Source repository: https://huggingface.co/Helsinki-NLP/opus-mt-en-zh
+Source revision: 408d9bc410a388e1d9aef112a2daba955b945255
+License: Apache License 2.0
+
+The included GGUF model was converted from the upstream Marian checkpoint and quantized to Q8_0. Source language: English (eng). Target language: Chinese (zho).
+
+Converter: https://github.com/CrispStrobe/CrispASR/blob/main/models/convert-marian-to-gguf.py

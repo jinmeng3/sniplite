@@ -87,7 +87,7 @@ bool spawn_inheriting(const WCHAR *exe, WCHAR *cmd, const STARTUPINFOW *si, cons
                       PROCESS_INFORMATION *pi); /* util.c */
 void str_free(Str *s);
 
-/* ---- ipc.c (client side, shared by sniplite.exe and sniplite.com) --------------- */
+/* ---- ipc.c (client side, shared by SnapRail.exe and SnapRail.com) ---------------- */
 HWND ipc_find(void);
 HWND ipc_find_dialog(const WCHAR *mark); /* the open dialog carrying that mark (settings.h), or NULL */
 void ipc_close(HWND w);                  /* tells a sniplite window to close, with what is open in front of it */

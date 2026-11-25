@@ -3,12 +3,12 @@
 #include "resource.h"
 
 1 RT_MANIFEST "sniplite.manifest"
-IDI_APP ICON "sniplite.ico"
+IDI_APP ICON "snaprail.ico"
 
 /* the program itself, built first by build.bat */
-IDR_APP_EXE RCDATA "sniplite.exe"
-IDR_APP_COM RCDATA "sniplite.com"
-IDR_APP_QR RCDATA "sniplite_qr.exe"
+IDR_APP_EXE RCDATA "SnapRail.exe"
+IDR_APP_COM RCDATA "SnapRail.com"
+IDR_APP_QR RCDATA "SnapRail_qr.exe"
 IDR_QR_LICENSE RCDATA "third_party/zxing-cpp/LICENSE"
 IDR_MICROTEX_LICENSE RCDATA "third_party/microtex/LICENSE"
 IDR_TINYXML2_LICENSE RCDATA "third_party/tinyxml2/LICENSE.txt"
@@ -17,16 +17,17 @@ IDR_TRANSLATE_ENGINE RCDATA "sniplite_translate.dll"
 IDR_TRANSLATE_LICENSE RCDATA "LICENSE-Translation.txt"
 IDR_TRANSLATE_AVX2_ENGINE RCDATA "sniplite_translate_avx2.dll"
 IDR_TRANSLATE_VULKAN_ENGINE RCDATA "sniplite_translate_vulkan.dll"
+IDR_TRANSLATE_MODEL RCDATA "translation/opus-mt-en-zh-q8_0.gguf"
 /* Places and sizes only: the texts come from src/lang_text.h and the font is replaced
  * by the one of the language in use (src/app/lang.c). */
 IDD_SETUP DIALOGEX 0, 0, 236, 127
 STYLE DS_SHELLFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
 EXSTYLE WS_EX_APPWINDOW
-CAPTION "sniplite"
+CAPTION "SnapRail"
 FONT 9, "Microsoft YaHei UI", 400, 0, 0x86
 BEGIN
     ICON            IDI_APP, -1, 12, 12, 20, 20
-    LTEXT           "sniplite", IDC_S_TITLE, 42, 11, 180, 14
+    LTEXT           "SnapRail", IDC_S_TITLE, 42, 11, 180, 14
     LTEXT           "", IDC_S_SUB, 42, 27, 186, 10
     LTEXT           "", IDC_S_PATH, 12, 46, 214, 27, SS_EDITCONTROL /* three lines: a long path goes on at the next one */
     AUTOCHECKBOX    "", IDC_S_AUTOSTART, 12, 74, 214, 12, WS_TABSTOP
@@ -46,11 +47,11 @@ BEGIN
   BEGIN
     BLOCK "040904B0"
     BEGIN
-      VALUE "FileDescription", "sniplite setup"
+      VALUE "FileDescription", "SnapRail setup"
       VALUE "FileVersion", "1.5.1.7"
-      VALUE "ProductName", "sniplite"
+      VALUE "ProductName", "SnapRail"
       VALUE "ProductVersion", "1.5.1.7"
-      VALUE "OriginalFilename", "sniplite_win_setup_amd64.exe"
+      VALUE "OriginalFilename", "SnapRail_setup_amd64.exe"
       VALUE "LegalCopyright", "MIT License"
     END
   END

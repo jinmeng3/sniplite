@@ -1,9 +1,9 @@
 /* Process entry point (link with -e start). There is no C runtime: the loader
  * jumps here, the program's main function runs, and its result is the process
  * exit code.
- *   default:    wWinMain(module, NULL, NULL, SW_SHOWDEFAULT)   (sniplite.exe, setup)
+ *   default:    wWinMain(module, NULL, NULL, SW_SHOWDEFAULT)   (SnapRail.exe, setup)
  *   -DCONSOLE:  wmain(argc, argv), argv split from GetCommandLineW by the same
- *               rules as the C runtime (cmdline_split, util.c)  (sniplite.com) */
+ *               rules as the C runtime (cmdline_split, util.c)  (SnapRail.com) */
 #include "asm.inc"
 
 #ifndef CONSOLE

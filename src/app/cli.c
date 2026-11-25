@@ -1,4 +1,4 @@
-/* sniplite.com: console front end. Starts the background process when needed,
+/* SnapRail.com: console front end. Starts the background process when needed,
  * forwards the command, prints the reply and returns its exit code. */
 #include "common.h"
 #include "lang.h"
@@ -47,9 +47,9 @@ static bool main_exe(WCHAR *exe)
         return false;
     slash[1] = 0;
     static const WCHAR *names[] = {
-        L"sniplite.exe",
-        L"sniplite_" SNIPLITE_VERSION L"_portable_x64.exe",
-        L"sniplite_" SNIPLITE_VERSION L"_portable_with_OCR_x64.exe",
+        L"SnapRail.exe",
+        L"SnapRail_" SNIPLITE_VERSION L"_portable_x64.exe",
+        L"SnapRail_" SNIPLITE_VERSION L"_portable_with_OCR_x64.exe",
     };
     for (int i = 0; i < COUNTOF(names); i++) {
         size_t dir = (size_t)(slash + 1 - exe), name = wcslen(names[i]);
@@ -191,12 +191,12 @@ int wmain(int argc, WCHAR **argv)
     }
     const WCHAR *c = av[0];
     if (arg_eq(c, L"help") || arg_eq(c, L"-h") || arg_eq(c, L"--help") || arg_eq(c, L"/?")) {
-        print(L"sniplite " SNIPLITE_VERSION, false);
+        print(L"SnapRail " SNIPLITE_VERSION, false);
         print(T(HELP), false);
         return EXIT_OK;
     }
     if (arg_eq(c, L"version") || arg_eq(c, L"--version")) {
-        print(L"sniplite " SNIPLITE_VERSION L"\n", false);
+        print(L"SnapRail " SNIPLITE_VERSION L"\n", false);
         return EXIT_OK;
     }
     bool json = has_json(ac, av);

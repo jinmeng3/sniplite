@@ -177,24 +177,24 @@ X(HELP,
   "Códigos de salida: 0 correcto, 1 error, 2 argumentos incorrectos, 3 no iniciado, 4 nada que fijar, 5 atajo en uso\n")
 
 X(NO_EXE,
-  "找不到 sniplite.exe。请将主程序和命令行启动器放在同一文件夹中\n",
-  "找不到 sniplite.exe。請將主程式和命令列啟動器放在同一資料夾中\n",
-  "sniplite.exe not found. Put it and the command-line launcher in the same folder\n",
-  "sniplite.exe が見つかりません。コマンドラインランチャーと同じフォルダーに置いてください\n",
-  "sniplite.exe를 찾을 수 없습니다. 명령줄 실행 파일과 같은 폴더에 두세요\n",
-  "sniplite.exe introuvable. Placez-le dans le même dossier que le lanceur de commandes\n",
-  "sniplite.exe nicht gefunden. Legen Sie es in denselben Ordner wie den Befehlszeilenstarter\n",
-  "No se encuentra sniplite.exe. Colócalo en la misma carpeta que el iniciador de comandos\n")
+  "找不到 SnapRail.exe。请将主程序和命令行启动器放在同一文件夹中\n",
+  "找不到 SnapRail.exe。請將主程式和命令列啟動器放在同一資料夾中\n",
+  "SnapRail.exe not found. Put it and the command-line launcher in the same folder\n",
+  "SnapRail.exe が見つかりません。コマンドラインランチャーと同じフォルダーに置いてください\n",
+  "SnapRail.exe를 찾을 수 없습니다. 명령줄 실행 파일과 같은 폴더에 두세요\n",
+  "SnapRail.exe introuvable. Placez-le dans le même dossier que le lanceur de commandes\n",
+  "SnapRail.exe nicht gefunden. Legen Sie es in denselben Ordner wie den Befehlszeilenstarter\n",
+  "No se encuentra SnapRail.exe. Colócalo en la misma carpeta que el iniciador de comandos\n")
 X(CANNOT_START,
-  "无法启动 sniplite.exe\n", "無法啟動 sniplite.exe\n", "Cannot start sniplite.exe\n",
-  "sniplite.exe を起動できません\n", "sniplite.exe를 시작할 수 없습니다\n",
-  "Impossible de lancer sniplite.exe\n", "sniplite.exe lässt sich nicht starten\n",
-  "No se puede iniciar sniplite.exe\n")
+  "无法启动 SnapRail.exe\n", "無法啟動 SnapRail.exe\n", "Cannot start SnapRail.exe\n",
+  "SnapRail.exe を起動できません\n", "SnapRail.exe를 시작할 수 없습니다\n",
+  "Impossible de lancer SnapRail.exe\n", "SnapRail.exe lässt sich nicht starten\n",
+  "No se puede iniciar SnapRail.exe\n")
 X(START_FAILED,
-  "sniplite.exe 没有正常启动\n", "sniplite.exe 沒有正常啟動\n", "sniplite.exe did not start properly\n",
-  "sniplite.exe が正常に起動しませんでした\n", "sniplite.exe가 제대로 시작되지 않았습니다\n",
-  "sniplite.exe n'a pas démarré correctement\n", "sniplite.exe ist nicht richtig gestartet\n",
-  "sniplite.exe no se inició correctamente\n")
+  "SnapRail.exe 没有正常启动\n", "SnapRail.exe 沒有正常啟動\n", "SnapRail.exe did not start properly\n",
+  "SnapRail.exe が正常に起動しませんでした\n", "SnapRail.exe가 제대로 시작되지 않았습니다\n",
+  "SnapRail.exe n'a pas démarré correctement\n", "SnapRail.exe ist nicht richtig gestartet\n",
+  "SnapRail.exe no se inició correctamente\n")
 X(UPD_USAGE,
   "用法：sniplite update [--install] [--json]\n", "用法：sniplite update [--install] [--json]\n",
   "Usage: sniplite update [--install] [--json]\n", "使い方：sniplite update [--install] [--json]\n",

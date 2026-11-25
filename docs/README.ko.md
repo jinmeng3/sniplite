@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="../pics/icon.png" width="96" alt="sniplite 아이콘">
+<img src="../pics/snaprail.png" width="96" alt="SnapRail 아이콘">
 
-# sniplite
+# SnapRail
 
 **아주 가볍고 빠른 화면 캡처, 고정 도구. 핵심은 어셈블리로 작성했습니다**
 
@@ -40,7 +40,7 @@
 설치가 필요 없는 포터블 ZIP은 7종입니다. QR 전용 1종, QR+OCR CPU·AVX2·Vulkan 버전 3종, QR+OCR+FormulaNet CPU·AVX2·Vulkan 버전 3종입니다. 파일 이름은 `_portable_QR_OCR_<CPU|AVX2|Vulkan>_x64.zip` 및 `_portable_QR_OCR_FormulaNet_<CPU|AVX2|Vulkan>_x64.zip` 형식을 사용합니다. Vulkan 버전은 Vulkan, AVX2, 일반 CPU 순서로 시도합니다. 모두 MicroTeX 네이티브 수식 미리 보기를 포함합니다.
 
 > [!TIP]
-> 아이콘은 작업 표시줄 오른쪽 끝에 있습니다. 보이지 않으면 그곳의 작은 화살표를 누르세요. 항상 보이게 하려면 Windows 설정에서 "기타 시스템 트레이 아이콘"을 검색해 sniplite를 켜세요.
+> 아이콘은 작업 표시줄 오른쪽 끝에 있습니다. 보이지 않으면 그곳의 작은 화살표를 누르세요. 항상 보이게 하려면 Windows 설정에서 "기타 시스템 트레이 아이콘"을 검색해 SnapRail을 켜세요.
 
 ## 기본 단축키
 
@@ -78,7 +78,7 @@
 
 | 프로그램 | 다운로드 | 대기 중 메모리 | 단축키부터 캡처 준비까지 |
 | --- | --- | --- | --- |
-| **sniplite** | 0.4MB | 11MB | 12ms |
+| **SnapRail** | 0.4MB | 11MB | 12ms |
 | Snipaste 2.11.3 | 19MB | 50MB | 121ms |
 | PixPin 3.6.6 | 66MB | 31MB | 142ms |
 | Greenshot 1.3.328 | 4MB | 16MB | 252ms |
@@ -93,7 +93,7 @@
 
 **긴 스크린샷은 어떻게 찍나요?**
 
-영역을 선택하고 스크롤 캡처 버튼(Ctrl+L)을 누른 뒤 페이지를 직접 스크롤하세요. 지나간 내용을 sniplite가 자동으로 이어 붙이고, 옆의 띠에 지금까지의 결과가 보입니다. Enter로 복사하고 Esc로 취소합니다. 저장, 고정, 텍스트 인식도 할 수 있습니다.
+영역을 선택하고 스크롤 캡처 버튼(Ctrl+L)을 누른 뒤 페이지를 직접 스크롤하세요. 지나간 내용을 SnapRail이 자동으로 이어 붙이고, 옆의 띠에 지금까지의 결과가 보입니다. Enter로 복사하고 Esc로 취소합니다. 저장, 고정, 텍스트 인식도 할 수 있습니다.
 
 **캡처는 어디에 저장되나요?**
 
@@ -101,7 +101,7 @@ Ctrl+S로 여는 저장 대화 상자는 마지막으로 저장한 폴더에서 
 
 **게임할 때 단축키가 방해되면 어떻게 하나요?**
 
-설정의 단축키 탭에서 "전체 화면 앱(게임 등)에 단축키 양보"를 켜면, 화면 전체를 쓰는 프로그램이 앞에 있는 동안 sniplite가 단축키를 잠시 해제해 키 입력이 그 프로그램으로 전달됩니다. 다른 창으로 바꾸면 다시 등록합니다. 전체 화면으로 실행되지 않는 프로그램은 "단축키를 양보할 앱"에 추가할 수 있습니다. "관리"를 클릭한 뒤 "새로 만들기"로 파일 이름(예: `game.exe`)을 입력하거나 "찾아보기"로 프로그램을 고르세요.
+설정의 단축키 탭에서 "전체 화면 앱(게임 등)에 단축키 양보"를 켜면, 화면 전체를 쓰는 프로그램이 앞에 있는 동안 SnapRail이 단축키를 잠시 해제해 키 입력이 그 프로그램으로 전달됩니다. 다른 창으로 바꾸면 다시 등록합니다. 전체 화면으로 실행되지 않는 프로그램은 "단축키를 양보할 앱"에 추가할 수 있습니다. "관리"를 클릭한 뒤 "새로 만들기"로 파일 이름(예: `game.exe`)을 입력하거나 "찾아보기"로 프로그램을 고르세요.
 
 **메모리는 얼마나 쓰나요?**
 
@@ -141,7 +141,7 @@ Ctrl+S로 여는 저장 대화 상자는 마지막으로 저장한 폴더에서 
 
 ## 서드파티 오픈 소스
 
-sniplite 자체는 Windows에 기본으로 들어 있는 시스템 라이브러리만 씁니다. 선택 사항인 텍스트 인식 모듈은 다른 분들의 작업물이며, 수정 없이 라이선스와 함께 제공합니다(라이선스 또는 그 링크는 모듈의 `ocr` 폴더와 [모듈 릴리스 페이지](https://github.com/MrTangLuyao/sniplite/releases/tag/ocr-4)에 있습니다).
+SnapRail 자체는 Windows에 기본으로 들어 있는 시스템 라이브러리만 씁니다. 선택 사항인 텍스트 인식 모듈은 다른 분들의 작업물이며, 수정 없이 라이선스와 함께 제공합니다(라이선스 또는 그 링크는 모듈의 `ocr` 폴더와 [모듈 릴리스 페이지](https://github.com/MrTangLuyao/sniplite/releases/tag/ocr-4)에 있습니다).
 
 - [CrispEmbed](https://github.com/CrispStrobe/CrispEmbed) 런타임(MIT 라이선스). CrispEmbed, GGML 및 구성 요소의 저작권 표시는 OCR 모듈에 포함되어 있습니다
 - [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR)의 PP-OCRv6 모델, Copyright (c) PaddlePaddle Authors, Apache License 2.0. GGUF 버전은 CrispEmbed가 제공합니다

@@ -1,6 +1,6 @@
 /* Text recognition as the user meets it.
  *
- * Everything the user sees of it lives in a helper process (sniplite.exe --ocr): the
+ * Everything the user sees of it lives in a helper process (SnapRail.exe --ocr): the
  * module's 20 MB, the text panel with its edit control, the notice. The background
  * program only hands over pictures, so nothing of this is ever loaded into it, and
  * all of it is gone when the helper leaves.
@@ -22,7 +22,7 @@
  * capture's own keys keep working. A helper with nothing on the screen and nothing
  * to do leaves after a while.
  *
- * sniplite.exe --ocr-file <picture> [--tab] prints a picture's text instead (UTF-8,
+ * SnapRail.exe --ocr-file <picture> [--tab] prints a picture's text instead (UTF-8,
  * on standard output): for scripts. */
 #include "ocr.h"
 #include "config.h"
@@ -368,9 +368,9 @@ void qr_scan(void)
     for (DWORD i = 0; i < n; i++)
         if (path[i] == L'\\' || path[i] == L'/')
             slash = (int)i;
-    if (slash < 0 || slash + 1 + lstrlenW(L"sniplite_qr.exe") >= COUNTOF(path))
+    if (slash < 0 || slash + 1 + lstrlenW(L"SnapRail_qr.exe") >= COUNTOF(path))
         goto failed;
-    lstrcpyW(path + slash + 1, L"sniplite_qr.exe");
+    lstrcpyW(path + slash + 1, L"SnapRail_qr.exe");
     wsprintfW(command, L"\"%s\" --raw %d %d", path, w, h);
 
     SECURITY_ATTRIBUTES sa = {sizeof(sa), NULL, TRUE};
@@ -1422,7 +1422,7 @@ static DWORD WINAPI pipe_thread(void *arg)
     return 0;
 }
 
-/* sniplite.exe --ocr-file <picture> [--tab]: the text on standard output */
+/* SnapRail.exe --ocr-file <picture> [--tab]: the text on standard output */
 static int ocr_file(int argc, WCHAR **argv)
 {
     Img img;
@@ -1451,7 +1451,7 @@ static int ocr_file(int argc, WCHAR **argv)
     return lines ? EXIT_OK : EXIT_NOTHING;
 }
 
-/* sniplite.exe --ocr: load the module, then do what comes down the pipe */
+/* SnapRail.exe --ocr: load the module, then do what comes down the pipe */
 int ocr_helper(int argc, WCHAR **argv)
 {
     Config config;

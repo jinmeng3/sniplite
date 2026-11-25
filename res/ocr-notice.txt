@@ -1,7 +1,7 @@
-The text recognition module of sniplite
+The text recognition module of SnapRail
 
 This folder contains the user-supplied CrispEmbed PP-OCRv6 tiny FP16 GGUF models,
-sniplite's source-built OCR engine, and the original CrispEmbed/GGML runtime payload.
+SnapRail's source-built OCR engine, and the original CrispEmbed/GGML runtime payload.
 
 PP-OCRv6_tiny_det-f16.gguf and PP-OCRv6_tiny_rec-f16.gguf
     PP-OCRv6 text detection and recognition weights from PaddleOCR, distributed in
@@ -36,5 +36,5 @@ msvcp140.dll, msvcp140_1.dll, vcruntime140.dll, vcruntime140_1.dll
     https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files
     https://visualstudio.microsoft.com/license-terms/
 
-sniplite itself is under the GNU Affero General Public License v3.0:
+SnapRail itself is under the GNU Affero General Public License v3.0:
 https://github.com/MrTangLuyao/sniplite

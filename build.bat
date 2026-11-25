@@ -107,26 +107,29 @@ set APP_LDFLAGS=-nostdlib -nostartfiles -e start -s -Wl,--gc-sections -Wl,--nxco
 windres --input-format=rc -O coff -I res res/sniplite.rc build/sniplite.res || exit /b 1
 windres --input-format=rc -O coff -I res -DSNIPLITE_CLI res/sniplite.rc build/cli.res || exit /b 1
 
-gcc %CF% -Wl,--subsystem,windows -o build\sniplite.exe src\start.S src\app\main.c src\overlay\ov_base.S src\overlay\ov_edit.S ^
+gcc %CF% -Wl,--subsystem,windows -o build\SnapRail.exe src\start.S src\app\main.c src\overlay\ov_base.S src\overlay\ov_edit.S ^
  src\overlay\ov_paint.S src\overlay\ov_show.S src\overlay\ov_input.S src\overlay\present.S src\overlay\shot.S src\overlay\draw.S src\app\pin.c src\overlay\image.S ^
  src\scroll\scroll_thumb.S src\scroll\scroll_hash.S ^
  src\app\config.c src\app\settings.c src\app\update.c src\app\uninstall.c src\app\util.c src\app\ipc.c src\app\lang.c src\app\crt.c ^
  src\ocr\ocr.c src\ocr\ocr_ui.c src\ocr\ocr_table.c src\ocr\ocr_get.c src\translate\translate.c src\formula\formula.c src\formula\formula_get.c src\formula\formula_ui.c src\formula\formula_preview.c src\scroll\scroll.c src\overlay\snap.c build\sniplite.res ^
  %APP_LDFLAGS% -lkernel32 -luser32 -lgdi32 -ldwmapi -limm32 -luuid -lole32 -lshell32 -lshlwapi -lgcc || exit /b 1
-gcc %CF% -DCONSOLE -Wl,--subsystem,console -o build\sniplite.com src\start.S src\app\cli.c src\app\update.c src\app\util.c ^
+gcc %CF% -DCONSOLE -Wl,--subsystem,console -o build\SnapRail.com src\start.S src\app\cli.c src\app\update.c src\app\util.c ^
  src\app\ipc.c src\app\lang.c src\app\crt.c build\cli.res %APP_LDFLAGS% -lkernel32 -luser32 -lgdi32 -lgcc || exit /b 1
 
 rem Build the separate QR helper and ZXing-C++ core as a QR-only static executable.
 cmake -S src\qr -B build\qr -G Ninja -DCMAKE_BUILD_TYPE=Release ^
  -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ || exit /b 1
 cmake --build build\qr --config Release || exit /b 1
-copy /y build\qr\sniplite_qr.exe build\sniplite_qr.exe >nul || exit /b 1
+copy /y build\qr\SnapRail_qr.exe build\SnapRail_qr.exe >nul || exit /b 1
 copy /y third_party\zxing-cpp\LICENSE build\LICENSE-ZXing.txt >nul || exit /b 1
 
 rem The installer carries the screenshot program, CLI, and QR helper as resources, so it is built last.
 windres --input-format=rc -O coff -I res -I build res\setup.rc build\setup.res || exit /b 1
-gcc %CF% -DSETUP -Wl,--subsystem,windows -o build\sniplite_win_setup_amd64.exe src\start.S src\app\setup.c ^
+gcc %CF% -DSETUP -Wl,--subsystem,windows -o build\SnapRail_setup_amd64.exe src\start.S src\app\setup.c ^
  src\app\util.c src\app\lang.c src\app\crt.c build\setup.res %APP_LDFLAGS% -lkernel32 -luser32 -lgdi32 -lole32 -lshell32 -ladvapi32 -luuid -lgcc ^
  || exit /b 1
 
-for %%f in (build\sniplite.exe build\sniplite.com build\sniplite_qr.exe build\sniplite_win_setup_amd64.exe) do echo %%~nxf  %%~zf bytes
+
+rem Remove obsolete product executable names after the new outputs build successfully.
+for %%f in (build\sniplite.exe build\sniplite.com build\sniplite_qr.exe build\sniplite_win_setup_amd64.exe build\qr\sniplite_qr.exe) do if exist "%%~f" del /q "%%~f"
+for %%f in (build\SnapRail.exe build\SnapRail.com build\SnapRail_qr.exe build\SnapRail_setup_amd64.exe) do echo %%~nxf  %%~zf bytes

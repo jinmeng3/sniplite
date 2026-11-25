@@ -4,14 +4,14 @@
 
 #ifdef SNIPLITE_CLI
 1 RT_MANIFEST "cli.manifest"
-#define FILE_DESC "sniplite command line"
-#define FILE_NAME "sniplite.com"
+#define FILE_DESC "SnapRail command line"
+#define FILE_NAME "SnapRail.com"
 #else
 1 RT_MANIFEST "sniplite.manifest"
-#define FILE_DESC "sniplite screenshot tool"
-#define FILE_NAME "sniplite.exe"
+#define FILE_DESC "SnapRail screenshot tool"
+#define FILE_NAME "SnapRail.exe"
 
-IDI_APP ICON "sniplite.ico"
+IDI_APP ICON "snaprail.ico"
 IDR_MICROTEX_DLL RCDATA "../build/sniplite_microtex.dll"
 IDR_MICROTEX_ASSETS RCDATA "../build/microtex-assets.zip"
 IDR_MICROTEX_LICENSE RCDATA "../third_party/microtex/LICENSE"
@@ -29,7 +29,7 @@ IDR_OCR_ENGINE_LICENSE RCDATA "../third_party/ppocrv6/LICENSE"
 IDD_SETTINGS DIALOGEX 0, 0, 238, 210
 STYLE DS_SHELLFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
 EXSTYLE WS_EX_APPWINDOW
-CAPTION "sniplite"
+CAPTION "SnapRail"
 FONT 9, "Microsoft YaHei UI", 400, 0, 0x86
 BEGIN
     CONTROL         "", IDC_TABS, "SysTabControl32", WS_TABSTOP, 6, 6, 226, 198
@@ -115,7 +115,7 @@ END
 /* Asked before a capture with a selection is left: where the mouse is. */
 IDD_LEAVE DIALOGEX 0, 0, 176, 64
 STYLE DS_SHELLFONT | DS_MODALFRAME | DS_CENTERMOUSE | WS_POPUP | WS_CAPTION | WS_SYSMENU
-CAPTION "sniplite"
+CAPTION "SnapRail"
 FONT 9, "Microsoft YaHei UI", 400, 0, 0x86
 BEGIN
     LTEXT           "", IDC_L_TEXT, 10, 10, 156, 10
@@ -127,7 +127,7 @@ END
 IDD_SHORTCUTS DIALOGEX 0, 0, 252, 250
 STYLE DS_SHELLFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
 EXSTYLE WS_EX_APPWINDOW
-CAPTION "sniplite"
+CAPTION "SnapRail"
 FONT 9, "Microsoft YaHei UI", 400, 0, 0x86
 BEGIN
     CONTROL         "", IDC_LIST, "SysListView32", LVS_REPORT | LVS_SINGLESEL | LVS_NOCOLUMNHEADER | WS_BORDER | WS_TABSTOP, 7, 7, 238, 216
@@ -136,7 +136,7 @@ END
 
 IDD_APPS DIALOGEX 0, 0, 256, 170
 STYLE DS_SHELLFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
-CAPTION "sniplite"
+CAPTION "SnapRail"
 FONT 9, "Microsoft YaHei UI", 400, 0, 0x86
 BEGIN
     CONTROL         "", IDC_LIST, "SysListView32", LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_NOCOLUMNHEADER |
@@ -152,7 +152,7 @@ END
 
 IDD_APPS_TEXT DIALOGEX 0, 0, 256, 62
 STYLE DS_SHELLFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
-CAPTION "sniplite"
+CAPTION "SnapRail"
 FONT 9, "Microsoft YaHei UI", 400, 0, 0x86
 BEGIN
     LTEXT           "", IDC_APPS_TEXT_LABEL, 7, 8, 242, 10
@@ -247,7 +247,7 @@ BEGIN
     BEGIN
       VALUE "FileDescription", FILE_DESC
       VALUE "FileVersion", "1.5.1.7"
-      VALUE "ProductName", "sniplite"
+      VALUE "ProductName", "SnapRail"
       VALUE "ProductVersion", "1.5.1.7"
       VALUE "OriginalFilename", FILE_NAME
       VALUE "LegalCopyright", "MIT License"

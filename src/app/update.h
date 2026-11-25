@@ -7,9 +7,8 @@
 #define UPDATE_REPO L"/jinmeng3/sniplite"
 #endif
 #define UPDATE_HOST L"github.com"
-/* The installer: as build.bat makes it, and under this very name in every release.
- * Installed copies ask for it by name when they update, so it must not be renamed. */
-#define SETUP_FILE L"sniplite_win_setup_amd64.exe"
+/* The installer filename embedded in releases. */
+#define SETUP_FILE L"SnapRail_setup_amd64.exe"
 
 typedef enum {
     UPD_ERROR,  /* no network, GitHub unreachable, ... */
@@ -40,10 +39,10 @@ bool http_fetch(const WCHAR *host, const WCHAR *path, const WCHAR *headers, DWOR
                 bool (*sink)(const void *data, DWORD n, void *ctx), void *ctx);
 
 /* Installed copies have the program's Start menu shortcut; portable copies may also
- * contain sniplite.com, so the shortcut target distinguishes them. */
+ * contain SnapRail.com, so the shortcut target distinguishes them. */
 bool update_installed_copy(void);
 /* Build the downloaded setup command for an installed or portable directory update. */
 void update_setup_cmd(Str *cmd, const WCHAR *setup, bool portable);
 
-/* `sniplite.exe --update-check`: if a newer release exists, tell the background process. */
+/* `SnapRail.exe --update-check`: if a newer release exists, tell the background process. */
 int update_check_main(void);

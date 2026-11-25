@@ -120,7 +120,7 @@ static const WCHAR *kThemes[] = {L"auto", L"light", L"dark"}; /* by THEME_* */
 static const WCHAR *kDetects[] = {L"controls", L"windows", L"elements"}; /* by DETECT_* */
 static const WCHAR *kInference[] = {L"auto", L"vulkan", L"avx2", L"cpu"}; /* by INFER_* */
 /* the file names: two or more of y M d H m s in a row stand for that part of the time */
-static const WCHAR *kNames[NAME_COUNT] = {L"sniplite_yyyy-MM-dd_HH-mm-ss",   L"sniplite_yyyyMMdd_HHmmss",
+static const WCHAR *kNames[NAME_COUNT] = {L"SnapRail_yyyy-MM-dd_HH-mm-ss",   L"SnapRail_yyyyMMdd_HHmmss",
                                           L"Screenshot_yyyy-MM-dd_HH-mm-ss", L"Screenshot_yyyyMMdd_HHmmss",
                                           L"yyyy-MM-dd_HH-mm-ss",            L"yyyyMMdd_HHmmss",
                                           L"yyyyMMddHHmmss"};

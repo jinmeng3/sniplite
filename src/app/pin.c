@@ -1458,7 +1458,7 @@ bool pin_add(Img *img, int x, int y, bool at_cursor)
         y = CLAMPI((int)c.y - h / 2, (int)wa.top, (int)wa.bottom - h);
     }
     /* WS_CAPTION (non-client area removed in WM_NCCALCSIZE) gives the native DWM shadow. */
-    HWND hw = CreateWindowExW((P.top_all ? WS_EX_TOPMOST : 0) | WS_EX_TOOLWINDOW, L"sniplite.pin", L"sniplite", WS_POPUP | WS_CAPTION, x, y, w,
+    HWND hw = CreateWindowExW((P.top_all ? WS_EX_TOPMOST : 0) | WS_EX_TOOLWINDOW, L"sniplite.pin", L"SnapRail", WS_POPUP | WS_CAPTION, x, y, w,
                               h, NULL, NULL, P.inst, p);
     if (!hw) {
         pin_free(p);
