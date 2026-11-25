@@ -106,7 +106,7 @@ OpusMT 的 CPU 解码复用 beam 间的 cross-attention K/V 缓存，并将缓�
 
 ### 英译中
 
-OCR 结果面板可将英文识别结果翻译为中文，并可切回原文。目前只有 [二维码 + OCR + FormulaNet Vulkan 便携包](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.7/sniplite_1.5.1.7_portable_QR_OCR_FormulaNet_Vulkan_x64.zip) 随包提供 Q8_0 翻译模型（约 83 MiB）和对应引擎；其他便携包不随包附带翻译模型。模型来自 [Helsinki-NLP/opus-mt-en-zh](https://huggingface.co/Helsinki-NLP/opus-mt-en-zh)，采用 Apache-2.0 许可；该包的 `translation/` 目录包含许可证和来源说明。
+OCR 结果面板支持将英文识别结果翻译为中文，但需要对应的 Q8_0 模型。已检查 GitHub 上 v1.5.1.7 的 [二维码 + OCR + FormulaNet Vulkan 便携包](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.7/sniplite_1.5.1.7_portable_QR_OCR_FormulaNet_Vulkan_x64.zip)：当前发布 ZIP 没有 `translation/` 目录，也不含翻译模型，因此无法仅靠该包开箱使用英译中。模型来自 [Helsinki-NLP/opus-mt-en-zh](https://huggingface.co/Helsinki-NLP/opus-mt-en-zh)，采用 Apache-2.0 许可。
 
 
 ### 公式识别
