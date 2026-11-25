@@ -1075,10 +1075,11 @@ static void panel_move(void)
     const RECT *mon = &mi.rcMonitor;
     int gap = px(8), least = translate_installed() ? px(420) : px(340), pw = MAXI(U.pw, least), x;
     int right = mon->right - gap - (sel->right + gap), left = sel->left - gap - (mon->left + gap);
-    if (right >= least) {
+    bool right_fits = right >= least, left_fits = left >= least;
+    if (right_fits && (!left_fits || right >= left)) {
         pw = MINI(pw, right);
         x = sel->right + gap;
-    } else if (left >= least) {
+    } else if (left_fits) {
         pw = MINI(pw, left);
         x = sel->left - gap - pw;
     } else {
