@@ -76,11 +76,21 @@ RECT rect_corners(POINT a, POINT b)
 
 static bool str_reserve(Str *s, int extra)
 {
-    if (s->n + extra + 1 <= s->cap)
+    if (extra < 0 || s->n < 0 || s->cap < 0 || s->n > INT_MAX - extra - 1)
+        return false;
+    int need = s->n + extra + 1;
+    if (need <= s->cap)
         return true;
-    int cap = MAXI(64, s->cap * 2);
-    while (cap < s->n + extra + 1)
+    int cap = s->cap >= 64 ? s->cap : 64;
+    while (cap < need) {
+        if (cap > INT_MAX / 2) {
+            cap = need;
+            break;
+        }
         cap *= 2;
+    }
+    if ((size_t)cap > SIZE_MAX / sizeof(WCHAR))
+        return false;
     WCHAR *p = mem_grow(s->p, (size_t)cap * sizeof(WCHAR));
     if (!p)
         return false;

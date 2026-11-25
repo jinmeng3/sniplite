@@ -19,7 +19,8 @@ call build-cpu-runtime.bat || exit /b 1
 if not exist build\cpu-runtime\ggml.dll (echo build\cpu-runtime is missing: build the CPU GGML runtime first ^& exit /b 1)
 if not exist build\cpu-runtime\ggml-base.dll exit /b 1
 if not exist build\cpu-runtime\ggml-cpu.dll exit /b 1
-set OCR_DIR=build\ocr
+set "OCR_DIR=build\ocr"
+set "OCR_ZIP=build\sniplite_ocr.zip"
 if exist "%OCR_DIR%" rmdir /s /q "%OCR_DIR%"
 mkdir "%OCR_DIR%" || exit /b 1
 copy /y build\sniplite_ocr.dll "%OCR_DIR%\sniplite_ocr.dll" >nul || exit /b 1
@@ -43,21 +44,16 @@ if exist "%OCR_VULKAN_RUNTIME%" rmdir /s /q "%OCR_VULKAN_RUNTIME%"
 mkdir "%OCR_VULKAN_RUNTIME%" || exit /b 1
 for %%f in (ggml.dll ggml-base.dll ggml-cpu.dll ggml-vulkan.dll) do copy /y "%CRISP_DIR%\%%f" "%OCR_VULKAN_RUNTIME%\%%f" >nul || exit /b 1
 copy /y res\ocr-notice.txt "%OCR_DIR%\NOTICE.txt" >nul || exit /b 1
-set OCR_ZIP=build\sniplite_ocr.zip
-if exist "%OCR_ZIP%" del /q "%OCR_ZIP%"
-"%SystemRoot%\System32\tar.exe" -a -c -f "%OCR_ZIP%" -C build ocr || exit /b 1
+set "OCR_ZIP_TMP=%OCR_ZIP%.tmp.zip"
+if exist "%OCR_ZIP_TMP%" del /q "%OCR_ZIP_TMP%"
+"%SystemRoot%\System32\tar.exe" -a -c -f "%OCR_ZIP_TMP%" -C build ocr || (if exist "%OCR_ZIP_TMP%" del /q "%OCR_ZIP_TMP%" & exit /b 1)
+move /y "%OCR_ZIP_TMP%" "%OCR_ZIP%" >nul || (if exist "%OCR_ZIP_TMP%" del /q "%OCR_ZIP_TMP%" & exit /b 1)
 for %%f in ("%OCR_ZIP%") do echo %%~nxf  %%~zf bytes
 for /f "tokens=3" %%v in ('findstr /C:"#define SNIPLITE_VERSION" src\common.h') do set V=%%v
 set V=%V:L"=%
 set V=%V:"=%
 set D=build\dist
 if not exist "%D%" mkdir "%D%" || exit /b 1
-for %%f in (LICENSE-ZXing.txt LICENSE-WebView2.txt NOTICE-WebView2.txt) do if exist "%D%\%%f" del /q "%D%\%%f"
-rem Remove legacy single-file portable executables after all new packages succeed.
-copy /y build\SnapRail_setup_amd64.exe "%D%\SnapRail_setup_amd64.exe" >nul || exit /b 1
-copy /y third_party\zxing-cpp\LICENSE "%D%\LICENSE-ZXing.txt" >nul || exit /b 1
-copy /y third_party\microtex\LICENSE "%D%\LICENSE-MicroTeX.txt" >nul || exit /b 1
-copy /y third_party\tinyxml2\LICENSE.txt "%D%\LICENSE-TinyXML2.txt" >nul || exit /b 1
 call package-qr.bat || exit /b 1
 call package-qr-ocr.bat || exit /b 1
 call package-qr-ocr-avx2.bat || exit /b 1
@@ -65,6 +61,17 @@ call package-qr-ocr-vulkan.bat || exit /b 1
 call package-qr-ocr-formula.bat || exit /b 1
 call package-qr-ocr-formula-avx2.bat || exit /b 1
 call package-qr-ocr-formula-vulkan.bat || exit /b 1
+rem Keep published files untouched until every package has been created successfully.
+rem Remove legacy single-file portable executables after all new packages succeed.
+set "SETUP_TMP=%D%\SnapRail_setup_amd64.exe.tmp"
+if exist "%SETUP_TMP%" del /q "%SETUP_TMP%"
+copy /y build\SnapRail_setup_amd64.exe "%SETUP_TMP%" >nul || (if exist "%SETUP_TMP%" del /q "%SETUP_TMP%" & exit /b 1)
+move /y "%SETUP_TMP%" "%D%\SnapRail_setup_amd64.exe" >nul || (if exist "%SETUP_TMP%" del /q "%SETUP_TMP%" & exit /b 1)
+copy /y third_party\zxing-cpp\LICENSE "%D%\LICENSE-ZXing.txt" >nul || exit /b 1
+copy /y third_party\microtex\LICENSE "%D%\LICENSE-MicroTeX.txt" >nul || exit /b 1
+copy /y third_party\tinyxml2\LICENSE.txt "%D%\LICENSE-TinyXML2.txt" >nul || exit /b 1
+for %%f in (%D%\*) do echo %%~nxf  %%~zf bytes
+for %%f in (LICENSE-ZXing.txt LICENSE-WebView2.txt NOTICE-WebView2.txt) do if exist "%D%\%%f" del /q "%D%\%%f"
 for %%f in ("%D%\sniplite_*_portable_*.zip" "%D%\sniplite_win_setup_amd64.exe" "%D%\sniplite_%V%_portable_x64.exe" "%D%\sniplite_%V%_portable_with_OCR_x64.exe") do if exist "%%~f" del /q "%%~f"
 for /d %%f in ("%D%\sniplite_*_portable_*") do if exist "%%~f" rmdir /s /q "%%~f"
 for %%f in ("%D%\SnapRail_%V%_portable_x64.exe" "%D%\SnapRail_%V%_portable_with_OCR_x64.exe") do if exist "%%~f" del /q "%%~f"

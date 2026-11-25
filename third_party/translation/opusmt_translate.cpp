@@ -287,9 +287,14 @@ static bool translate_one(Context& c, const std::string& input, std::string& res
     beams[0].ids.push_back(c.start);
     const int maxlen = std::min(c.maxpos - 1, c.genmax - 1);
     std::vector<float> logits(c.V);
+    auto better = [](const BeamCandidate& a, const BeamCandidate& b) { return a.rank != b.rank ? a.rank > b.rank : a.score > b.score; };
+    const size_t parent_keep = (size_t)c.beams;
+    std::vector<BeamCandidate> candidates;
+    candidates.reserve(parent_keep * parent_keep);
+    std::vector<BeamCandidate> parent_top;
+    parent_top.reserve(parent_keep);
     for (int step = 0; step < maxlen; ++step) {
-        std::vector<BeamCandidate> candidates;
-        candidates.reserve((size_t)c.beams * c.V);
+        candidates.clear();
         for (size_t bi = 0; bi < beams.size(); ++bi) {
             const Beam& beam = beams[bi];
             if (beam.done) {
@@ -304,14 +309,24 @@ static bool translate_one(Context& c, const std::string& input, std::string& res
             double sum = 0;
             for (float value : logits) if (std::isfinite(value)) sum += std::exp((double)value - top);
             double lognorm = (double)top + std::log(sum);
+            // Tokens from one parent share a length penalty; anything below its local top beam width cannot enter the global top beam width.
+            parent_top.clear();
             for (int token = 0; token < c.V; ++token) if (std::isfinite(logits[token])) {
                 double score = beam.score + (double)logits[token] - lognorm;
                 double length = (double)beam.ids.size();
-                candidates.push_back({bi, token, score, score / length});
+                BeamCandidate candidate{bi, token, score, score / length};
+                if (parent_top.size() < parent_keep) {
+                    parent_top.push_back(candidate);
+                    std::push_heap(parent_top.begin(), parent_top.end(), better);
+                } else if (better(candidate, parent_top.front())) {
+                    std::pop_heap(parent_top.begin(), parent_top.end(), better);
+                    parent_top.back() = candidate;
+                    std::push_heap(parent_top.begin(), parent_top.end(), better);
+                }
             }
+            candidates.insert(candidates.end(), parent_top.begin(), parent_top.end());
         }
         if (candidates.empty()) return false;
-        auto better = [](const BeamCandidate& a, const BeamCandidate& b) { return a.rank != b.rank ? a.rank > b.rank : a.score > b.score; };
         size_t keep = std::min((size_t)c.beams, candidates.size());
         std::partial_sort(candidates.begin(), candidates.begin() + keep, candidates.end(), better);
         std::vector<Beam> next;

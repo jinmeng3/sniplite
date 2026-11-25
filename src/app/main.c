@@ -941,7 +941,8 @@ static int cmd_run(int argc, WCHAR **argv, const WCHAR *cwd, Str *out)
 
 static LRESULT ipc_handle(HWND h, HWND reply, const COPYDATASTRUCT *cd)
 {
-    if (!cd || cd->dwData != IPC_REQ || cd->cbData < sizeof(WCHAR) || cd->cbData > 256 * 1024)
+    if (!cd || cd->dwData != IPC_REQ || !cd->lpData || cd->cbData < sizeof(WCHAR) || cd->cbData > 256 * 1024 ||
+        cd->cbData % sizeof(WCHAR) != 0 || (ULONG_PTR)cd->lpData % __alignof(WCHAR) != 0)
         return 0;
     int n = (int)(cd->cbData / sizeof(WCHAR));
     WCHAR *buf = mem_alloc(((size_t)n + 1) * sizeof(WCHAR));
@@ -951,13 +952,20 @@ static LRESULT ipc_handle(HWND h, HWND reply, const COPYDATASTRUCT *cd)
     buf[n] = 0;
     WCHAR *parts[64];
     int np = 0;
+    bool too_many = false;
     parts[np++] = buf;
     for (WCHAR *p = buf; *p; p++)
         if (*p == IPC_SEP) {
             *p = 0;
             if (np < COUNTOF(parts))
                 parts[np++] = p + 1;
+            else
+                too_many = true;
         }
+    if (too_many) {
+        mem_free(buf);
+        return 0;
+    }
     Str out = {0};
     int code = cmd_run(np - 1, parts + 1, parts[0], &out);
     if (reply && IsWindow(reply)) {

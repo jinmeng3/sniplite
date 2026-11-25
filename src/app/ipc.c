@@ -2,12 +2,19 @@
 #include "common.h"
 
 static Str *g_reply;
+static HWND g_daemon;
+static DWORD g_daemon_pid;
 
 static LRESULT CALLBACK reply_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
 {
     if (m == WM_COPYDATA) {
         const COPYDATASTRUCT *cd = (const COPYDATASTRUCT *)lp;
-        if (cd && cd->dwData == IPC_REPLY && g_reply && cd->cbData >= sizeof(WCHAR)) {
+        DWORD pid = 0;
+        if (cd && (HWND)wp == g_daemon && IsWindow(g_daemon) &&
+            GetWindowThreadProcessId(g_daemon, &pid) && pid == g_daemon_pid &&
+            cd->dwData == IPC_REPLY && g_reply && cd->lpData && cd->cbData >= sizeof(WCHAR) &&
+            cd->cbData <= 256 * 1024 && cd->cbData % sizeof(WCHAR) == 0 &&
+            (ULONG_PTR)cd->lpData % __alignof(WCHAR) == 0) {
             const WCHAR *t = cd->lpData;
             int n = (int)(cd->cbData / sizeof(WCHAR));
             while (n > 0 && !t[n - 1])
@@ -51,8 +58,7 @@ int ipc_call(HWND daemon, int argc, WCHAR **argv, Str *reply)
     wc.lpszClassName = L"sniplite.reply";
     RegisterClassW(&wc); /* fails harmlessly when already registered */
     HWND rw = CreateWindowExW(0, wc.lpszClassName, L"", 0, 0, 0, 0, 0, HWND_MESSAGE, NULL, inst, NULL);
-    if (rw)
-        ChangeWindowMessageFilterEx(rw, WM_COPYDATA, MSGFLT_ALLOW, NULL);
+    /* Keep UIPI enabled; clients are expected to run at the daemon's integrity level. */
 
     Str req = {0};
     WCHAR cwd[MAX_PATH * 2];
@@ -68,10 +74,14 @@ int ipc_call(HWND daemon, int argc, WCHAR **argv, Str *reply)
     DWORD pid = 0;
     GetWindowThreadProcessId(daemon, &pid);
     AllowSetForegroundWindow(pid); /* so the capture overlay may take focus */
+    g_daemon = daemon;
+    g_daemon_pid = pid;
     g_reply = reply;
     DWORD_PTR res = 0;
     LRESULT ok = SendMessageTimeoutW(daemon, WM_COPYDATA, (WPARAM)rw, (LPARAM)&cd, SMTO_ABORTIFHUNG, 60000, &res);
     g_reply = NULL;
+    g_daemon = NULL;
+    g_daemon_pid = 0;
     if (rw)
         DestroyWindow(rw);
     str_free(&req);

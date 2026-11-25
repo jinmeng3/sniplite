@@ -34,15 +34,15 @@
 #include "overlay.h"
 #include "pin.h"
 #include "shot.h"
+#include "scroll_budget.h"
 #include "ov_layout.inc"
 #include <dwmapi.h>
 #include <math.h>
 
 #define LONG_CLASS L"sniplite.long"
 #define STRIPS 8
-#define MAX_ROWS 32000        /* of the long picture */
-#define MAX_PIXELS 40000000   /* and of its size: 160 MB */
 #define TICK_MS 30
+
 #define TICK_QUIET_MS 120     /* while nothing changes */
 #define TIMER_GRAB 1
 #define HK_CANCEL 1
@@ -391,7 +391,8 @@ static bool stitch_start(int w, int h)
     L.w = w, L.h = h;
     L.first = true, L.lost = L.full = false;
     L.rows = L.pos = 0, L.committed = L.hash_committed = 0;
-    L.max_rows = MAXI(MINI(MAX_ROWS, MAX_PIXELS / w), 2 * h);
+    if (!scroll_canvas_budget(w, h, &L.max_rows))
+        return false;
     L.x0 = w / 16, L.sw = MAXI((w - 2 * L.x0) / STRIPS, 1);
     for (L.tsize = 1024; L.tsize < 6 * h; L.tsize *= 2)
         ;

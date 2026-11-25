@@ -12,7 +12,7 @@ set V=%V:"=%
 set AVX2=build\dist\SnapRail_%V%_portable_QR_OCR_FormulaNet_AVX2_x64
 set D=build\dist\SnapRail_%V%_portable_QR_OCR_FormulaNet_Vulkan_x64
 set STAGE=build\dist\SnapRail_%V%_portable_QR_OCR_FormulaNet_Vulkan_x64_stage
-set ZIP=build\dist\SnapRail_%V%_portable_QR_OCR_FormulaNet_Vulkan_x64.zip
+set "ZIP_TMP=%ZIP%.tmp.zip"
 if not exist "%AVX2%\SnapRail.exe" (echo AVX2 FormulaNet package is missing: package-qr-ocr-formula-avx2.bat failed ^& exit /b 1)
 if exist "%STAGE%" rmdir /s /q "%STAGE%"
 xcopy /e /i /q /y "%AVX2%\*" "%STAGE%\" >nul
@@ -27,8 +27,9 @@ for %%f in (ggml.dll ggml-base.dll ggml-cpu.dll ggml-vulkan.dll) do copy /y "bui
 mkdir "%STAGE%\translation\vulkan" || exit /b 1
 copy /y build\sniplite_translate_vulkan.dll "%STAGE%\translation\vulkan\sniplite_translate.dll" >nul || exit /b 1
 copy /y build\sniplite_ocr_vulkan.dll "%STAGE%\ocr\sniplite_ocr_vulkan.dll" >nul || exit /b 1
-if exist "%ZIP%" del /q "%ZIP%"
-"%SystemRoot%\System32\tar.exe" -a -c -f "%ZIP%" -C "%STAGE%" SnapRail.exe SnapRail-cli.com SnapRail_qr.exe LICENSE-ZXing.txt LICENSE-MicroTeX.txt LICENSE-TinyXML2.txt ocr formula shared-runtime translation || exit /b 1
+if exist "%ZIP_TMP%" del /q "%ZIP_TMP%"
+"%SystemRoot%\System32\tar.exe" -a -c -f "%ZIP_TMP%" -C "%STAGE%" SnapRail.exe SnapRail-cli.com SnapRail_qr.exe LICENSE-ZXing.txt LICENSE-MicroTeX.txt LICENSE-TinyXML2.txt ocr formula shared-runtime translation || (if exist "%ZIP_TMP%" del /q "%ZIP_TMP%" & exit /b 1)
+move /y "%ZIP_TMP%" "%ZIP%" >nul || (if exist "%ZIP_TMP%" del /q "%ZIP_TMP%" & exit /b 1)
 if exist "%D%" rmdir /s /q "%D%"
 move "%STAGE%" "%D%" >nul || exit /b 1
 for %%f in ("%ZIP%") do echo %%~nxf  %%~zf bytes

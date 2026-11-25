@@ -8,11 +8,11 @@
  * The choice is `lang=` in sniplite.ini: missing or `auto` follows the Windows display
  * language, otherwise one of the codes of lang_code(). */
 #pragma once
-#include "common.h"
+#include "../common.h"
 
 enum {
 #define X(name, ...) S_##name,
-#include "lang_text.h"
+#include "../lang_text.h"
 #undef X
     S_COUNT
 };

@@ -10,6 +10,7 @@
 #include "settings.h"
 #include "formula.h"
 #include <shlobj.h>
+#include "uninstall_cleanup.h"
 
 typedef HRESULT(WINAPI *PFN_SHGetFolderPathW)(HWND, int, HANDLE, DWORD, LPWSTR);
 
@@ -26,6 +27,68 @@ static bool special(PFN_SHGetFolderPathW get, int csidl, const WCHAR *name, WCHA
     WCHAR base[MAX_PATH];
     return get && SUCCEEDED(get(NULL, csidl, NULL, 0, base)) && join(out, base, name);
 }
+
+static void delete_file(const WCHAR *dir, const WCHAR *relative)
+{
+    WCHAR path[MAX_PATH];
+    if (join(path, dir, relative))
+        DeleteFileW(path);
+}
+
+static void delete_tick_backups(const WCHAR *dir, const WCHAR *relative)
+{
+    WCHAR search_relative[MAX_PATH], search[MAX_PATH], relative_dir[MAX_PATH], full_dir[MAX_PATH], path[MAX_PATH];
+    size_t n = wcslen(relative);
+    if (n + 6 >= MAX_PATH)
+        return;
+    lstrcpyW(search_relative, relative);
+    lstrcatW(search_relative, L".*.old");
+    if (!join(search, dir, search_relative))
+        return;
+
+    const WCHAR *base = wcsrchr(relative, L'\\');
+    base = base ? base + 1 : relative;
+    lstrcpyW(relative_dir, relative);
+    WCHAR *slash = wcsrchr(relative_dir, L'\\');
+    if (slash)
+        *slash = 0;
+    else
+        relative_dir[0] = 0;
+    if (relative_dir[0]) {
+        if (!join(full_dir, dir, relative_dir))
+            return;
+    } else {
+        lstrcpyW(full_dir, dir);
+    }
+
+    WIN32_FIND_DATAW fd;
+    HANDLE fh = FindFirstFileW(search, &fd);
+    if (fh == INVALID_HANDLE_VALUE)
+        return;
+    do
+        if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) &&
+            tick_backup_name(fd.cFileName, base) && join(path, full_dir, fd.cFileName))
+            DeleteFileW(path);
+    while (FindNextFileW(fh, &fd));
+    FindClose(fh);
+}
+
+static void delete_installer_file(const WCHAR *dir, const WCHAR *relative)
+{
+    WCHAR suffixed[MAX_PATH];
+    size_t n = wcslen(relative);
+    delete_file(dir, relative);
+    if (n + 4 < MAX_PATH) {
+        lstrcpyW(suffixed, relative);
+        lstrcatW(suffixed, L".new");
+        delete_file(dir, suffixed);
+        lstrcpyW(suffixed, relative);
+        lstrcatW(suffixed, L".old");
+        delete_file(dir, suffixed);
+    }
+    delete_tick_backups(dir, relative);
+}
+
 
 /* Close a sniplite window (and with it its process) and wait for the process to end,
  * so its exe is no longer in use. */
@@ -117,37 +180,21 @@ int uninstall_main(bool silent)
         Sleep(100);
     for (int i = 0; i < 20 && !formula_remove(); i++) /* the formula worker exits when its pipe closes */
         Sleep(100);
-    static const WCHAR *files[] = {
-        L"SnapRail.com", L"SnapRail-cli.com", L"SnapRail_qr.exe", L"sniplite.exe", L"sniplite.com",
-        L"sniplite-cli.com", L"sniplite_qr.exe", L"LICENSE-ZXing.txt", L"LICENSE-MicroTeX.txt",
-        L"LICENSE-TinyXML2.txt", L"translation\\sniplite_translate.dll", L"translation\\LICENSE-Translation.txt",
-        L"translation\\cpu-avx2\\sniplite_translate.dll", L"translation\\vulkan\\sniplite_translate.dll",
-        L"translation\\sniplite_translate.dll.new", L"translation\\LICENSE-Translation.txt.new",
-        L"translation\\sniplite_translate.dll.old", L"translation\\LICENSE-Translation.txt.old",
-        L"translation\\cpu-avx2\\sniplite_translate.dll.new", L"translation\\cpu-avx2\\sniplite_translate.dll.old",
-        L"translation\\vulkan\\sniplite_translate.dll.new", L"translation\\vulkan\\sniplite_translate.dll.old",
-        L"sniplite.ini", L"SnapRail.exe.new", L"SnapRail.com.new", L"SnapRail-cli.com.new", L"SnapRail_qr.exe.new",
-        L"sniplite.exe.new", L"sniplite.com.new", L"sniplite-cli.com.new", L"sniplite_qr.exe.new",
-        L"LICENSE-ZXing.txt.new", L"LICENSE-MicroTeX.txt.new", L"LICENSE-TinyXML2.txt.new",
-        L"LICENSE-ZXing.txt.old", L"LICENSE-MicroTeX.txt.old", L"LICENSE-TinyXML2.txt.old"};
-    for (int i = 0; i < COUNTOF(files); i++)
-        if (join(p, dir, files[i]))
-            DeleteFileW(p);
+    static const WCHAR *installed_files[] = {
+        L"SnapRail.exe", L"SnapRail.com", L"SnapRail_qr.exe", L"LICENSE-ZXing.txt", L"LICENSE-MicroTeX.txt",
+        L"LICENSE-TinyXML2.txt", L"translation\\sniplite_translate.dll", L"translation\\cpu-avx2\\sniplite_translate.dll",
+        L"translation\\vulkan\\sniplite_translate.dll", L"translation\\LICENSE-Translation.txt",
+        L"translation\\opus-mt-en-zh-q8_0.gguf"};
+    static const WCHAR *legacy_files[] = {
+        L"sniplite.exe", L"sniplite.com", L"sniplite-cli.com", L"sniplite_qr.exe", L"SnapRail-cli.com"};
+    for (int i = 0; i < COUNTOF(installed_files); i++)
+        delete_installer_file(dir, installed_files[i]);
+    for (int i = 0; i < COUNTOF(legacy_files); i++)
+        delete_installer_file(dir, legacy_files[i]);
+    delete_file(dir, L"sniplite.ini");
     if (join(p, dir, L"translation\\cpu-avx2")) RemoveDirectoryW(p);
     if (join(p, dir, L"translation\\vulkan")) RemoveDirectoryW(p);
     if (join(p, dir, L"translation")) RemoveDirectoryW(p);
-    WIN32_FIND_DATAW fd; /* old or current executable backups */
-    static const WCHAR *patterns[] = {L"sniplite.*.old", L"SnapRail.*.old"};
-    for (int i = 0; i < COUNTOF(patterns); i++) {
-        HANDLE fh = join(q, dir, patterns[i]) ? FindFirstFileW(q, &fd) : INVALID_HANDLE_VALUE;
-        if (fh != INVALID_HANDLE_VALUE) {
-            do
-                if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) && join(p, dir, fd.cFileName))
-                    DeleteFileW(p);
-            while (FindNextFileW(fh, &fd));
-            FindClose(fh);
-        }
-    }
 
     if (!silent)
         MessageBoxW(NULL, T(UNINST_DONE), T(UNINST_TITLE), MB_OK | MB_ICONINFORMATION);
