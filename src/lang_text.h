@@ -1036,6 +1036,10 @@ X(OCR_TRANSLATE, "翻译", "翻譯", "Translate", "翻訳", "번역", "Traduire"
 X(OCR_ORIGINAL, "原文", "原文", "Original", "原文", "원문", "Original", "Original", "Original")
 X(TRANSLATE_WORKING, "正在翻译...", "正在翻譯...", "Translating...", "翻訳中...", "번역 중...", "Traduction...", "Übersetzen...", "Traduciendo...")
 X(TRANSLATE_FAILED, "翻译失败", "翻譯失敗", "Translation failed", "翻訳に失敗しました", "번역 실패", "Échec de la traduction", "Übersetzung fehlgeschlagen", "Error al traducir")
+X(TRANSLATE_ALREADY_CHINESE, "检测到中文，已跳过翻译", "偵測到中文，已略過翻譯",
+  "Chinese text detected; translation skipped", "中国語のテキストを検出したため、翻訳をスキップしました",
+  "중국어 텍스트가 감지되어 번역을 건너뛰었습니다", "Texte chinois détecté ; traduction ignorée",
+  "Chinesischer Text erkannt; Übersetzung übersprungen", "Se detectó texto chino; se omitió la traducción")
 
 /* ---- the long screenshot (scroll.c) ---- */
 X(LONG_HINT, "滚动页面，自动拼接", "捲動頁面，自動拼接", "Scroll the page: it is stitched as you go", "ページをスクロールすると自動でつなぎます",

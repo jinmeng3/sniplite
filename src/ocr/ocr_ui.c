@@ -1196,6 +1196,26 @@ static void panel_fill(Result *r)
     InvalidateRect(U.panel, NULL, FALSE);
 }
 
+/* A Han-dominant OCR result is already in the target language. ASCII letters
+ * keep a short Chinese name inside an English sentence from suppressing translation. */
+static bool text_is_mostly_han(const WCHAR *text)
+{
+    unsigned int han = 0, latin = 0;
+    for (const WCHAR *p = text; *p; p++) {
+        unsigned int c = (unsigned short)*p;
+        if (c >= 0xd800 && c <= 0xdbff && p[1] >= 0xdc00 && p[1] <= 0xdfff) {
+            c = 0x10000 + ((c - 0xd800) << 10) + (unsigned short)p[1] - 0xdc00;
+            p++;
+        }
+        if ((c >= 0x3400 && c <= 0x4dbf) || (c >= 0x4e00 && c <= 0x9fff) ||
+            (c >= 0xf900 && c <= 0xfaff) || (c >= 0x20000 && c <= 0x323af))
+            han++;
+        else if ((c >= L'A' && c <= L'Z') || (c >= L'a' && c <= L'z'))
+            latin++;
+    }
+    return han && han >= latin;
+}
+
 static void panel_translate(void)
 {
     if (U.translate_running || U.running || U.next || !U.panel || !IsWindowVisible(U.panel) || U.as_table)
@@ -1216,16 +1236,24 @@ static void panel_translate(void)
     int n = GetWindowTextLengthW(U.edit);
     if (n <= 0)
         return;
-    TranslateJob *job = mem_alloc(sizeof *job);
     WCHAR *source = mem_alloc(((size_t)n + 1) * sizeof(WCHAR));
-    if (!job || !source) {
-        mem_free(job);
+    if (!source) {
+        panel_status(T(TRANSLATE_FAILED));
+        return;
+    }
+    GetWindowTextW(U.edit, source, n + 1);
+    if (text_is_mostly_han(source)) {
+        mem_free(source);
+        panel_status(T(TRANSLATE_ALREADY_CHINESE));
+        return;
+    }
+    TranslateJob *job = mem_alloc(sizeof *job);
+    if (!job) {
         mem_free(source);
         panel_status(T(TRANSLATE_FAILED));
         return;
     }
     memset(job, 0, sizeof *job);
-    GetWindowTextW(U.edit, source, n + 1);
     job->hub = U.hub;
     job->source = source;
     job->generation = U.generation;
