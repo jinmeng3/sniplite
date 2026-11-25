@@ -13,7 +13,7 @@
 
 IDI_APP ICON "snaprail.ico"
 IDR_MICROTEX_DLL RCDATA "../build/sniplite_microtex.dll"
-IDR_MICROTEX_ASSETS RCDATA "../build/microtex-assets.zip"
+IDR_MICROTEX_ASSETS RCDATA "../build/obj/microtex-assets.zip"
 IDR_MICROTEX_LICENSE RCDATA "../third_party/microtex/LICENSE"
 IDR_FORMULA_ENGINE RCDATA "../build/sniplite_formula.dll"
 IDR_FORMULA_ENGINE_LICENSE RCDATA "../third_party/formulanet/LICENSE"

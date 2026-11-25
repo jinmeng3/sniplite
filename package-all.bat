@@ -16,11 +16,11 @@ set "CRISP_DIR=%MODEL_DIR%\crispembed-windows-x86_64-vulkan"
 if not exist "%CRISP_DIR%\crispembed.dll" (echo CrispEmbed runtime is missing beside the GGUF files & exit /b 1)
 if not exist "%CRISP_DIR%\ggml-vulkan.dll" (echo Vulkan GGML runtime is missing from %CRISP_DIR% & exit /b 1)
 call build-cpu-runtime.bat || exit /b 1
-if not exist build\cpu-runtime\ggml.dll (echo build\cpu-runtime is missing: build the CPU GGML runtime first ^& exit /b 1)
-if not exist build\cpu-runtime\ggml-base.dll exit /b 1
-if not exist build\cpu-runtime\ggml-cpu.dll exit /b 1
-set "OCR_DIR=build\ocr"
-set "OCR_ZIP=build\sniplite_ocr.zip"
+if not exist build\stage\cpu-runtime\ggml.dll (echo build\stage\cpu-runtime is missing: build the CPU GGML runtime first ^& exit /b 1)
+if not exist build\stage\cpu-runtime\ggml-base.dll exit /b 1
+if not exist build\stage\cpu-runtime\ggml-cpu.dll exit /b 1
+set "OCR_DIR=build\stage\ocr"
+set "OCR_ZIP=build\stage\sniplite_ocr.zip"
 if exist "%OCR_DIR%" rmdir /s /q "%OCR_DIR%"
 mkdir "%OCR_DIR%" || exit /b 1
 copy /y build\sniplite_ocr.dll "%OCR_DIR%\sniplite_ocr.dll" >nul || exit /b 1
@@ -32,21 +32,21 @@ for %%f in (crispembed.dll Apache-2.0.txt LICENSE NOTICE.marker NOTICE.sheenbidi
   copy /y "%CRISP_DIR%\%%f" "%OCR_GENERIC%\%%f"
   if errorlevel 1 (echo Could not stage %%f from the CrispEmbed package & exit /b 1)
 )
-for %%f in (ggml.dll ggml-base.dll ggml-cpu.dll) do copy /y "build\cpu-runtime\%%f" "%OCR_GENERIC%\%%f" >nul || exit /b 1
+for %%f in (ggml.dll ggml-base.dll ggml-cpu.dll) do copy /y "build\stage\cpu-runtime\%%f" "%OCR_GENERIC%\%%f" >nul || exit /b 1
 mkdir "%OCR_DIR%\cpu-avx2" || exit /b 1
 copy /y build\sniplite_ocr_avx2.dll "%OCR_DIR%\cpu-avx2\sniplite_ocr.dll" >nul || exit /b 1
 mkdir "%OCR_DIR%\shared-runtime\cpu-avx2" || exit /b 1
-for %%f in (ggml.dll ggml-base.dll) do copy /y "build\cpu-runtime-avx2\%%f" "%OCR_DIR%\shared-runtime\cpu-avx2\%%f" >nul || exit /b 1
-copy /y "build\cpu-runtime-avx2\ggml-cpu.dll" "%OCR_DIR%\shared-runtime\cpu-avx2\ggml-cpu.dll" >nul || exit /b 1
+for %%f in (ggml.dll ggml-base.dll) do copy /y "build\stage\cpu-runtime-avx2\%%f" "%OCR_DIR%\shared-runtime\cpu-avx2\%%f" >nul || exit /b 1
+copy /y "build\stage\cpu-runtime-avx2\ggml-cpu.dll" "%OCR_DIR%\shared-runtime\cpu-avx2\ggml-cpu.dll" >nul || exit /b 1
 for %%f in (vcruntime140.dll vcruntime140_1.dll msvcp140_1.dll msvcp140.dll) do copy /y "%SystemRoot%\System32\%%f" "%OCR_GENERIC%\%%f" >nul || exit /b 1
-set OCR_VULKAN_RUNTIME=build\ocr-vulkan-runtime
+set OCR_VULKAN_RUNTIME=build\stage\ocr-vulkan-runtime
 if exist "%OCR_VULKAN_RUNTIME%" rmdir /s /q "%OCR_VULKAN_RUNTIME%"
 mkdir "%OCR_VULKAN_RUNTIME%" || exit /b 1
 for %%f in (ggml.dll ggml-base.dll ggml-cpu.dll ggml-vulkan.dll) do copy /y "%CRISP_DIR%\%%f" "%OCR_VULKAN_RUNTIME%\%%f" >nul || exit /b 1
 copy /y res\ocr-notice.txt "%OCR_DIR%\NOTICE.txt" >nul || exit /b 1
 set "OCR_ZIP_TMP=%OCR_ZIP%.tmp.zip"
 if exist "%OCR_ZIP_TMP%" del /q "%OCR_ZIP_TMP%"
-"%SystemRoot%\System32\tar.exe" -a -c -f "%OCR_ZIP_TMP%" -C build ocr || (if exist "%OCR_ZIP_TMP%" del /q "%OCR_ZIP_TMP%" & exit /b 1)
+"%SystemRoot%\System32\tar.exe" -a -c -f "%OCR_ZIP_TMP%" -C build\stage ocr || (if exist "%OCR_ZIP_TMP%" del /q "%OCR_ZIP_TMP%" & exit /b 1)
 move /y "%OCR_ZIP_TMP%" "%OCR_ZIP%" >nul || (if exist "%OCR_ZIP_TMP%" del /q "%OCR_ZIP_TMP%" & exit /b 1)
 for %%f in ("%OCR_ZIP%") do echo %%~nxf  %%~zf bytes
 for /f "tokens=3" %%v in ('findstr /C:"#define SNIPLITE_VERSION" src\common.h') do set V=%%v

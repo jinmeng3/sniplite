@@ -17,7 +17,7 @@ IDR_TRANSLATE_ENGINE RCDATA "sniplite_translate.dll"
 IDR_TRANSLATE_LICENSE RCDATA "LICENSE-Translation.txt"
 IDR_TRANSLATE_AVX2_ENGINE RCDATA "sniplite_translate_avx2.dll"
 IDR_TRANSLATE_VULKAN_ENGINE RCDATA "sniplite_translate_vulkan.dll"
-IDR_TRANSLATE_MODEL RCDATA "translation/opus-mt-en-zh-q8_0.gguf"
+IDR_TRANSLATE_MODEL RCDATA "opus-mt-en-zh-q8_0.gguf"
 /* Places and sizes only: the texts come from src/lang_text.h and the font is replaced
  * by the one of the language in use (src/app/lang.c). */
 IDD_SETUP DIALOGEX 0, 0, 236, 127

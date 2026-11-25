@@ -1,29 +1,38 @@
 # AGENTS.md
 
-## Project layout
+## Project overview
 
-- SnipLite targets Windows 10/11 x64.
-- The main GUI, CLI, and installer are mostly C in `src/app/`; capture and presentation assembly is in `src/overlay/`. OCR, formula inference, scrolling, CPU kernels, and shared pixel operations live in `src/ocr/`, `src/formula/`, `src/scroll/`, `src/inference/`, and `src/pixels/`. Shared assembly includes remain in `src/`. The executables use a custom startup and link without the C runtime.
-- Localized strings live in `src/lang_text.h` and `src/app/lang.*`. Keep user-visible text consistent across supported languages.
-- `src/qr/` builds the QR-only helper with ZXing-C++; `src/microtex/` builds the native formula renderer. OCR and FormulaNet DLLs use wrappers under `src/ocr/` and sources in `third_party/ppocrv6/` and `third_party/formulanet/`.
-- Windows resources and installer resources live in `res/`. Markdown documentation is in the root README and `docs/`; referenced screenshots live in `pics/`.
+- SnipLite targets Windows 10/11 x64. The GUI, CLI, and installer are primarily in C under `src/app/`; screenshot capture and presentation assembly are in `src/overlay/`.
+- Core components are grouped by function: OCR (`src/ocr/`), formula inference (`src/formula/`), scrolling (`src/scroll/`), inference (`src/inference/`), and pixel operations (`src/pixels/`). Shared assembly includes are under `src/`. Executables use a custom startup and link without the C runtime.
+- Localized strings are defined in `src/lang_text.h` and `src/app/lang.*`. Keep user-visible text consistent across supported languages.
+- `src/qr/` builds the QR-only helper with ZXing-C++; `src/microtex/` builds the native formula renderer. OCR and FormulaNet DLL wrappers are under `src/ocr/`; their implementation sources are under `third_party/ppocrv6/` and `third_party/formulanet/`.
+- Windows and installer resources are under `res/`. Markdown documentation is in the root README and `docs/`; referenced screenshots are in `pics/`.
+- `tests/` stores experiment and test code, results, and per-run `README.md` notes.
 
-## Build and package
+## Problem solving and verification
 
-- Use the project-local `w64devkit` when present, or MinGW-w64 on `PATH`. Building also requires CMake and Ninja.
-- `build.bat` builds the GUI, CLI, installer, QR helper, MicroTeX renderer, and generic CPU, AVX2, and Vulkan-preferred OCR/FormulaNet DLLs. Outputs go under `build/`.
-- `package-all.bat` runs after `build.bat` and creates the installer, OCR module ZIP, and seven portable ZIPs in `build/dist/`. It requires both PP-OCRv6 GGUF files and the matching CrispEmbed Vulkan runtime. The script searches the root of drive `E:` for the models and expects the runtime beside them. It also builds the pinned CrispEmbed CPU runtimes through `build-cpu-runtime.bat`, which requires Git, CMake, and Ninja.
-- Packaging recreates staging directories such as `build/ocr`, `build/ocr-vulkan-runtime`, and `build/dist`; inspect or preserve any local outputs needed before running it. Use an individual `package-*.bat` script when only one package is needed and its prerequisites are already staged.
+- Start by investigating the reported problem in the relevant code, logs, and configuration. If the expected behavior or reproduction conditions are unclear, ask the user focused questions before work that depends on those details.
+- Reproduce the current behavior with a focused test when possible. Use the result to confirm or revise the cause hypothesis; keep investigating and testing until the cause is understood.
+- Once the cause is understood, make a focused fix and rerun the reproduction or targeted test. Follow the results with further diagnosis and changes as needed until the observed behavior matches the expected behavior.
+- Choose checks relevant to the change and report their outcomes. If a necessary check cannot run because a tool, dependency, or environment is unavailable, explain the blocker and do not describe the issue as verified.
+- For each experiment or test run, use a separate subdirectory under `tests/` and save the code, results, and a `README.md` describing the run.
+- There is no checked-in unified test runner. `tests/` is ignored and may contain local tools; inspect existing contents before changing them. For source changes, use `build.bat` and relevant local tools when available. For packaging changes, verify the affected ZIP contents and runtime selection.
 
-## Verification
+## Build and packaging
 
-- There is no checked-in, unified test runner. `tests/` is ignored and contains local regression and benchmark tools; inspect `tests/README.md` when that directory is available, and run the narrow test relevant to the change.
-- For source changes, use `build.bat` and the relevant local regression tool when available. For packaging changes, verify the affected ZIP contents and runtime selection.
-- Tests and packaging can create or replace files under `build/`. Do not clean `build/`, `w64devkit/`, `tests/`, or `*.ini` wholesale; they may contain local tools, user configuration, models, or benchmark evidence.
+- Prefer the project-local `w64devkit` when available; otherwise use MinGW-w64 from `PATH`. Building requires CMake and Ninja as well.
+- Run `build.bat` to build the GUI, CLI, installer, QR helper, MicroTeX renderer, and OCR/FormulaNet DLL variants for generic CPU, AVX2, and Vulkan-preferred backends. `build/` holds only products (`*.exe`, `*.dll`, `*.com`, `LICENSE-*.txt`) plus the fixed subdirectories `build/obj` (every intermediate: `.o`, import libraries, `.res`, asset zip), `build/stage` (`translation/`, `ocr/`, `formula/`, `ocr-vulkan-runtime/`), `build/microtex`, `build/qr`, and `build/dist`.
+- Run `package-all.bat` after `build.bat` to create the installer, OCR module ZIP, and seven portable ZIPs under `build/dist/`. It requires both PP-OCRv6 GGUF model files and the matching CrispEmbed Vulkan runtime. It searches the root of drive `E:` for the models and expects the runtime beside them. It also builds pinned CrispEmbed CPU runtimes through `build-cpu-runtime.bat`, which requires Git, CMake, and Ninja.
+- Packaging recreates staging directories, including `build/stage/ocr`, `build/stage/ocr-vulkan-runtime`, and `build/dist`, and reads staged inputs only from `build/stage`. Inspect or preserve needed local outputs before packaging. If only one package is needed, use its `package-*.bat` script when prerequisites are already staged.
+- Builds, tests, and packaging may create or replace files under `build/`. Do not wholesale clean `build/`, `w64devkit/`, `tests/`, or `*.ini`; these may contain local tools, configuration, models, or benchmark evidence.
 
 ## Change boundaries
 
-- Git commit messages must be written in Chinese.
-- Keep edits to vendored code under `third_party/` narrowly scoped; preserve upstream licensing and notices.
-- Preserve the C ABI and export definitions used by the native OCR and FormulaNet DLLs. Backend selection and CPU fallback behavior are user-visible; verify changes against the targeted CPU, AVX2, or Vulkan path.
-- When changing README screenshots, keep image paths valid and update the relevant localized descriptions.
+- Write Git commit messages in Chinese.
+- Keep changes to vendored code under `third_party/` narrowly scoped and preserve upstream licenses and notices.
+- Preserve the C ABI and exported definitions of native OCR and FormulaNet DLLs. Backend selection and CPU fallback behavior affect users; verify changes against the relevant CPU, AVX2, or Vulkan path.
+- When changing README screenshots, keep image paths valid and update the corresponding localized descriptions.
+
+## Completion summary
+
+- Summarize the cause, the change, and the checks performed with their results. State any unresolved issue or verification blocker.
