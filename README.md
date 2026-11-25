@@ -100,6 +100,11 @@ QR 使用同一张测试码；OCR 使用 1000×260 RGB 单行文本；FormulaNet
 
 框选文字后点击工具栏识别按钮或按 `Ctrl+O`。识别结果显示在选区旁，可编辑和复制；表格可保留列结构，也可切换为 Markdown。OCR 使用 CrispEmbed PP-OCRv6 tiny FP16 GGUF 检测与识别模型，由从源码构建的本机引擎运行。
 
+### 英译中
+
+OCR 结果面板可将英文识别结果翻译为中文，并可切回原文。需要与 OCR 实际所选后端匹配的共享 GGML 运行库（通用 CPU、AVX2 或 Vulkan），以及放在程序目录 `translation/` 下的 `opus-mt-en-zh-q8_0.gguf`。安装器和带 OCR 的便携包提供对应翻译引擎；GGUF 模型因体积较大需另行提供。可从 [Helsinki-NLP/opus-mt-en-zh](https://huggingface.co/Helsinki-NLP/opus-mt-en-zh) 获取权重，用 [CrispASR Marian 转换器](https://github.com/CrispStrobe/CrispASR/blob/main/models/convert-marian-to-gguf.py) 生成 F16 GGUF，再按 [CrispASR 量化说明](https://github.com/CrispStrobe/CrispASR/blob/main/docs/quantize.md) 执行 `crispasr-quantize <f16.gguf> translation/opus-mt-en-zh-q8_0.gguf q8_0`。模型的 GGUF 元数据需保留目标语言 `zho` 及原有许可声明。
+
+
 ### 公式识别
 
 在截图编辑页框选公式并点击 `∫` 按钮，识别结果会以 LaTeX 复制到剪贴板。点击旁边的预览按钮可打开 MicroTeX 窗口编辑 LaTeX 并实时查看渲染；按 `Ctrl+Enter` 复制源码。识别期间不会显示进度窗口；失败或结果未完整生成时不会覆盖剪贴板。

@@ -29,6 +29,7 @@
 #include "image.h"
 #include "lang.h"
 #include "settings.h"
+#include "../translate/translate.h"
 #include "shot.h"
 #include "ov_layout.inc"
 #include <dwmapi.h>
@@ -591,6 +592,8 @@ void ocr_picture_hide(void) { job_send(OP_HIDE, NULL, NULL, NULL); }
 #define ID_TABLE 11
 #define ID_MD 13
 #define ID_EDIT 12
+#define ID_TRANSLATE 14
+#define WM_APP_TRANSLATED (WM_APP + 6)
 
 typedef struct {
     Wire wire;
@@ -598,17 +601,35 @@ typedef struct {
     Str plain, tab; /* the text line by line, and as a table when it is one */
     WCHAR why[160];
 } Result;
+typedef struct {
+    HWND hub;
+    WCHAR *source;
+    Str translated;
+    uint32_t generation;
+    bool good;
+} TranslateJob;
+
+static DWORD WINAPI translate_thread(void *arg)
+{
+    TranslateJob *job = arg;
+    job->good = translate_text(job->source, &job->translated);
+    PostMessageW(job->hub, WM_APP_TRANSLATED, 0, (LPARAM)job);
+    return 0;
+}
+
+static void panel_translate(void);
+static void job_pump(void);
 
 static struct {
     HWND hub;
-    HWND panel, edit, copy, table;
+    HWND panel, edit, copy, table, translate;
     HFONT font;
     HBRUSH white;
     float s;
     HWND owner;
     RECT at;        /* the selection on the screen */
-    Str plain, tab; /* what the panel shows, both ways */
-    bool as_table;
+    Str plain, tab, original; /* panel text, table form, and source text for a translation */
+    bool as_table, translated, translate_running;
     bool as_md;   /* the table written as Markdown: chosen by its button, and kept for the next table */
     HWND mark;    /* that button */
     Str md;
@@ -618,6 +639,7 @@ static struct {
     Wire *next;   /* the newest job not started; an older one waiting is dropped */
     bool running; /* the reading thread is at work */
     bool eof;
+    uint32_t generation;
     DWORD idle; /* tick of the last sign of work */
 } U;
 
@@ -910,10 +932,14 @@ static void panel_layout(void)
 {
     RECT rc;
     GetClientRect(U.panel, &rc);
-    int bh = px(26), by = rc.bottom - px(44) + (px(44) - bh) / 2, cw = px(84), tw = px(72), mw = px(104), gap = px(8);
-    SetWindowPos(U.copy, NULL, rc.right - gap - cw, by, cw, bh, SWP_NOZORDER | SWP_NOACTIVATE);
-    SetWindowPos(U.table, NULL, rc.right - gap - cw - gap - tw, by, tw, bh, SWP_NOZORDER | SWP_NOACTIVATE);
-    SetWindowPos(U.mark, NULL, rc.right - gap - cw - gap - tw - gap - mw, by, mw, bh, SWP_NOZORDER | SWP_NOACTIVATE);
+    int bh = px(26), by = rc.bottom - px(44) + (px(44) - bh) / 2, cw = px(84), tw = px(72), mw = px(104), x = rc.right - px(8) - cw, gap = px(8);
+    SetWindowPos(U.copy, NULL, x, by, cw, bh, SWP_NOZORDER | SWP_NOACTIVATE);
+    x -= gap + tw;
+    SetWindowPos(U.table, NULL, x, by, tw, bh, SWP_NOZORDER | SWP_NOACTIVATE);
+    x -= gap + mw;
+    SetWindowPos(U.mark, NULL, x, by, mw, bh, SWP_NOZORDER | SWP_NOACTIVATE);
+    x -= gap + px(84);
+    SetWindowPos(U.translate, NULL, x, by, px(84), bh, SWP_NOZORDER | SWP_NOACTIVATE);
     if (U.edit)
         SetWindowPos(U.edit, NULL, px(10), px(8), rc.right - px(10) - 1, rc.bottom - px(44) - px(8), SWP_NOZORDER | SWP_NOACTIVATE);
 }
@@ -942,7 +968,8 @@ static void panel_paint(HWND h)
         SetBkMode(dc, TRANSPARENT);
         SetTextColor(dc, RGB(110, 110, 110));
         RECT r = {px(12), bar.top, rc.right - px(8) - px(84) - (IsWindowVisible(U.table) ? px(8) + px(72) : 0) -
-                                       (IsWindowVisible(U.mark) ? px(8) + px(104) : 0) - px(8), bar.bottom};
+                                       (IsWindowVisible(U.mark) ? px(8) + px(104) : 0) -
+                                       (IsWindowVisible(U.translate) ? px(8) + px(84) : 0) - px(8), bar.bottom};
         DrawTextW(dc, U.status, -1, &r, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_END_ELLIPSIS);
         SelectObject(dc, old);
     }
@@ -1018,6 +1045,8 @@ static LRESULT CALLBACK panel_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
     case WM_COMMAND:
         if (LOWORD(wp) == ID_COPY) {
             panel_copy();
+        } else if (LOWORD(wp) == ID_TRANSLATE) {
+            panel_translate();
         } else if (LOWORD(wp) == ID_TABLE || LOWORD(wp) == ID_MD) {
             U.as_table = SendMessageW(U.table, BM_GETCHECK, 0, 0) == BST_CHECKED;
             U.as_md = SendMessageW(U.mark, BM_GETCHECK, 0, 0) == BST_CHECKED;
@@ -1030,7 +1059,7 @@ static LRESULT CALLBACK panel_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
         }
         return 0;
     case WM_DESTROY: /* the capture window took it along */
-        U.panel = U.edit = U.copy = U.table = U.mark = NULL;
+        U.panel = U.edit = U.copy = U.table = U.mark = U.translate = NULL;
         return 0;
     }
     return DefWindowProcW(h, m, wp, lp);
@@ -1044,7 +1073,7 @@ static void panel_move(void)
     MONITORINFO mi = {sizeof mi};
     GetMonitorInfoW(MonitorFromRect(sel, MONITOR_DEFAULTTONEAREST), &mi);
     const RECT *mon = &mi.rcMonitor;
-    int gap = px(8), least = px(340), pw = MAXI(U.pw, least), x;
+    int gap = px(8), least = translate_installed() ? px(420) : px(340), pw = MAXI(U.pw, least), x;
     int right = mon->right - gap - (sel->right + gap), left = sel->left - gap - (mon->left + gap);
     if (right >= least) {
         pw = MINI(pw, right);
@@ -1074,6 +1103,10 @@ static void panel_place(const Wire *w)
         U.panel = U.edit = NULL;
     }
     U.owner = owner, U.at = sel;
+    U.generation++;
+    str_free(&U.original);
+    U.translated = false;
+    SetWindowTextW(U.translate, T(OCR_TRANSLATE));
     if (!U.panel) {
         WNDCLASSW wc = {0};
         wc.style = CS_DROPSHADOW;
@@ -1100,12 +1133,16 @@ static void panel_place(const Wire *w)
                                   (HMENU)(INT_PTR)ID_TABLE, wc.hInstance, NULL);
         U.mark = CreateWindowExW(0, L"BUTTON", L"Markdown", WS_CHILD | WS_TABSTOP | BS_AUTOCHECKBOX | BS_PUSHLIKE, 0, 0, 0, 0, U.panel,
                                  (HMENU)(INT_PTR)ID_MD, wc.hInstance, NULL);
+        U.translate = CreateWindowExW(0, L"BUTTON", T(OCR_TRANSLATE), WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON, 0, 0, 0, 0, U.panel,
+                                      (HMENU)(INT_PTR)ID_TRANSLATE, wc.hInstance, NULL);
         SendMessageW(U.copy, WM_SETFONT, (WPARAM)U.font, 0);
         SendMessageW(U.table, WM_SETFONT, (WPARAM)U.font, 0);
         SendMessageW(U.mark, WM_SETFONT, (WPARAM)U.font, 0);
+        SendMessageW(U.translate, WM_SETFONT, (WPARAM)U.font, 0);
         U.plain.n = U.tab.n = 0;
         U.as_table = false;
         U.status = NULL;
+        ShowWindow(U.translate, SW_HIDE);
     }
     bool fresh = !IsWindowVisible(U.panel);
     if (fresh)
@@ -1113,9 +1150,12 @@ static void panel_place(const Wire *w)
     panel_move();
     if (fresh) { /* empty until this selection's text is here */
         U.plain.n = U.tab.n = 0;
+        str_free(&U.original);
+        U.translated = false;
         U.as_table = false;
         ShowWindow(U.table, SW_HIDE);
         ShowWindow(U.mark, SW_HIDE);
+        ShowWindow(U.translate, SW_HIDE);
         edit_make();
         EnableWindow(U.copy, FALSE);
         panel_status(NULL);
@@ -1128,14 +1168,18 @@ static void panel_fill(Result *r)
 {
     str_free(&U.plain);
     str_free(&U.tab);
+    str_free(&U.original);
     U.plain = r->plain, U.tab = r->tab;
     memset(&r->plain, 0, sizeof r->plain);
     memset(&r->tab, 0, sizeof r->tab);
+    U.translated = false;
+    SetWindowTextW(U.translate, T(OCR_TRANSLATE));
     U.as_table = r->table;
     ShowWindow(U.table, r->table ? SW_SHOW : SW_HIDE);
     SendMessageW(U.table, BM_SETCHECK, r->table ? BST_CHECKED : BST_UNCHECKED, 0);
     ShowWindow(U.mark, r->table ? SW_SHOW : SW_HIDE);
     SendMessageW(U.mark, BM_SETCHECK, U.as_md ? BST_CHECKED : BST_UNCHECKED, 0);
+    ShowWindow(U.translate, r->good && !r->table && U.plain.n && translate_installed() ? SW_SHOW : SW_HIDE);
     if (r->table && U.as_md)
         md_build();
     edit_make();
@@ -1147,8 +1191,99 @@ static void panel_fill(Result *r)
         panel_move();
     }
     EnableWindow(U.copy, U.plain.n > 0);
+    EnableWindow(U.translate, !U.translate_running && IsWindowVisible(U.translate) && U.plain.n > 0);
     panel_status(!r->good ? T(OCR_FAILED) : U.plain.n ? NULL : T(OCR_NONE));
     InvalidateRect(U.panel, NULL, FALSE);
+}
+
+static void panel_translate(void)
+{
+    if (U.translate_running || U.running || U.next || !U.panel || !IsWindowVisible(U.panel) || U.as_table)
+        return;
+    if (U.translated) {
+        Str t = U.plain;
+        U.plain = U.original;
+        U.original = t;
+        U.translated = false;
+        SetWindowTextW(U.translate, T(OCR_TRANSLATE));
+        edit_make();
+        EnableWindow(U.copy, U.plain.n > 0);
+        EnableWindow(U.translate, U.plain.n > 0);
+        panel_status(NULL);
+        InvalidateRect(U.panel, NULL, FALSE);
+        return;
+    }
+    int n = GetWindowTextLengthW(U.edit);
+    if (n <= 0)
+        return;
+    TranslateJob *job = mem_alloc(sizeof *job);
+    WCHAR *source = mem_alloc(((size_t)n + 1) * sizeof(WCHAR));
+    if (!job || !source) {
+        mem_free(job);
+        mem_free(source);
+        panel_status(T(TRANSLATE_FAILED));
+        return;
+    }
+    memset(job, 0, sizeof *job);
+    GetWindowTextW(U.edit, source, n + 1);
+    job->hub = U.hub;
+    job->source = source;
+    job->generation = U.generation;
+    U.translate_running = true;
+    EnableWindow(U.edit, FALSE);
+    EnableWindow(U.translate, FALSE);
+    panel_status(T(TRANSLATE_WORKING));
+    HANDLE th = CreateThread(NULL, 0, translate_thread, job, 0, NULL);
+    if (th) {
+        CloseHandle(th);
+    } else {
+        U.translate_running = false;
+        EnableWindow(U.edit, TRUE);
+        EnableWindow(U.translate, TRUE);
+        panel_status(T(TRANSLATE_FAILED));
+        mem_free(job->source);
+        str_free(&job->translated);
+        mem_free(job);
+    }
+    InvalidateRect(U.panel, NULL, FALSE);
+}
+
+static void translate_done(TranslateJob *job)
+{
+    U.translate_running = false;
+    if (job->generation == U.generation && U.panel && IsWindowVisible(U.panel)) {
+        EnableWindow(U.edit, TRUE);
+        if (job->good && job->translated.n) {
+            str_free(&U.original);
+            U.original.p = job->source;
+            U.original.n = lstrlenW(job->source);
+            U.original.cap = U.original.n + 1;
+            job->source = NULL;
+            str_free(&U.plain);
+            U.plain = job->translated;
+            memset(&job->translated, 0, sizeof job->translated);
+            U.translated = true;
+            U.as_table = false;
+            ShowWindow(U.table, SW_HIDE);
+            ShowWindow(U.mark, SW_HIDE);
+            SetWindowTextW(U.translate, T(OCR_ORIGINAL));
+            edit_make();
+            EnableWindow(U.copy, U.plain.n > 0);
+            EnableWindow(U.translate, U.plain.n > 0);
+            panel_status(NULL);
+        } else {
+            EnableWindow(U.translate, U.plain.n > 0 && IsWindowVisible(U.translate));
+            panel_status(T(TRANSLATE_FAILED));
+        }
+        InvalidateRect(U.panel, NULL, FALSE);
+    } else if (U.panel && IsWindowVisible(U.panel)) {
+        EnableWindow(U.edit, TRUE);
+        EnableWindow(U.translate, !U.as_table && U.plain.n > 0 && IsWindowVisible(U.translate));
+    }
+    mem_free(job->source);
+    str_free(&job->translated);
+    mem_free(job);
+    job_pump();
 }
 
 /* ---- jobs ---- */
@@ -1178,12 +1313,13 @@ static DWORD WINAPI read_thread(void *arg)
 
 static void job_pump(void)
 {
-    if (U.running || !U.next)
+    if (U.running || U.translate_running || !U.next)
         return;
     Result *r = mem_alloc(sizeof *r);
     HANDLE th = NULL;
     if (r) {
         r->wire = *U.next;
+        if (ocr_backend_preference() != (int)U.next->backend) translate_unload();
         ocr_set_backend((int)U.next->backend);
         th = CreateThread(NULL, 0, read_thread, r, 0, NULL);
     }
@@ -1244,7 +1380,7 @@ static void job_done(Result *r)
  * here: the pipe's thread posts it, and posted messages come before timers. */
 static bool at_work(void)
 {
-    return U.running || U.next || (U.panel && IsWindowVisible(U.panel)) || (N.hwnd && IsWindowVisible(N.hwnd));
+    return U.running || U.translate_running || U.next || (U.panel && IsWindowVisible(U.panel)) || (N.hwnd && IsWindowVisible(N.hwnd));
 }
 
 static LRESULT CALLBACK hub_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
@@ -1252,6 +1388,7 @@ static LRESULT CALLBACK hub_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
     switch (m) {
     case WM_APP_JOB: job_take((Wire *)lp); return 0;
     case WM_APP_DONE: job_done((Result *)lp); return 0;
+    case WM_APP_TRANSLATED: translate_done((TranslateJob *)lp); return 0;
     case WM_APP_EOF: U.eof = true; return 0;
     case WM_TIMER:
         if (wp == TIMER_SLOW) { /* long enough to wonder: say that it is being read */
@@ -1354,5 +1491,6 @@ int ocr_helper(int argc, WCHAR **argv)
         TranslateMessage(&m);
         DispatchMessageW(&m);
     }
+    translate_unload();
     return EXIT_OK;
 }

@@ -31,6 +31,9 @@ int ocr_size_mb(void);
 /* dir: module folder, NULL for adjacent "ocr"; threads: 0 selects a suitable default. */
 bool ocr_load(const WCHAR *dir, int threads);
 void ocr_set_backend(int backend); /* INFER_*; apply while no recognition is running */
+int ocr_backend_selected(void); /* actual INFER_* engine after ocr_load; AUTO before load */
+int ocr_backend_preference(void); /* requested INFER_* preference */
+bool ocr_runtime_dir(WCHAR *dir, int cap); /* directory used by the loaded GGML runtime */
 bool ocr_run(const uint32_t *px, int stride, int w, int h, float screen, OcrOut *out);
 
 /* ocr_ui.c, the background program's side: what the user asks for. All of it is done

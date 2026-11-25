@@ -185,7 +185,11 @@ static const struct {
     const WCHAR *name;
 } kFiles[] = {{IDR_APP_EXE, L"sniplite.exe"}, {IDR_APP_COM, L"sniplite.com"},
               {IDR_APP_QR, L"sniplite_qr.exe"}, {IDR_QR_LICENSE, L"LICENSE-ZXing.txt"},
-              {IDR_MICROTEX_LICENSE, L"LICENSE-MicroTeX.txt"}, {IDR_TINYXML2_LICENSE, L"LICENSE-TinyXML2.txt"}};
+              {IDR_MICROTEX_LICENSE, L"LICENSE-MicroTeX.txt"}, {IDR_TINYXML2_LICENSE, L"LICENSE-TinyXML2.txt"},
+              {IDR_TRANSLATE_ENGINE, L"translation\\sniplite_translate.dll"},
+              {IDR_TRANSLATE_AVX2_ENGINE, L"translation\\cpu-avx2\\sniplite_translate.dll"},
+              {IDR_TRANSLATE_VULKAN_ENGINE, L"translation\\vulkan\\sniplite_translate.dll"},
+              {IDR_TRANSLATE_LICENSE, L"translation\\LICENSE-Translation.txt"}};
 static bool g_had[COUNTOF(kFiles)]; /* the file existed and was moved to *.old by swap() */
 
 static bool paths(int i, WCHAR *path, WCHAR *tmp, WCHAR *old)
@@ -293,6 +297,16 @@ static bool install(int autostart, bool ocr, bool portable_update)
     int e = SHCreateDirectoryExW(NULL, I.dir, NULL);
     if (e != ERROR_SUCCESS && e != ERROR_ALREADY_EXISTS && e != ERROR_FILE_EXISTS)
         return false;
+    WCHAR translation_dir[MAX_PATH];
+    if (!join(translation_dir, I.dir, L"translation") ||
+        (CreateDirectoryW(translation_dir, NULL) == 0 && GetLastError() != ERROR_ALREADY_EXISTS))
+        return false;
+    if (!join(translation_dir, I.dir, L"translation\\cpu-avx2")) return false;
+    e = SHCreateDirectoryExW(NULL, translation_dir, NULL);
+    if (e != ERROR_SUCCESS && e != ERROR_ALREADY_EXISTS && e != ERROR_FILE_EXISTS) return false;
+    if (!join(translation_dir, I.dir, L"translation\\vulkan")) return false;
+    e = SHCreateDirectoryExW(NULL, translation_dir, NULL);
+    if (e != ERROR_SUCCESS && e != ERROR_ALREADY_EXISTS && e != ERROR_FILE_EXISTS) return false;
     int count = (int)COUNTOF(kFiles);
     bool update_file[COUNTOF(kFiles)], swapped[COUNTOF(kFiles)] = {0};
     for (int i = 0; i < count; i++) {

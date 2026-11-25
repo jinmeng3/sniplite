@@ -1,0 +1,5 @@
+LIBRARY sniplite_translate
+EXPORTS
+    sniplite_opusmt_init
+    sniplite_opusmt_translate
+    sniplite_opusmt_free

@@ -21,6 +21,23 @@ gcc -Isrc -c -o build\pixel_ops.o src\pixels\pixel_ops.S || exit /b 1
 set "OCR_PIXEL_KERNELS=-DSNIPLITE_OCR_PREPROCESS build\pixel_ops.o src\ocr\ocr_preprocess.cpp"
 rem Build generic CPU, AVX2 CPU, and Vulkan-first formula inference engines.
 for %%n in (ggml ggml-base ggml-cpu) do dlltool -d third_party\formulanet\ggml\%%n.def -l build\%%n-import.a || exit /b 1
+rem Build generic CPU, AVX2 CPU, and Vulkan-preferred Marian translation engines.
+g++ -std=c++17 -O3 -DNOMINMAX -DWIN32_LEAN_AND_MEAN ^
+ -ffunction-sections -fdata-sections -fno-ident -Ithird_party/shared -Ithird_party/formulanet -Ithird_party/formulanet/ggml ^
+ -shared -static-libgcc -static-libstdc++ -s -Wl,--gc-sections,--exclude-all-symbols,--nxcompat,--dynamicbase,--high-entropy-va,--no-insert-timestamp ^
+ -o build\sniplite_translate.dll third_party\translation\opusmt_translate.cpp third_party\shared\core\gguf_loader.cpp ^
+ third_party\translation\opusmt_translate.def build\ggml-import.a build\ggml-base-import.a build\ggml-cpu-import.a || exit /b 1
+g++ -std=c++17 -O3 -mavx2 -mfma -mf16c -DNOMINMAX -DWIN32_LEAN_AND_MEAN ^
+ -ffunction-sections -fdata-sections -fno-ident -Ithird_party/shared -Ithird_party/formulanet -Ithird_party/formulanet/ggml ^
+ -shared -static-libgcc -static-libstdc++ -s -Wl,--gc-sections,--exclude-all-symbols,--nxcompat,--dynamicbase,--high-entropy-va,--no-insert-timestamp ^
+ -o build\sniplite_translate_avx2.dll third_party\translation\opusmt_translate.cpp third_party\shared\core\gguf_loader.cpp ^
+ third_party\translation\opusmt_translate.def build\ggml-import.a build\ggml-base-import.a build\ggml-cpu-import.a || exit /b 1
+g++ -std=c++17 -O3 -DNOMINMAX -DWIN32_LEAN_AND_MEAN -DSNIPLITE_TRANSLATION_VULKAN ^
+ -ffunction-sections -fdata-sections -fno-ident -Ithird_party/shared -Ithird_party/formulanet -Ithird_party/formulanet/ggml ^
+ -shared -static-libgcc -static-libstdc++ -s -Wl,--gc-sections,--exclude-all-symbols,--nxcompat,--dynamicbase,--high-entropy-va,--no-insert-timestamp ^
+ -o build\sniplite_translate_vulkan.dll third_party\translation\opusmt_translate.cpp third_party\shared\core\gguf_loader.cpp ^
+ third_party\translation\opusmt_translate.def build\ggml-import.a build\ggml-base-import.a build\ggml-cpu-import.a || exit /b 1
+copy /y third_party\translation\LICENSE build\LICENSE-Translation.txt >nul || exit /b 1
 g++ -std=c++17 -O3 -DNOMINMAX -DWIN32_LEAN_AND_MEAN %INFERENCE_KERNELS% ^
  -ffunction-sections -fdata-sections -fno-ident -Ithird_party/shared -Ithird_party/formulanet -Ithird_party/formulanet/ggml ^
  -shared -static-libgcc -static-libstdc++ -s -Wl,--gc-sections,--exclude-all-symbols,--nxcompat,--dynamicbase,--high-entropy-va,--no-insert-timestamp ^
@@ -94,7 +111,7 @@ gcc %CF% -Wl,--subsystem,windows -o build\sniplite.exe src\start.S src\app\main.
  src\overlay\ov_paint.S src\overlay\ov_show.S src\overlay\ov_input.S src\overlay\present.S src\overlay\shot.S src\overlay\draw.S src\app\pin.c src\overlay\image.S ^
  src\scroll\scroll_thumb.S src\scroll\scroll_hash.S ^
  src\app\config.c src\app\settings.c src\app\update.c src\app\uninstall.c src\app\util.c src\app\ipc.c src\app\lang.c src\app\crt.c ^
- src\ocr\ocr.c src\ocr\ocr_ui.c src\ocr\ocr_table.c src\ocr\ocr_get.c src\formula\formula.c src\formula\formula_get.c src\formula\formula_ui.c src\formula\formula_preview.c src\scroll\scroll.c src\overlay\snap.c build\sniplite.res ^
+ src\ocr\ocr.c src\ocr\ocr_ui.c src\ocr\ocr_table.c src\ocr\ocr_get.c src\translate\translate.c src\formula\formula.c src\formula\formula_get.c src\formula\formula_ui.c src\formula\formula_preview.c src\scroll\scroll.c src\overlay\snap.c build\sniplite.res ^
  %APP_LDFLAGS% -lkernel32 -luser32 -lgdi32 -ldwmapi -limm32 -luuid -lole32 -lshell32 -lshlwapi -lgcc || exit /b 1
 gcc %CF% -DCONSOLE -Wl,--subsystem,console -o build\sniplite.com src\start.S src\app\cli.c src\app\update.c src\app\util.c ^
  src\app\ipc.c src\app\lang.c src\app\crt.c build\cli.res %APP_LDFLAGS% -lkernel32 -luser32 -lgdi32 -lgcc || exit /b 1

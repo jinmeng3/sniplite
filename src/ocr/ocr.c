@@ -19,6 +19,8 @@ static struct {
     SnipliteOcrRunBgra run;
     WCHAR err[200];
     int backend;
+    int selected;
+    WCHAR runtime_dir[MAX_PATH * 2];
 } G;
 
 const WCHAR *ocr_error(void) { return G.err; }
@@ -156,6 +158,8 @@ static void unload(void)
     G.init = NULL;
     G.free = NULL;
     G.run = NULL;
+    G.selected = INFER_AUTO;
+    G.runtime_dir[0] = 0;
 }
 void ocr_set_backend(int backend)
 {
@@ -163,6 +167,24 @@ void ocr_set_backend(int backend)
     if (G.backend == backend) return;
     unload();
     G.backend = backend;
+}
+
+int ocr_backend_selected(void)
+{
+    if (!G.ctx) return INFER_AUTO;
+    return G.selected == 2 ? INFER_VULKAN : G.selected == 1 ? INFER_AVX2 : INFER_CPU;
+}
+
+int ocr_backend_preference(void)
+{
+    return G.backend;
+}
+
+bool ocr_runtime_dir(WCHAR *dir, int cap)
+{
+    if (!dir || cap <= 0 || !G.ctx || !G.runtime_dir[0] || lstrlenW(G.runtime_dir) >= cap) return false;
+    lstrcpyW(dir, G.runtime_dir);
+    return true;
 }
 
 /* Existing model installations receive the current embedded engine on first use.
@@ -234,10 +256,12 @@ static bool load_backend(const WCHAR *engine, const WCHAR *runtime_dir, const WC
     G.init = (SnipliteOcrInit)(void *)GetProcAddress(G.dll, "sniplite_ocr_init");
     G.free = (SnipliteOcrFree)(void *)GetProcAddress(G.dll, "sniplite_ocr_free");
     G.run = (SnipliteOcrRunBgra)(void *)GetProcAddress(G.dll, "sniplite_ocr_run_bgra");
-    if (!G.init || !G.free || !G.run) {
+    if (!G.init || !G.free || !G.run || !runtime_dir || !*runtime_dir ||
+        lstrlenW(runtime_dir) >= COUNTOF(G.runtime_dir)) {
         unload();
         return false;
     }
+    lstrcpyW(G.runtime_dir, runtime_dir);
     return true;
 }
 
@@ -361,6 +385,7 @@ bool ocr_load(const WCHAR *dir, int threads)
         unload();
         return fail(L"CrispEmbed could not initialize the PP-OCRv6 models");
     }
+    G.selected = selected;
     G.err[0] = 0;
     return true;
 }

@@ -1032,6 +1032,10 @@ X(OCR_FAILED, "识别失败", "辨識失敗", "Text recognition failed", "文字
   "Échec de la reconnaissance", "Texterkennung fehlgeschlagen", "Error al reconocer el texto")
 X(OCR_COPY, "复制", "複製", "Copy", "コピー", "복사", "Copier", "Kopieren", "Copiar")
 X(OCR_TABLE, "表格", "表格", "Table", "表", "표", "Tableau", "Tabelle", "Tabla")
+X(OCR_TRANSLATE, "翻译", "翻譯", "Translate", "翻訳", "번역", "Traduire", "Übersetzen", "Traducir")
+X(OCR_ORIGINAL, "原文", "原文", "Original", "原文", "원문", "Original", "Original", "Original")
+X(TRANSLATE_WORKING, "正在翻译...", "正在翻譯...", "Translating...", "翻訳中...", "번역 중...", "Traduction...", "Übersetzen...", "Traduciendo...")
+X(TRANSLATE_FAILED, "翻译失败", "翻譯失敗", "Translation failed", "翻訳に失敗しました", "번역 실패", "Échec de la traduction", "Übersetzung fehlgeschlagen", "Error al traducir")
 
 /* ---- the long screenshot (scroll.c) ---- */
 X(LONG_HINT, "滚动页面，自动拼接", "捲動頁面，自動拼接", "Scroll the page: it is stitched as you go", "ページをスクロールすると自動でつなぎます",
