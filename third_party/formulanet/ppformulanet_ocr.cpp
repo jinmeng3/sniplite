@@ -1319,14 +1319,17 @@ static std::vector<int> beam_decode(ppformulanet_ocr_context * ctx, int beam_wid
     beams[0].kv_v.resize(n_dec);
 
     std::vector<PpfnBeam> completed;
+    std::vector<PpfnBeam> next_beams;
+    struct Cand {
+        int bi;
+        int tok;
+        float score;
+    };
+    std::vector<Cand> cands;
+    std::vector<int> selected_children;
 
     for (int step = 0; step < max_steps; step++) {
-        struct Cand {
-            int bi;
-            int tok;
-            float score;
-        };
-        std::vector<Cand> cands;
+        cands.clear();
 
         for (int bi = 0; bi < (int)beams.size(); bi++) {
             if (beams[bi].finished) continue;
@@ -1350,13 +1353,13 @@ static std::vector<int> beam_decode(ppformulanet_ocr_context * ctx, int beam_wid
         std::partial_sort(cands.begin(), cands.begin() + keep, cands.end(),
                           [](const Cand & a, const Cand & b) { return a.score > b.score; });
 
-        std::vector<int> selected_children(beams.size(), 0);
+        selected_children.assign(beams.size(), 0);
         for (int i = 0; i < keep; i++) {
             selected_children[cands[i].bi]++;
         }
 
-        std::vector<PpfnBeam> new_beams;
-        new_beams.reserve(keep);
+        next_beams.clear();
+        next_beams.reserve(keep);
         for (int i = 0; i < keep; i++) {
             const auto & c = cands[i];
             PpfnBeam nb;
@@ -1380,11 +1383,11 @@ static std::vector<int> beam_decode(ppformulanet_ocr_context * ctx, int beam_wid
                 nb.tokens.push_back(c.tok);
                 nb.prev_token = c.tok;
                 nb.finished = false;
-                new_beams.push_back(std::move(nb));
+                next_beams.push_back(std::move(nb));
             }
         }
 
-        beams = std::move(new_beams);
+        beams.swap(next_beams);
         if (beams.empty()) break;
     }
 

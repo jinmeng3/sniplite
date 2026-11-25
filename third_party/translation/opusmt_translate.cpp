@@ -430,6 +430,8 @@ static bool translate_one(Context& c, const std::string& input, std::string& res
     ggml_backend_tensor_get(ggml_graph_get_tensor(g, "encout"), enc.data(), 0, enc.size() * sizeof(float));
     ggml_free(x);
     std::vector<Beam> beams(1);
+    std::vector<Beam> next;
+    next.reserve((size_t)c.beams);
     beams[0].ids.push_back(c.start);
     const int maxlen = std::min(c.maxpos - 1, c.genmax - 1);
     std::vector<float> logits(c.V);
@@ -477,15 +479,15 @@ static bool translate_one(Context& c, const std::string& input, std::string& res
         if (candidates.empty()) return false;
         size_t keep = std::min((size_t)c.beams, candidates.size());
         std::partial_sort(candidates.begin(), candidates.begin() + keep, candidates.end(), better);
-        std::vector<Beam> next;
-        next.reserve(keep);
+        next.clear();
+        if (next.capacity() < keep) next.reserve(keep);
         for (size_t i = 0; i < keep; ++i) {
             const auto& candidate = candidates[i];
             Beam beam = beams[candidate.parent];
             if (candidate.token >= 0) { beam.ids.push_back(candidate.token); beam.score = candidate.score; beam.done = candidate.token == c.eos; }
             next.push_back(std::move(beam));
         }
-        beams = std::move(next);
+        beams.swap(next);
         if (std::all_of(beams.begin(), beams.end(), [](const Beam& beam) { return beam.done; })) break;
     }
     auto best = std::max_element(beams.begin(), beams.end(), [](const Beam& a, const Beam& b) {

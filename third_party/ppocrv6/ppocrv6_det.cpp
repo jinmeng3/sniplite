@@ -375,47 +375,61 @@ static void add_inplace(std::vector<float> & a, const std::vector<float> & b) {
     for (size_t i = 0; i < a.size(); ++i) a[i] += b[i];
 }
 
-static bool run_se(const se & s, std::vector<float> & x, int channels, std::vector<float> * gate_out = nullptr) {
+struct se_scratch {
+    std::vector<float> input;
+    std::vector<float> hidden;
+};
+
+struct block_scratch {
+    std::vector<float> dw;
+    std::vector<float> cm1;
+    std::vector<float> output;
+    std::vector<float> pooled;
+    std::vector<float> pooled_before;
+    std::vector<float> gate;
+    se_scratch se;
+};
+
+static bool run_se(const se & s, std::vector<float> & x, int channels, se_scratch & scratch,
+                   std::vector<float> * gate_out = nullptr) {
     if (!s.valid) return true;
-    std::vector<float> p(channels, 0.0f), g;
+    scratch.input.assign(x.begin(), x.begin() + channels);
     int gh, gw;
-    for (int c = 0; c < channels; ++c) {
-        // x is a 1x1 tensor for the SE path.
-        p[c] = x[c];
-    }
-    if (!apply_conv(s.c1, p, 1, 1, g, gh, gw)) return false;
-    relu(g);
-    if (!apply_conv(s.c2, g, 1, 1, p, gh, gw)) return false;
+    if (!apply_conv(s.c1, scratch.input, 1, 1, scratch.hidden, gh, gw)) return false;
+    relu(scratch.hidden);
+    if (!apply_conv(s.c2, scratch.hidden, 1, 1, scratch.input, gh, gw)) return false;
     if (gate_out) gate_out->resize(channels);
     for (int c = 0; c < channels; ++c) {
-        const float gate = std::clamp(p[c] / 6.0f + 0.5f, 0.0f, 1.0f);
+        const float gate = std::clamp(scratch.input[c] / 6.0f + 0.5f, 0.0f, 1.0f);
         if (gate_out) (*gate_out)[c] = gate;
         x[c] = gate;
     }
     return true;
 }
 
-static bool run_block(const block & b, std::vector<float> & x, int & h, int & w, context * debug = nullptr,
-                      const std::string & prefix = {}) {
-    std::vector<float> y, z, out;
+static bool run_block(const block & b, std::vector<float> & x, int & h, int & w, block_scratch & scratch,
+                      context * debug = nullptr, const std::string & prefix = {}) {
+    auto & y = scratch.dw;
+    auto & z = scratch.cm1;
+    auto & out = scratch.output;
     int oh, ow, nh, nw;
     if (!apply_conv(b.dw, x, h, w, y, oh, ow)) return false;
     if (debug && !prefix.empty()) debug->last_stages[prefix + "_dw"] = y;
     if (b.gate.valid) {
-        std::vector<float> pooled(b.dw.ic, 0.0f);
+        auto & pooled = scratch.pooled;
+        pooled.assign(b.dw.ic, 0.0f);
         for (int c = 0; c < b.dw.ic; ++c)
             for (int i = 0; i < oh * ow; ++i) pooled[c] += y[(size_t)c * oh * ow + i] / float(oh * ow);
-        std::vector<float> pooled_before;
-        if (debug && !prefix.empty()) pooled_before = pooled;
-        std::vector<float> gate;
-        if (!run_se(b.gate, pooled, b.dw.ic, debug && !prefix.empty() ? &gate : nullptr)) return false;
-        if (debug && !prefix.empty()) {
-            debug->last_stages[prefix + "_pool"] = pooled_before;
-            debug->last_stages[prefix + "_gate"] = gate;
+        const bool capture = debug && !prefix.empty();
+        if (capture) scratch.pooled_before = pooled;
+        if (!run_se(b.gate, pooled, b.dw.ic, scratch.se, capture ? &scratch.gate : nullptr)) return false;
+        if (capture) {
+            debug->last_stages[prefix + "_pool"] = scratch.pooled_before;
+            debug->last_stages[prefix + "_gate"] = scratch.gate;
         }
         for (int c = 0; c < b.dw.ic; ++c)
             for (int i = 0; i < oh * ow; ++i) y[(size_t)c * oh * ow + i] *= pooled[c];
-        if (debug && !prefix.empty()) debug->last_stages[prefix + "_se"] = y;
+        if (capture) debug->last_stages[prefix + "_se"] = y;
     }
     if (!apply_conv(b.cm1, y, oh, ow, z, nh, nw)) return false;
     gelu(z);
@@ -1058,10 +1072,11 @@ std::vector<box> detect_raw(context * c, const uint8_t * px, int w, int h, int c
         ws.push_back(W);
     }
     const size_t first_stage = graph_done ? 1 : 0;
+    block_scratch scratch;
     for (size_t si = first_stage; si < c->stages.size(); ++si) {
         auto & ss = c->stages[si];
         for (size_t bi = 0; bi < ss.size(); ++bi)
-            if (!run_block(ss[bi], x, H, W, c->capture_stages ? c : nullptr,
+            if (!run_block(ss[bi], x, H, W, scratch, c->capture_stages ? c : nullptr,
                            c->capture_stages && si == 0 && bi == 0 ? "block0" : "")) return {};
         const size_t stage_index = stages.size();
         if (c->capture_stages)
