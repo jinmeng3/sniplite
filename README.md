@@ -38,7 +38,7 @@ SnapRail 将截图、标注、贴图、长截图、二维码识别和本地 OCR 
 - **本地处理**：截图和识别内容在本机处理；软件不含广告。
 - **轻量运行**：主程序不链接 C 运行库；截图、合成和绘制等性能敏感部分使用 x86-64 汇编。
 
-## 最近的 OCR 与公式引擎改进
+## 最近的 OCR、公式与翻译引擎改进
 
 OCR 和 FormulaNet 均可使用 Vulkan、AVX2 或通用 CPU。自动模式优先尝试 Vulkan，再尝试 AVX2 和通用 CPU；加速后端初始化或推理失败时会回退。也可在首选项中指定后端。
 
@@ -57,6 +57,10 @@ FormulaNet 的 Vulkan 路径会把卷积权重转换为 F16 并常驻 Vulkan 设
 | QR + OCR + FormulaNet Vulkan | 31.3; 9.8/2.1 | 343.2; 84.7/390.2 | 386.9; 96.7/351.3 |
 
 QR 使用同一张测试码；OCR 使用 1000×260 RGB 单行文本；FormulaNet 使用 400×100 的 `x² + y² = 1`。速度包括进程启动、模型初始化、预处理和推理。内存为进程峰值工作集/峰值提交量，使用 Windows PSAPI 每 2 ms 采样；不含专用显存，OCR 峰值包含检测与识别模型。显卡、驱动和系统状态会影响结果。
+
+OpusMT 的 CPU 解码复用 beam 间的 cross-attention K/V 缓存，并将缓存张量保留在 GGML 图的生命周期内。一次固定短句回归的三组交替复测中，generic CPU 中位延迟下降 13.8%，AVX2 下降 9.9%；输出一致，主机工作集变化小于 0.02 MiB。Vulkan 路径不使用此缓存。这组数据与上方便携包基准使用不同测试流程，不宜直接比较。
+
+第五轮还让 OCR 标量检测和 FormulaNet、OpusMT beam 解码复用临时缓冲。generic、AVX2、Vulkan 输出均与基线一致，但复测未显示稳定的额外速度提升；强制 OCR 标量路径的峰值工作集增加约 2 MiB。
 
 ## 下载与安装
 
@@ -102,7 +106,7 @@ QR 使用同一张测试码；OCR 使用 1000×260 RGB 单行文本；FormulaNet
 
 ### 英译中
 
-OCR 结果面板可将英文识别结果翻译为中文，并可切回原文。六种带 OCR 的便携包和安装器现都包含 Q8_0 翻译模型（约 83 MiB）及对应翻译引擎；纯二维码包不含翻译。模型来自 [Helsinki-NLP/opus-mt-en-zh](https://huggingface.co/Helsinki-NLP/opus-mt-en-zh)，采用 Apache-2.0 许可；便携包的 `translation/` 目录包含许可证和来源说明。
+OCR 结果面板可将英文识别结果翻译为中文，并可切回原文。目前只有 [二维码 + OCR + FormulaNet Vulkan 便携包](https://github.com/jinmeng3/sniplite/releases/download/v1.5.1.7/sniplite_1.5.1.7_portable_QR_OCR_FormulaNet_Vulkan_x64.zip) 随包提供 Q8_0 翻译模型（约 83 MiB）和对应引擎；其他便携包不随包附带翻译模型。模型来自 [Helsinki-NLP/opus-mt-en-zh](https://huggingface.co/Helsinki-NLP/opus-mt-en-zh)，采用 Apache-2.0 许可；该包的 `translation/` 目录包含许可证和来源说明。
 
 
 ### 公式识别
