@@ -606,13 +606,17 @@ typedef struct {
     WCHAR *source;
     Str translated;
     uint32_t generation;
-    bool good;
+    bool good, table, changed;
 } TranslateJob;
+
+static bool text_is_mostly_han(const WCHAR *text);
+static bool translate_table_text(const WCHAR *source, Str *translated, bool *changed);
 
 static DWORD WINAPI translate_thread(void *arg)
 {
     TranslateJob *job = arg;
-    job->good = translate_text(job->source, &job->translated);
+    job->good = job->table ? translate_table_text(job->source, &job->translated, &job->changed)
+                           : (job->changed = translate_text(job->source, &job->translated));
     PostMessageW(job->hub, WM_APP_TRANSLATED, 0, (LPARAM)job);
     return 0;
 }
@@ -1165,6 +1169,15 @@ static void panel_place(const Wire *w)
     UpdateWindow(U.panel);
 }
 
+static void panel_fit_table(void)
+{
+    int want = U.as_table ? MINI(U.table_px + px(10) + GetSystemMetrics(SM_CXVSCROLL) + px(12), px(680)) : 0;
+    if (want != U.pw) {
+        U.pw = want;
+        panel_move();
+    }
+}
+
 static void panel_fill(Result *r)
 {
     str_free(&U.plain);
@@ -1180,17 +1193,13 @@ static void panel_fill(Result *r)
     SendMessageW(U.table, BM_SETCHECK, r->table ? BST_CHECKED : BST_UNCHECKED, 0);
     ShowWindow(U.mark, r->table ? SW_SHOW : SW_HIDE);
     SendMessageW(U.mark, BM_SETCHECK, U.as_md ? BST_CHECKED : BST_UNCHECKED, 0);
-    ShowWindow(U.translate, r->good && !r->table && U.plain.n && translate_installed() ? SW_SHOW : SW_HIDE);
+    ShowWindow(U.translate, r->good && U.plain.n && translate_installed() ? SW_SHOW : SW_HIDE);
     if (r->table && U.as_md)
         md_build();
     edit_make();
     if (!r->good)
         SetWindowTextW(U.edit, r->why); /* the reason, whole: the line at the bottom has no room for it */
-    int want = r->table ? MINI(U.table_px + px(10) + GetSystemMetrics(SM_CXVSCROLL) + px(12), px(680)) : 0;
-    if (want != U.pw) { /* a table: wide enough for its columns, if the screen has the room */
-        U.pw = want;
-        panel_move();
-    }
+    panel_fit_table();
     EnableWindow(U.copy, U.plain.n > 0);
     EnableWindow(U.translate, !U.translate_running && IsWindowVisible(U.translate) && U.plain.n > 0);
     panel_status(!r->good ? T(OCR_FAILED) : U.plain.n ? NULL : T(OCR_NONE));
@@ -1217,24 +1226,112 @@ static bool text_is_mostly_han(const WCHAR *text)
     return han && han >= latin;
 }
 
+static bool table_append(Str *out, const WCHAR *text, int n)
+{
+    int before = out->n;
+    str_addn(out, text, n);
+    return out->n == before + n;
+}
+
+static bool table_append_cell(Str *out, const WCHAR *text, int n)
+{
+    bool space = false;
+    for (int i = 0; i < n; i++) {
+        if (text[i] == L'\t' || text[i] == L'\r' || text[i] == L'\n') {
+            if (!space && !table_append(out, L" ", 1))
+                return false;
+            space = true;
+        } else {
+            if (!table_append(out, text + i, 1))
+                return false;
+            space = false;
+        }
+    }
+    return true;
+}
+
+static bool translate_table_text(const WCHAR *source, Str *translated, bool *changed)
+{
+    if (!source || !translated || !changed)
+        return false;
+    *changed = false;
+    const WCHAR *p = source;
+    while (*p) {
+        const WCHAR *cell = p;
+        while (*p && *p != L'\t' && *p != L'\r' && *p != L'\n')
+            p++;
+        int n = (int)(p - cell);
+        if (n) {
+            WCHAR *text = mem_alloc(((size_t)n + 1) * sizeof(WCHAR));
+            if (!text)
+                goto failed;
+            memcpy(text, cell, (size_t)n * sizeof(WCHAR));
+            text[n] = 0;
+            if (text_is_mostly_han(text)) {
+                mem_free(text);
+                if (!table_append(translated, cell, n))
+                    goto failed;
+            } else {
+                Str result = {0};
+                bool good = translate_text(text, &result);
+                mem_free(text);
+                if (!good || !table_append_cell(translated, result.p, result.n)) {
+                    str_free(&result);
+                    goto failed;
+                }
+                str_free(&result);
+                *changed = true;
+            }
+        }
+        if (*p == L'\r') {
+            if (!table_append(translated, p++, 1))
+                goto failed;
+            if (*p == L'\n' && !table_append(translated, p++, 1))
+                goto failed;
+        } else if (*p) {
+            if (!table_append(translated, p++, 1))
+                goto failed;
+        }
+    }
+    return translated->n > 0;
+
+failed:
+    str_free(translated);
+    return false;
+}
+
 static void panel_translate(void)
 {
-    if (U.translate_running || U.running || U.next || !U.panel || !IsWindowVisible(U.panel) || U.as_table)
+    if (U.translate_running || U.running || U.next || !U.panel || !IsWindowVisible(U.panel))
         return;
     if (U.translated) {
-        Str t = U.plain;
-        U.plain = U.original;
-        U.original = t;
+        if (U.as_table) {
+            Str t = U.tab;
+            U.tab = U.original;
+            U.original = t;
+            if (U.as_md)
+                md_build();
+        } else {
+            Str t = U.plain;
+            U.plain = U.original;
+            U.original = t;
+        }
         U.translated = false;
         SetWindowTextW(U.translate, T(OCR_TRANSLATE));
         edit_make();
+        panel_fit_table();
+        if (U.as_table) {
+            EnableWindow(U.table, TRUE);
+            EnableWindow(U.mark, TRUE);
+        }
         EnableWindow(U.copy, U.plain.n > 0);
         EnableWindow(U.translate, U.plain.n > 0);
         panel_status(NULL);
         InvalidateRect(U.panel, NULL, FALSE);
         return;
     }
-    int n = GetWindowTextLengthW(U.edit);
+    bool table = U.as_table;
+    int n = table && !U.as_md ? GetWindowTextLengthW(U.edit) : table ? U.tab.n : GetWindowTextLengthW(U.edit);
     if (n <= 0)
         return;
     WCHAR *source = mem_alloc(((size_t)n + 1) * sizeof(WCHAR));
@@ -1242,8 +1339,11 @@ static void panel_translate(void)
         panel_status(T(TRANSLATE_FAILED));
         return;
     }
-    GetWindowTextW(U.edit, source, n + 1);
-    if (text_is_mostly_han(source)) {
+    if (table && U.as_md)
+        memcpy(source, U.tab.p, ((size_t)n + 1) * sizeof(WCHAR));
+    else
+        GetWindowTextW(U.edit, source, n + 1);
+    if (!table && text_is_mostly_han(source)) {
         mem_free(source);
         panel_status(T(TRANSLATE_ALREADY_CHINESE));
         return;
@@ -1257,10 +1357,15 @@ static void panel_translate(void)
     memset(job, 0, sizeof *job);
     job->hub = U.hub;
     job->source = source;
+    job->table = table;
     job->generation = U.generation;
     U.translate_running = true;
     EnableWindow(U.edit, FALSE);
     EnableWindow(U.translate, FALSE);
+    if (table) {
+        EnableWindow(U.table, FALSE);
+        EnableWindow(U.mark, FALSE);
+    }
     panel_status(T(TRANSLATE_WORKING));
     HANDLE th = CreateThread(NULL, 0, translate_thread, job, 0, NULL);
     if (th) {
@@ -1269,6 +1374,10 @@ static void panel_translate(void)
         U.translate_running = false;
         EnableWindow(U.edit, TRUE);
         EnableWindow(U.translate, TRUE);
+        if (table) {
+            EnableWindow(U.table, TRUE);
+            EnableWindow(U.mark, TRUE);
+        }
         panel_status(T(TRANSLATE_FAILED));
         mem_free(job->source);
         str_free(&job->translated);
@@ -1282,24 +1391,48 @@ static void translate_done(TranslateJob *job)
     U.translate_running = false;
     if (job->generation == U.generation && U.panel && IsWindowVisible(U.panel)) {
         EnableWindow(U.edit, TRUE);
-        if (job->good && job->translated.n) {
+        if (job->table) {
+            EnableWindow(U.table, TRUE);
+            EnableWindow(U.mark, TRUE);
+        }
+        if (job->good && job->translated.n && job->changed) {
             str_free(&U.original);
-            U.original.p = job->source;
-            U.original.n = lstrlenW(job->source);
-            U.original.cap = U.original.n + 1;
-            job->source = NULL;
-            str_free(&U.plain);
-            U.plain = job->translated;
-            memset(&job->translated, 0, sizeof job->translated);
+            if (job->table) {
+                U.original.p = job->source;
+                U.original.n = lstrlenW(job->source);
+                U.original.cap = U.original.n + 1;
+                job->source = NULL;
+                str_free(&U.tab);
+                U.tab = job->translated;
+                memset(&job->translated, 0, sizeof job->translated);
+                if (U.as_md)
+                    md_build();
+            } else {
+                U.original.p = job->source;
+                U.original.n = lstrlenW(job->source);
+                U.original.cap = U.original.n + 1;
+                job->source = NULL;
+                str_free(&U.plain);
+                U.plain = job->translated;
+                memset(&job->translated, 0, sizeof job->translated);
+                U.as_table = false;
+                ShowWindow(U.table, SW_HIDE);
+                ShowWindow(U.mark, SW_HIDE);
+            }
             U.translated = true;
-            U.as_table = false;
-            ShowWindow(U.table, SW_HIDE);
-            ShowWindow(U.mark, SW_HIDE);
             SetWindowTextW(U.translate, T(OCR_ORIGINAL));
             edit_make();
+            panel_fit_table();
+            if (job->table) {
+                EnableWindow(U.table, FALSE);
+                EnableWindow(U.mark, FALSE);
+            }
             EnableWindow(U.copy, U.plain.n > 0);
             EnableWindow(U.translate, U.plain.n > 0);
             panel_status(NULL);
+        } else if (job->good && !job->changed) {
+            EnableWindow(U.translate, U.plain.n > 0);
+            panel_status(T(TRANSLATE_ALREADY_CHINESE));
         } else {
             EnableWindow(U.translate, U.plain.n > 0 && IsWindowVisible(U.translate));
             panel_status(T(TRANSLATE_FAILED));
@@ -1307,13 +1440,16 @@ static void translate_done(TranslateJob *job)
         InvalidateRect(U.panel, NULL, FALSE);
     } else if (U.panel && IsWindowVisible(U.panel)) {
         EnableWindow(U.edit, TRUE);
-        EnableWindow(U.translate, !U.as_table && U.plain.n > 0 && IsWindowVisible(U.translate));
+        EnableWindow(U.table, TRUE);
+        EnableWindow(U.mark, TRUE);
+        EnableWindow(U.translate, U.plain.n > 0 && IsWindowVisible(U.translate));
     }
     mem_free(job->source);
     str_free(&job->translated);
     mem_free(job);
     job_pump();
 }
+
 
 /* ---- jobs ---- */
 
