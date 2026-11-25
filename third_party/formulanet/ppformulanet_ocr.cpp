@@ -1350,14 +1350,25 @@ static std::vector<int> beam_decode(ppformulanet_ocr_context * ctx, int beam_wid
         std::partial_sort(cands.begin(), cands.begin() + keep, cands.end(),
                           [](const Cand & a, const Cand & b) { return a.score > b.score; });
 
+        std::vector<int> selected_children(beams.size(), 0);
+        for (int i = 0; i < keep; i++) {
+            selected_children[cands[i].bi]++;
+        }
+
         std::vector<PpfnBeam> new_beams;
         new_beams.reserve(keep);
         for (int i = 0; i < keep; i++) {
             const auto & c = cands[i];
             PpfnBeam nb;
             nb.tokens = beams[c.bi].tokens;
-            nb.kv_k = beams[c.bi].kv_k;
-            nb.kv_v = beams[c.bi].kv_v;
+            if (selected_children[c.bi] == 1) {
+                nb.kv_k = std::move(beams[c.bi].kv_k);
+                nb.kv_v = std::move(beams[c.bi].kv_v);
+            } else {
+                nb.kv_k = beams[c.bi].kv_k;
+                nb.kv_v = beams[c.bi].kv_v;
+            }
+            selected_children[c.bi]--;
             nb.score = c.score;
             if (c.tok == hp.eos_token || c.tok == hp.pad_token) {
                 nb.finished = true;

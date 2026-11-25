@@ -154,17 +154,99 @@ static ggml_cgraph* encoder(Context&c,int T,ggml_context*&x){x=ggml_init({8*1024
     for(auto&l:c.enc){auto*r=y;if(c.pre_norm)y=norm(x,y,l.ln,l.lnb);auto*q=ggml_add(x,ggml_mul_mat(x,l.q,y),l.qb);auto*k=ggml_add(x,ggml_mul_mat(x,l.k,y),l.kb);auto*v=ggml_add(x,ggml_mul_mat(x,l.v,y),l.vb);q=ggml_cont(x,ggml_permute(x,ggml_reshape_3d(x,q,hd,c.he,T),0,2,1,3));k=ggml_cont(x,ggml_permute(x,ggml_reshape_3d(x,k,hd,c.he,T),0,2,1,3));v=ggml_cont(x,ggml_permute(x,ggml_reshape_3d(x,v,hd,c.he,T),0,2,1,3));auto*a=ggml_flash_attn_ext(x,q,k,v,nullptr,1.f/sqrtf((float)hd),0,0);a=ggml_reshape_2d(x,a,c.D,T);y=ggml_add(x,ggml_add(x,ggml_mul_mat(x,l.o,a),l.ob),r);if(!c.pre_norm)y=norm(x,y,l.ln,l.lnb);r=y;if(c.pre_norm)y=norm(x,y,l.fln,l.flnb);y=ggml_add(x,ggml_mul_mat(x,l.up,y),l.upb);y=act(x,y,c.activation);y=ggml_add(x,ggml_mul_mat(x,l.down,y),l.downb);y=ggml_add(x,y,r);if(!c.pre_norm)y=norm(x,y,l.fln,l.flnb);}
     ggml_set_name(y,"encout");ggml_build_forward_expand(g,y);return g;
 }
-static ggml_cgraph* decoder(Context&c,const std::vector<int>&ids,const std::vector<float>&enc,ggml_context*&x){int T=(int)ids.size(),S=(int)enc.size()/c.D,hd=c.D/c.hdc;x=ggml_init({16*1024*1024,nullptr,true});if(!x)return nullptr;auto*g=ggml_new_graph_custom(x,16384,false);auto*in=ggml_new_tensor_1d(x,GGML_TYPE_I32,T);ggml_set_name(in,"ids");ggml_set_input(in);auto*pos=ggml_new_tensor_1d(x,GGML_TYPE_I32,T);ggml_set_name(pos,"pos");ggml_set_input(pos);auto*ei=ggml_new_tensor_2d(x,GGML_TYPE_F32,c.D,S);ggml_set_name(ei,"enc");ggml_set_input(ei);
-    auto*y=ggml_get_rows(x,c.embed,in);if(c.scale)y=ggml_scale(x,y,sqrtf((float)c.D));y=ggml_add(x,y,ggml_get_rows(x,c.dpos,pos));auto*mask=ggml_new_tensor_2d(x,GGML_TYPE_F16,T,T);ggml_set_name(mask,"mask");ggml_set_input(mask);
-    for(auto&l:c.dec){auto*r=y;if(c.pre_norm)y=norm(x,y,l.ln,l.lnb);auto*q=ggml_add(x,ggml_mul_mat(x,l.q,y),l.qb);auto*k=ggml_add(x,ggml_mul_mat(x,l.k,y),l.kb);auto*v=ggml_add(x,ggml_mul_mat(x,l.v,y),l.vb);q=ggml_cont(x,ggml_permute(x,ggml_reshape_3d(x,q,hd,c.hdc,T),0,2,1,3));k=ggml_cont(x,ggml_permute(x,ggml_reshape_3d(x,k,hd,c.hdc,T),0,2,1,3));v=ggml_cont(x,ggml_permute(x,ggml_reshape_3d(x,v,hd,c.hdc,T),0,2,1,3));auto*a=ggml_flash_attn_ext(x,q,k,v,mask,1.f/sqrtf((float)hd),0,0);a=ggml_reshape_2d(x,a,c.D,T);y=ggml_add(x,ggml_add(x,ggml_mul_mat(x,l.o,a),l.ob),r);if(!c.pre_norm)y=norm(x,y,l.ln,l.lnb);r=y;
-        if(c.pre_norm)y=norm(x,y,l.cln,l.clnb);auto*cq=ggml_add(x,ggml_mul_mat(x,l.cq,y),l.cqb);auto*ck=ggml_add(x,ggml_mul_mat(x,l.ck,ei),l.ckb);auto*cv=ggml_add(x,ggml_mul_mat(x,l.cv,ei),l.cvb);cq=ggml_cont(x,ggml_permute(x,ggml_reshape_3d(x,cq,hd,c.hdc,T),0,2,1,3));ck=ggml_cont(x,ggml_permute(x,ggml_reshape_3d(x,ck,hd,c.hdc,S),0,2,1,3));cv=ggml_cont(x,ggml_permute(x,ggml_reshape_3d(x,cv,hd,c.hdc,S),0,2,1,3));auto*ca=ggml_flash_attn_ext(x,cq,ck,cv,nullptr,1.f/sqrtf((float)hd),0,0);ca=ggml_reshape_2d(x,ca,c.D,T);y=ggml_add(x,ggml_add(x,ggml_mul_mat(x,l.co,ca),l.cob),r);if(!c.pre_norm)y=norm(x,y,l.cln,l.clnb);r=y;if(c.pre_norm)y=norm(x,y,l.fln,l.flnb);y=ggml_add(x,ggml_mul_mat(x,l.up,y),l.upb);y=act(x,y,c.activation);y=ggml_add(x,ggml_mul_mat(x,l.down,y),l.downb);y=ggml_add(x,y,r);if(!c.pre_norm)y=norm(x,y,l.fln,l.flnb);}
-    auto*last=ggml_view_2d(x,y,c.D,1,y->nb[1],(size_t)(T-1)*y->nb[1]);auto*logits=ggml_add(x,ggml_mul_mat(x,c.embed,last),c.bias);ggml_set_name(logits,"logits");ggml_build_forward_expand(g,logits);return g;
+static std::string cross_kv_name(int layer, bool value) {
+    return "cross_" + std::string(value ? "v_" : "k_") + std::to_string(layer);
 }
+static ggml_cgraph* decoder(Context& c, const std::vector<int>& ids, const std::vector<float>& enc,
+                            ggml_context*& x, bool cache_cross_kv, bool capture_cross_kv) {
+    const int T = (int)ids.size(), S = (int)enc.size() / c.D, hd = c.D / c.hdc;
+    x = ggml_init({16 * 1024 * 1024, nullptr, true});
+    if (!x) return nullptr;
+    auto* g = ggml_new_graph_custom(x, 16384, false);
+    auto* in = ggml_new_tensor_1d(x, GGML_TYPE_I32, T);
+    ggml_set_name(in, "ids"); ggml_set_input(in);
+    auto* pos = ggml_new_tensor_1d(x, GGML_TYPE_I32, T);
+    ggml_set_name(pos, "pos"); ggml_set_input(pos);
+    ggml_tensor* ei = nullptr;
+    if (!cache_cross_kv) {
+        ei = ggml_new_tensor_2d(x, GGML_TYPE_F32, c.D, S);
+        ggml_set_name(ei, "enc"); ggml_set_input(ei);
+    }
+    auto* y = ggml_get_rows(x, c.embed, in);
+    if (c.scale) y = ggml_scale(x, y, sqrtf((float)c.D));
+    y = ggml_add(x, y, ggml_get_rows(x, c.dpos, pos));
+    auto* mask = ggml_new_tensor_2d(x, GGML_TYPE_F16, T, T);
+    ggml_set_name(mask, "mask"); ggml_set_input(mask);
+    for (size_t i = 0; i < c.dec.size(); ++i) {
+        auto& l = c.dec[i];
+        auto* r = y;
+        if (c.pre_norm) y = norm(x, y, l.ln, l.lnb);
+        auto* q = ggml_add(x, ggml_mul_mat(x, l.q, y), l.qb);
+        auto* k = ggml_add(x, ggml_mul_mat(x, l.k, y), l.kb);
+        auto* v = ggml_add(x, ggml_mul_mat(x, l.v, y), l.vb);
+        q = ggml_cont(x, ggml_permute(x, ggml_reshape_3d(x, q, hd, c.hdc, T), 0, 2, 1, 3));
+        k = ggml_cont(x, ggml_permute(x, ggml_reshape_3d(x, k, hd, c.hdc, T), 0, 2, 1, 3));
+        v = ggml_cont(x, ggml_permute(x, ggml_reshape_3d(x, v, hd, c.hdc, T), 0, 2, 1, 3));
+        auto* a = ggml_flash_attn_ext(x, q, k, v, mask, 1.f / sqrtf((float)hd), 0, 0);
+        a = ggml_reshape_2d(x, a, c.D, T);
+        y = ggml_add(x, ggml_add(x, ggml_mul_mat(x, l.o, a), l.ob), r);
+        if (!c.pre_norm) y = norm(x, y, l.ln, l.lnb);
+        r = y;
+        if (c.pre_norm) y = norm(x, y, l.cln, l.clnb);
+        auto* cq = ggml_add(x, ggml_mul_mat(x, l.cq, y), l.cqb);
+        ggml_tensor* ck = nullptr;
+        ggml_tensor* cv = nullptr;
+        if (cache_cross_kv) {
+            ck = ggml_new_tensor_3d(x, GGML_TYPE_F32, hd, S, c.hdc);
+            ggml_set_name(ck, cross_kv_name((int)i, false).c_str());
+            ggml_set_input(ck);
+            ggml_set_output(ck);
+            cv = ggml_new_tensor_3d(x, GGML_TYPE_F32, hd, S, c.hdc);
+            ggml_set_name(cv, cross_kv_name((int)i, true).c_str());
+            ggml_set_input(cv);
+            ggml_set_output(cv);
+        } else {
+            ck = ggml_add(x, ggml_mul_mat(x, l.ck, ei), l.ckb);
+            cv = ggml_add(x, ggml_mul_mat(x, l.cv, ei), l.cvb);
+            ck = ggml_cont(x, ggml_permute(x, ggml_reshape_3d(x, ck, hd, c.hdc, S), 0, 2, 1, 3));
+            cv = ggml_cont(x, ggml_permute(x, ggml_reshape_3d(x, cv, hd, c.hdc, S), 0, 2, 1, 3));
+            if (capture_cross_kv) {
+                ggml_set_name(ck, cross_kv_name((int)i, false).c_str());
+                ggml_set_name(cv, cross_kv_name((int)i, true).c_str());
+                ggml_set_output(ck);
+                ggml_set_output(cv);
+            }
+        }
+        cq = ggml_cont(x, ggml_permute(x, ggml_reshape_3d(x, cq, hd, c.hdc, T), 0, 2, 1, 3));
+        auto* ca = ggml_flash_attn_ext(x, cq, ck, cv, nullptr, 1.f / sqrtf((float)hd), 0, 0);
+        ca = ggml_reshape_2d(x, ca, c.D, T);
+        y = ggml_add(x, ggml_add(x, ggml_mul_mat(x, l.co, ca), l.cob), r);
+        if (!c.pre_norm) y = norm(x, y, l.cln, l.clnb);
+        r = y;
+        if (c.pre_norm) y = norm(x, y, l.fln, l.flnb);
+        y = ggml_add(x, ggml_mul_mat(x, l.up, y), l.upb);
+        y = act(x, y, c.activation);
+        y = ggml_add(x, ggml_mul_mat(x, l.down, y), l.downb);
+        y = ggml_add(x, y, r);
+        if (!c.pre_norm) y = norm(x, y, l.fln, l.flnb);
+    }
+    auto* last = ggml_view_2d(x, y, c.D, 1, y->nb[1], (size_t)(T - 1) * y->nb[1]);
+    auto* logits = ggml_add(x, ggml_mul_mat(x, c.embed, last), c.bias);
+    ggml_set_name(logits, "logits"); ggml_build_forward_expand(g, logits);
+    return g;
+}
+struct CrossAttentionCache {
+    std::vector<float> values;
+    int source_count = 0;
+    bool ready = false;
+};
 struct DecoderGraph {
     ggml_context* context = nullptr;
     ggml_cgraph* graph = nullptr;
     int token_count = 0;
     int source_count = 0;
+    bool uses_cross_kv_cache = false;
+    bool cross_kv_uploaded = false;
 
     int scratch_token_count = -1;
     std::vector<int32_t> positions;
@@ -176,24 +258,32 @@ struct DecoderGraph {
         graph = nullptr;
         token_count = 0;
         source_count = 0;
+        uses_cross_kv_cache = false;
+        cross_kv_uploaded = false;
     }
-    bool prepare(Context& c, const std::vector<int>& ids, const std::vector<float>& enc) {
+    bool prepare(Context& c, const std::vector<int>& ids, const std::vector<float>& enc,
+                 const CrossAttentionCache& cross_kv) {
         const int tokens = (int)ids.size();
         const int source = (int)enc.size() / c.D;
+        const bool cpu_cache_enabled = !c.cpu_backend || c.backend == c.cpu_backend;
+        const bool use_cross_kv_cache = cpu_cache_enabled && cross_kv.ready;
         // Reused Vulkan beam graphs changed translations; rebuild on non-CPU backends.
-        if (graph && token_count == tokens && source_count == source && (!c.cpu_backend || c.backend == c.cpu_backend)) return true;
+        if (graph && token_count == tokens && source_count == source && uses_cross_kv_cache == use_cross_kv_cache &&
+            (!c.cpu_backend || c.backend == c.cpu_backend)) return true;
         if (graph) ggml_backend_sched_reset(c.sched);
         clear();
-        graph = decoder(c, ids, enc, context);
+        graph = decoder(c, ids, enc, context, use_cross_kv_cache, cpu_cache_enabled && !cross_kv.ready);
         if (!graph) { clear(); return false; }
         token_count = tokens;
         source_count = source;
+        uses_cross_kv_cache = use_cross_kv_cache;
         return true;
     }
 };
 static bool decode_logits(Context& c, const std::vector<int>& ids, const std::vector<float>& enc,
-                          std::vector<float>& logits, DecoderGraph& cached) {
-    if (!cached.prepare(c, ids, enc)) return false;
+                          std::vector<float>& logits, DecoderGraph& cached, CrossAttentionCache& cross_kv) {
+    const bool cpu_cache_enabled = !c.cpu_backend || c.backend == c.cpu_backend;
+    if (!cached.prepare(c, ids, enc, cross_kv)) return false;
     ggml_cgraph* graph = cached.graph;
     ggml_backend_sched_reset(c.sched);
     if (!ggml_backend_sched_alloc_graph(c.sched, graph)) return false;
@@ -208,10 +298,32 @@ static bool decode_logits(Context& c, const std::vector<int>& ids, const std::ve
     }
     ggml_backend_tensor_set(ggml_graph_get_tensor(graph, "ids"), ids.data(), 0, ids.size() * sizeof(int));
     ggml_backend_tensor_set(ggml_graph_get_tensor(graph, "pos"), cached.positions.data(), 0, cached.positions.size() * sizeof(int32_t));
-    ggml_backend_tensor_set(ggml_graph_get_tensor(graph, "enc"), enc.data(), 0, enc.size() * sizeof(float));
+    if (cached.uses_cross_kv_cache && !cached.cross_kv_uploaded) {
+        const size_t layer_values = (size_t)c.D * (size_t)cross_kv.source_count;
+        for (size_t i = 0; i < c.dec.size(); ++i) {
+            const float* layer_data = cross_kv.values.data() + i * 2 * layer_values;
+            ggml_backend_tensor_set(ggml_graph_get_tensor(graph, cross_kv_name((int)i, false).c_str()), layer_data, 0, layer_values * sizeof(float));
+            ggml_backend_tensor_set(ggml_graph_get_tensor(graph, cross_kv_name((int)i, true).c_str()), layer_data + layer_values, 0, layer_values * sizeof(float));
+        }
+        cached.cross_kv_uploaded = true;
+    }
+    if (!cached.uses_cross_kv_cache) ggml_backend_tensor_set(ggml_graph_get_tensor(graph, "enc"), enc.data(), 0, enc.size() * sizeof(float));
     ggml_backend_tensor_set(ggml_graph_get_tensor(graph, "mask"), cached.mask.data(), 0, cached.mask.size() * sizeof(ggml_fp16_t));
     if (ggml_backend_sched_graph_compute(c.sched, graph) != GGML_STATUS_SUCCESS) return false;
     ggml_backend_tensor_get(ggml_graph_get_tensor(graph, "logits"), logits.data(), 0, logits.size() * sizeof(float));
+    if (cpu_cache_enabled && !cross_kv.ready) {
+        cross_kv.source_count = cached.source_count;
+        const size_t layer_values = (size_t)c.D * (size_t)cross_kv.source_count;
+        cross_kv.values.resize(c.dec.size() * 2 * layer_values);
+        for (size_t i = 0; i < c.dec.size(); ++i) {
+            float* layer_data = cross_kv.values.data() + i * 2 * layer_values;
+            ggml_backend_tensor_get(ggml_graph_get_tensor(graph, cross_kv_name((int)i, false).c_str()), layer_data, 0, layer_values * sizeof(float));
+            ggml_backend_tensor_get(ggml_graph_get_tensor(graph, cross_kv_name((int)i, true).c_str()), layer_data + layer_values, 0, layer_values * sizeof(float));
+        }
+        cross_kv.ready = true;
+        ggml_backend_sched_reset(c.sched);
+        cached.clear();
+    }
     for (int id : c.suppress) logits[id] = -INFINITY;
     return true;
 }
@@ -328,6 +440,7 @@ static bool translate_one(Context& c, const std::string& input, std::string& res
     std::vector<BeamCandidate> parent_top;
     parent_top.reserve(parent_keep);
     DecoderGraph cached_decoder;
+    CrossAttentionCache cross_kv;
     for (int step = 0; step < maxlen; ++step) {
         candidates.clear();
         for (size_t bi = 0; bi < beams.size(); ++bi) {
@@ -337,7 +450,7 @@ static bool translate_one(Context& c, const std::string& input, std::string& res
                 candidates.push_back({bi, -1, beam.score, beam.score / length});
                 continue;
             }
-            if (!decode_logits(c, beam.ids, enc, logits, cached_decoder)) return false;
+            if (!decode_logits(c, beam.ids, enc, logits, cached_decoder, cross_kv)) return false;
             float top = -INFINITY;
             for (float value : logits) if (value > top) top = value;
             if (!std::isfinite(top)) return false;

@@ -1122,13 +1122,19 @@ std::vector<box> detect_raw(context * c, const uint8_t * px, int w, int h, int c
         ph[i] = qa;
         pw[i] = qb;
     }
-    std::vector<float> neck;
     int nh = ph[0], nw = pw[0];
+    const size_t resized_size = (size_t)(c->neck / 4) * nh * nw;
+    std::vector<float> neck(4 * resized_size);
     for (int i = 3; i >= 0; i--) {
         int uh = ph[i], uw = pw[i];
-        std::vector<float> resized;
-        resize_nearest(proc[i], c->neck / 4, uh, uw, nh, nw, resized);
-        neck.insert(neck.end(), resized.begin(), resized.end());
+        size_t offset = (size_t)(3 - i) * resized_size;
+        for (int cc = 0; cc < c->neck / 4; ++cc)
+            for (int yy = 0; yy < nh; ++yy)
+                for (int xx = 0; xx < nw; ++xx) {
+                    int sy = std::min(uh - 1, yy * uh / nh), sx = std::min(uw - 1, xx * uw / nw);
+                    neck[offset + (size_t)cc * nh * nw + yy * nw + xx] =
+                        proc[i][(size_t)cc * uh * uw + sy * uw + sx];
+                }
     }
     if (c->capture_stages) c->last_stages["neck_output"] = neck;
     std::vector<float> y, z;
