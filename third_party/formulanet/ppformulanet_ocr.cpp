@@ -116,6 +116,7 @@ struct ppformulanet_ocr_context {
     bool vulkan_failed = false;
     bool decoder_step_vulkan_used = false;
     int decoder_step_argmax = 0;
+    std::vector<uint8_t> dec_compute_meta;
     std::vector<uint8_t> enc_compute_meta;
     std::unordered_map<const ggml_tensor *, ggml_tensor *> vulkan_resident;
     std::vector<ggml_context *> vulkan_resident_ctxs;
@@ -898,11 +899,7 @@ static void project_encoder(ppformulanet_ocr_context * ctx) {
 
     ctx->proj_out.resize(N * D);
     for (int n = 0; n < N; n++) {
-        for (int d = 0; d < D; d++) {
-            float s = bv[d];
-            for (int e = 0; e < E; e++) s += ctx->enc_out[n * E + e] * wv[d * E + e];
-            ctx->proj_out[n * D + d] = s;
-        }
+        linear_cpu(ctx->enc_out.data() + n * E, ctx->proj_out.data() + n * D, E, D, wv, bv);
     }
 
     fprintf(stderr, "ppfn: projected (%d, %d)\n", N, D);
@@ -959,8 +956,8 @@ static bool decoder_step_vulkan(ppformulanet_ocr_context * ctx, int tok, int ste
     const int layers = hp.dec_layers;
     const int past = step;
     const size_t meta_size = ggml_tensor_overhead() * 4096 + ggml_graph_overhead_custom(2048, false);
-    std::vector<uint8_t> meta(meta_size);
-    ggml_init_params ip = { meta_size, meta.data(), true };
+    if (ctx->dec_compute_meta.size() < meta_size) ctx->dec_compute_meta.resize(meta_size);
+    ggml_init_params ip = { meta_size, ctx->dec_compute_meta.data(), true };
     ggml_context * g = ggml_init(ip);
     if (!g) return false;
     ggml_cgraph * gf = ggml_new_graph_custom(g, 2048, false);
@@ -1081,8 +1078,39 @@ static bool decoder_step_vulkan(ppformulanet_ocr_context * ctx, int tok, int ste
     return false;
 #endif
 }
+struct PpfnDecoderScratch {
+    std::vector<float> x;
+    std::vector<float> residual;
+    std::vector<float> q;
+    std::vector<float> k;
+    std::vector<float> v;
+    std::vector<float> sa;
+    std::vector<float> sa_proj;
+    std::vector<float> cq;
+    std::vector<float> ca;
+    std::vector<float> ca_proj;
+    std::vector<float> ff_up;
+    std::vector<float> ff_down;
+
+    void resize(int d_model, int ffn_dim) {
+        x.resize(d_model);
+        residual.resize(d_model);
+        q.resize(d_model);
+        k.resize(d_model);
+        v.resize(d_model);
+        sa.resize(d_model);
+        sa_proj.resize(d_model);
+        cq.resize(d_model);
+        ca.resize(d_model);
+        ca_proj.resize(d_model);
+        ff_up.resize(ffn_dim);
+        ff_down.resize(d_model);
+    }
+};
+
 static std::vector<float> decoder_step(ppformulanet_ocr_context * ctx, int tok, int step,
-                                       std::vector<std::vector<float>> & kv_k, std::vector<std::vector<float>> & kv_v) {
+                                       std::vector<std::vector<float>> & kv_k, std::vector<std::vector<float>> & kv_v,
+                                       PpfnDecoderScratch & scratch) {
     ctx->decoder_step_vulkan_used = false;
 #ifdef SNIPLITE_VULKAN_PREFERRED
     std::vector<float> gpu_logits;
@@ -1097,7 +1125,8 @@ static std::vector<float> decoder_step(ppformulanet_ocr_context * ctx, int tok, 
     const int V = hp.vocab_size;
     const int n_enc = ctx->n_enc_tokens;
 
-    std::vector<float> x(D);
+    auto & x = scratch.x;
+    std::fill(x.begin(), x.end(), 0.0f);
 
     // Token embedding * sqrt(d_model) + position embedding
     const float * emb = ctx->weights.get(ctx->tok_embed);
@@ -1129,10 +1158,13 @@ static std::vector<float> decoder_step(ppformulanet_ocr_context * ctx, int tok, 
         const auto & l = ctx->dec_layers[li];
 
         // --- Self-attention (PRE-LN) ---
-        std::vector<float> residual(x.begin(), x.end());
+        auto & residual = scratch.residual;
+        std::copy(x.begin(), x.end(), residual.begin());
         layernorm_cached(ctx, x.data(), x.data(), D, l.self_ln_w, l.self_ln_b, 1e-5f);
 
-        std::vector<float> q(D), k(D), v(D);
+        auto & q = scratch.q;
+        auto & k = scratch.k;
+        auto & v = scratch.v;
         linear_cached(ctx, x.data(), q.data(), D, D, l.self_q_w, l.self_q_b);
         linear_cached(ctx, x.data(), k.data(), D, D, l.self_k_w, l.self_k_b);
         linear_cached(ctx, x.data(), v.data(), D, D, l.self_v_w, l.self_v_b);
@@ -1142,10 +1174,10 @@ static std::vector<float> decoder_step(ppformulanet_ocr_context * ctx, int tok, 
         kv_v[li].insert(kv_v[li].end(), v.begin(), v.end());
         int n_kv = (int)(kv_k[li].size() / D);
 
-        std::vector<float> sa(D);
+        auto & sa = scratch.sa;
         mha_1q_cpu(q.data(), kv_k[li].data(), kv_v[li].data(), sa.data(), n_kv, D, hp.dec_heads);
 
-        std::vector<float> sa_proj(D);
+        auto & sa_proj = scratch.sa_proj;
         linear_cached(ctx, sa.data(), sa_proj.data(), D, D, l.self_out_w, l.self_out_b);
         for (int i = 0; i < D; i++) x[i] = residual[i] + sa_proj[i]; // residual skips LN
 
@@ -1153,29 +1185,29 @@ static std::vector<float> decoder_step(ppformulanet_ocr_context * ctx, int tok, 
         residual.assign(x.begin(), x.end());
         layernorm_cached(ctx, x.data(), x.data(), D, l.cross_ln_w, l.cross_ln_b, 1e-5f);
 
-        std::vector<float> cq(D);
+        auto & cq = scratch.cq;
         linear_cached(ctx, x.data(), cq.data(), D, D, l.cross_q_w, l.cross_q_b);
 
-        std::vector<float> ca(D);
+        auto & ca = scratch.ca;
         mha_1q_cpu(cq.data(), ctx->cross_k_cache[li].data(), ctx->cross_v_cache[li].data(), ca.data(), n_enc, D,
                    hp.dec_heads);
 
-        std::vector<float> ca_proj(D);
+        auto & ca_proj = scratch.ca_proj;
         linear_cached(ctx, ca.data(), ca_proj.data(), D, D, l.cross_out_w, l.cross_out_b);
         for (int i = 0; i < D; i++) x[i] = residual[i] + ca_proj[i]; // residual skips LN
 
         // --- FFN (PRE-LN) ---
-        residual.assign(x.begin(), x.end());
+        std::copy(x.begin(), x.end(), residual.begin());
         layernorm_cached(ctx, x.data(), x.data(), D, l.ff_ln_w, l.ff_ln_b, 1e-5f);
 
-        std::vector<float> ff_up(hp.dec_ffn_dim);
+        auto & ff_up = scratch.ff_up;
         linear_cached(ctx, x.data(), ff_up.data(), D, hp.dec_ffn_dim, l.ff_up_w, l.ff_up_b);
         // GELU activation
         for (int i = 0; i < hp.dec_ffn_dim; i++) {
             float vi = ff_up[i];
             ff_up[i] = 0.5f * vi * (1.0f + tanhf(0.7978845608f * (vi + 0.044715f * vi * vi * vi)));
         }
-        std::vector<float> ff_down(D);
+        auto & ff_down = scratch.ff_down;
         linear_cached(ctx, ff_up.data(), ff_down.data(), hp.dec_ffn_dim, D, l.ff_down_w, l.ff_down_b);
         for (int i = 0; i < D; i++) x[i] = residual[i] + ff_down[i]; // residual skips LN
     }
@@ -1202,9 +1234,12 @@ static std::vector<float> decoder_step(ppformulanet_ocr_context * ctx, int tok, 
     return logits;
 }
 
+
 static std::vector<int> greedy_decode(ppformulanet_ocr_context * ctx) {
     ctx->char_confidences.clear();
     const auto & hp = ctx->hparams;
+    PpfnDecoderScratch scratch;
+    scratch.resize(hp.dec_d_model, hp.dec_ffn_dim);
     const int max_steps = std::min(hp.max_seq_len, 512);
 
     std::vector<int> tokens;
@@ -1215,7 +1250,7 @@ static std::vector<int> greedy_decode(ppformulanet_ocr_context * ctx) {
     std::vector<std::vector<float>> kv_v(hp.dec_layers);
 
     for (int step = 0; step < max_steps; step++) {
-        auto logits = decoder_step(ctx, tok, step, kv_k, kv_v);
+        auto logits = decoder_step(ctx, tok, step, kv_k, kv_v, scratch);
 
         // Greedy argmax
 #ifdef SNIPLITE_VULKAN_PREFERRED
@@ -1270,6 +1305,8 @@ struct PpfnBeam {
 
 static std::vector<int> beam_decode(ppformulanet_ocr_context * ctx, int beam_width) {
     const auto & hp = ctx->hparams;
+    PpfnDecoderScratch scratch;
+    scratch.resize(hp.dec_d_model, hp.dec_ffn_dim);
     const int V = hp.vocab_size;
     const int n_dec = hp.dec_layers;
     const int max_steps = std::min(hp.max_seq_len, 512);
@@ -1293,7 +1330,7 @@ static std::vector<int> beam_decode(ppformulanet_ocr_context * ctx, int beam_wid
 
         for (int bi = 0; bi < (int)beams.size(); bi++) {
             if (beams[bi].finished) continue;
-            auto logits = decoder_step(ctx, beams[bi].prev_token, step, beams[bi].kv_k, beams[bi].kv_v);
+            auto logits = decoder_step(ctx, beams[bi].prev_token, step, beams[bi].kv_k, beams[bi].kv_v, scratch);
             float max_l = *std::max_element(logits.begin(), logits.end());
             float sum_e = 0.0f;
             for (int v = 0; v < V; v++) {

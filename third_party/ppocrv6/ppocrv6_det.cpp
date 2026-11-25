@@ -745,9 +745,9 @@ static bool graph_run(context * c, const std::vector<float> & input, int h, int 
 
 static bool run_stem(context * c, const std::vector<float> & input, int h, int w, std::vector<float> & out, int & oh,
                      int & ow) {
-    std::vector<float> x = input, y, branch;
+    std::vector<float> x, y, branch;
     int H = h, W = w;
-    if (!apply_conv(c->stem[0], x, H, W, y, oh, ow)) return false;
+    if (!apply_conv(c->stem[0], input, H, W, y, oh, ow)) return false;
     relu(y);
     if (c->capture_stages) c->last_stages["stem1"] = y;
     x.swap(y);
@@ -755,7 +755,9 @@ static bool run_stem(context * c, const std::vector<float> & input, int h, int w
     W = ow;
     std::vector<float> padded;
     pad_bottom_right(x, c->stem[0].oc, H, W, padded);
-    std::vector<float> embedding_padded = padded;
+    std::vector<float> pooled;
+    maxpool2_stride1(padded, c->stem[0].oc, H + 1, W + 1, pooled);
+    if (c->capture_stages) c->last_stages["stem_pooled"] = pooled;
     if (!apply_conv(c->stem[1], padded, H + 1, W + 1, branch, oh, ow)) return false;
     relu(branch);
     pad_bottom_right(branch, c->stem[1].oc, oh, ow, padded);
@@ -763,9 +765,6 @@ static bool run_stem(context * c, const std::vector<float> & input, int h, int w
     relu(y);
     branch.swap(y);
     if (c->capture_stages) c->last_stages["stem2b"] = branch;
-    std::vector<float> pooled;
-    maxpool2_stride1(embedding_padded, c->stem[0].oc, H + 1, W + 1, pooled);
-    if (c->capture_stages) c->last_stages["stem_pooled"] = pooled;
     const int cat_h = H, cat_w = W;
     std::vector<float> cat(pooled.size() + branch.size());
     std::memcpy(cat.data(), pooled.data(), pooled.size() * sizeof(float));
@@ -999,9 +998,7 @@ std::vector<box> detect_raw(context * c, const uint8_t * px, int w, int h, int c
     const auto graph_finished = std::chrono::steady_clock::now();
     if (graph_done && c->graph.probability_output) {
         if (compare_graph) graph_probability = x;
-        c->last_prob = x;
-        c->last_h = H;
-        c->last_w = W;
+
         auto native_boxes = ocr_detect::postprocess_probability_map(x.data(), H, W, threshold, 0.60f, 1.4f, 1, 1.0f,
                                                                     1.0f, 0, 3000, ocr_detect::score_mode::fast);
         std::vector<box> out;
@@ -1032,6 +1029,9 @@ std::vector<box> detect_raw(context * c, const uint8_t * px, int w, int h, int c
         // Accept an empty detection only for a complete, finite probability map.
         const bool accept_empty = !core_env::explicitly_off("CRISPEMBED_PPOCRV6_DET_ACCEPT_EMPTY");
         if (policy::accept_graph(compare_graph, accept_empty, out.size(), x, H, W)) {
+            c->last_prob = std::move(x);
+            c->last_h = H;
+            c->last_w = W;
             if (bench) {
                 const auto ms = [](auto a, auto b) { return std::chrono::duration<double, std::milli>(b - a).count(); };
                 fprintf(stderr,
@@ -1063,10 +1063,15 @@ std::vector<box> detect_raw(context * c, const uint8_t * px, int w, int h, int c
         for (size_t bi = 0; bi < ss.size(); ++bi)
             if (!run_block(ss[bi], x, H, W, c->capture_stages ? c : nullptr,
                            c->capture_stages && si == 0 && bi == 0 ? "block0" : "")) return {};
-        stages.push_back(x);
+        const size_t stage_index = stages.size();
+        if (c->capture_stages)
+            c->last_stages["backbone_stage" + std::to_string(stage_index)] = x;
+        if (si + 1 == c->stages.size())
+            stages.push_back(std::move(x));
+        else
+            stages.push_back(x);
         hs.push_back(H);
         ws.push_back(W);
-        if (c->capture_stages) c->last_stages["backbone_stage" + std::to_string(stages.size() - 1)] = x;
     }
     std::vector<std::vector<float>> fused(4);
     std::vector<int> fh(4), fw(4);
@@ -1112,7 +1117,7 @@ std::vector<box> detect_raw(context * c, const uint8_t * px, int w, int h, int c
             const float scale = std::clamp(0.2f * seout[ch] + 0.5f, 0.0f, 1.0f);
             for (int j = 0; j < qa * qb; ++j) q[(size_t)ch * qa * qb + j] += q[(size_t)ch * qa * qb + j] * scale;
         }
-        proc[i] = q;
+        proc[i] = std::move(q);
         if (c->capture_stages) c->last_stages["proc" + std::to_string(i)] = proc[i];
         ph[i] = qa;
         pw[i] = qb;
@@ -1120,12 +1125,10 @@ std::vector<box> detect_raw(context * c, const uint8_t * px, int w, int h, int c
     std::vector<float> neck;
     int nh = ph[0], nw = pw[0];
     for (int i = 3; i >= 0; i--) {
-        std::vector<float> u = proc[i];
         int uh = ph[i], uw = pw[i];
         std::vector<float> resized;
-        resize_nearest(u, c->neck / 4, uh, uw, nh, nw, resized);
-        u.swap(resized);
-        neck.insert(neck.end(), u.begin(), u.end());
+        resize_nearest(proc[i], c->neck / 4, uh, uw, nh, nw, resized);
+        neck.insert(neck.end(), resized.begin(), resized.end());
     }
     if (c->capture_stages) c->last_stages["neck_output"] = neck;
     std::vector<float> y, z;
@@ -1143,9 +1146,6 @@ std::vector<box> detect_raw(context * c, const uint8_t * px, int w, int h, int c
         c->last_stages["head_final"] = y;
     }
     for (float & v : y) v = 1 / (1 + std::exp(-v));
-    c->last_prob = y;
-    c->last_h = oh;
-    c->last_w = ow;
     // Use the calibrated DB box score for the compact model's native probability map.
     auto native_boxes = ocr_detect::postprocess_probability_map(y.data(), oh, ow, threshold, 0.60f, 1.4f, 1, 1.0f, 1.0f,
                                                                 0, 3000, ocr_detect::score_mode::fast);
@@ -1172,6 +1172,9 @@ std::vector<box> detect_raw(context * c, const uint8_t * px, int w, int h, int c
     report_graph_compare(c, graph_probability, y,
                          { "fused0", "fused1", "fused2", "fused3", "proc0", "proc1", "proc2", "proc3", "neck_output",
                            "head_down", "head_up", "head_final_pre" });
+    c->last_prob = std::move(y);
+    c->last_h = oh;
+    c->last_w = ow;
     if (bench) {
         const auto ms = [](auto a, auto b) { return std::chrono::duration<double, std::milli>(b - a).count(); };
         fprintf(stderr, "[ppocrv6-det-bench] preprocess_ms=%.3f graph_ms=%.3f total_ms=%.3f boxes=%zu accepted=0\n",

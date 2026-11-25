@@ -58,12 +58,15 @@ struct Tokenizer {
         std::vector<double> best((size_t)n + 1, -std::numeric_limits<double>::infinity());
         std::vector<int> prev((size_t)n + 1, -1);
         best[0] = 0;
+        std::string candidate_piece;
+        candidate_piece.reserve((size_t)std::max(0, maxlen));
         for (int i = 0; i < n; i++) {
             if (!std::isfinite(best[i])) continue;
             int lim = std::min(n, i + maxlen);
             bool single = false;
             for (int j = i + 1; j <= lim; j++) {
-                auto it = sp.find(s.substr(i, j - i));
+                candidate_piece.assign(s.data() + i, (size_t)(j - i));
+                auto it = sp.find(candidate_piece);
                 if (it == sp.end()) continue;
                 int id = it->second;
                 int typ = (size_t)id < user.size() && user[id] ? 1 : 0;
@@ -157,27 +160,58 @@ static ggml_cgraph* decoder(Context&c,const std::vector<int>&ids,const std::vect
         if(c.pre_norm)y=norm(x,y,l.cln,l.clnb);auto*cq=ggml_add(x,ggml_mul_mat(x,l.cq,y),l.cqb);auto*ck=ggml_add(x,ggml_mul_mat(x,l.ck,ei),l.ckb);auto*cv=ggml_add(x,ggml_mul_mat(x,l.cv,ei),l.cvb);cq=ggml_cont(x,ggml_permute(x,ggml_reshape_3d(x,cq,hd,c.hdc,T),0,2,1,3));ck=ggml_cont(x,ggml_permute(x,ggml_reshape_3d(x,ck,hd,c.hdc,S),0,2,1,3));cv=ggml_cont(x,ggml_permute(x,ggml_reshape_3d(x,cv,hd,c.hdc,S),0,2,1,3));auto*ca=ggml_flash_attn_ext(x,cq,ck,cv,nullptr,1.f/sqrtf((float)hd),0,0);ca=ggml_reshape_2d(x,ca,c.D,T);y=ggml_add(x,ggml_add(x,ggml_mul_mat(x,l.co,ca),l.cob),r);if(!c.pre_norm)y=norm(x,y,l.cln,l.clnb);r=y;if(c.pre_norm)y=norm(x,y,l.fln,l.flnb);y=ggml_add(x,ggml_mul_mat(x,l.up,y),l.upb);y=act(x,y,c.activation);y=ggml_add(x,ggml_mul_mat(x,l.down,y),l.downb);y=ggml_add(x,y,r);if(!c.pre_norm)y=norm(x,y,l.fln,l.flnb);}
     auto*last=ggml_view_2d(x,y,c.D,1,y->nb[1],(size_t)(T-1)*y->nb[1]);auto*logits=ggml_add(x,ggml_mul_mat(x,c.embed,last),c.bias);ggml_set_name(logits,"logits");ggml_build_forward_expand(g,logits);return g;
 }
-static bool decode_logits(Context& c, const std::vector<int>& ids, const std::vector<float>& enc,
-                          std::vector<float>& logits) {
-    ggml_context* x = nullptr;
-    ggml_cgraph* graph = decoder(c, ids, enc, x);
-    if (!graph) { if (x) ggml_free(x); return false; }
-    ggml_backend_sched_reset(c.sched);
-    if (!ggml_backend_sched_alloc_graph(c.sched, graph)) { ggml_free(x); return false; }
-    std::vector<int32_t> positions(ids.size());
-    for (size_t i = 0; i < positions.size(); i++) positions[i] = (int32_t)i;
-    ggml_backend_tensor_set(ggml_graph_get_tensor(graph, "ids"), ids.data(), 0, ids.size() * sizeof(int));
-    ggml_backend_tensor_set(ggml_graph_get_tensor(graph, "pos"), positions.data(), 0, positions.size() * sizeof(int32_t));
-    ggml_backend_tensor_set(ggml_graph_get_tensor(graph, "enc"), enc.data(), 0, enc.size() * sizeof(float));
-    std::vector<ggml_fp16_t> mask(ids.size() * ids.size());
-    for (size_t q = 0; q < ids.size(); q++) {
-        for (size_t k = q + 1; k < ids.size(); k++) mask[q * ids.size() + k] = ggml_fp32_to_fp16(-INFINITY);
+struct DecoderGraph {
+    ggml_context* context = nullptr;
+    ggml_cgraph* graph = nullptr;
+    int token_count = 0;
+    int source_count = 0;
+
+    int scratch_token_count = -1;
+    std::vector<int32_t> positions;
+    std::vector<ggml_fp16_t> mask;
+    ~DecoderGraph() { clear(); }
+    void clear() {
+        if (context) ggml_free(context);
+        context = nullptr;
+        graph = nullptr;
+        token_count = 0;
+        source_count = 0;
     }
-    ggml_backend_tensor_set(ggml_graph_get_tensor(graph, "mask"), mask.data(), 0, mask.size() * sizeof(ggml_fp16_t));
-    bool ok = ggml_backend_sched_graph_compute(c.sched, graph) == GGML_STATUS_SUCCESS;
-    if (ok) ggml_backend_tensor_get(ggml_graph_get_tensor(graph, "logits"), logits.data(), 0, logits.size() * sizeof(float));
-    ggml_free(x);
-    if (!ok) return false;
+    bool prepare(Context& c, const std::vector<int>& ids, const std::vector<float>& enc) {
+        const int tokens = (int)ids.size();
+        const int source = (int)enc.size() / c.D;
+        // Reused Vulkan beam graphs changed translations; rebuild on non-CPU backends.
+        if (graph && token_count == tokens && source_count == source && (!c.cpu_backend || c.backend == c.cpu_backend)) return true;
+        if (graph) ggml_backend_sched_reset(c.sched);
+        clear();
+        graph = decoder(c, ids, enc, context);
+        if (!graph) { clear(); return false; }
+        token_count = tokens;
+        source_count = source;
+        return true;
+    }
+};
+static bool decode_logits(Context& c, const std::vector<int>& ids, const std::vector<float>& enc,
+                          std::vector<float>& logits, DecoderGraph& cached) {
+    if (!cached.prepare(c, ids, enc)) return false;
+    ggml_cgraph* graph = cached.graph;
+    ggml_backend_sched_reset(c.sched);
+    if (!ggml_backend_sched_alloc_graph(c.sched, graph)) return false;
+    if (cached.scratch_token_count != (int)ids.size()) {
+        cached.positions.resize(ids.size());
+        for (size_t i = 0; i < cached.positions.size(); i++) cached.positions[i] = (int32_t)i;
+        cached.mask.assign(ids.size() * ids.size(), ggml_fp32_to_fp16(0.0f));
+        for (size_t q = 0; q < ids.size(); q++) {
+            for (size_t k = q + 1; k < ids.size(); k++) cached.mask[q * ids.size() + k] = ggml_fp32_to_fp16(-INFINITY);
+        }
+        cached.scratch_token_count = (int)ids.size();
+    }
+    ggml_backend_tensor_set(ggml_graph_get_tensor(graph, "ids"), ids.data(), 0, ids.size() * sizeof(int));
+    ggml_backend_tensor_set(ggml_graph_get_tensor(graph, "pos"), cached.positions.data(), 0, cached.positions.size() * sizeof(int32_t));
+    ggml_backend_tensor_set(ggml_graph_get_tensor(graph, "enc"), enc.data(), 0, enc.size() * sizeof(float));
+    ggml_backend_tensor_set(ggml_graph_get_tensor(graph, "mask"), cached.mask.data(), 0, cached.mask.size() * sizeof(ggml_fp16_t));
+    if (ggml_backend_sched_graph_compute(c.sched, graph) != GGML_STATUS_SUCCESS) return false;
+    ggml_backend_tensor_get(ggml_graph_get_tensor(graph, "logits"), logits.data(), 0, logits.size() * sizeof(float));
     for (int id : c.suppress) logits[id] = -INFINITY;
     return true;
 }
@@ -293,6 +327,7 @@ static bool translate_one(Context& c, const std::string& input, std::string& res
     candidates.reserve(parent_keep * parent_keep);
     std::vector<BeamCandidate> parent_top;
     parent_top.reserve(parent_keep);
+    DecoderGraph cached_decoder;
     for (int step = 0; step < maxlen; ++step) {
         candidates.clear();
         for (size_t bi = 0; bi < beams.size(); ++bi) {
@@ -302,7 +337,7 @@ static bool translate_one(Context& c, const std::string& input, std::string& res
                 candidates.push_back({bi, -1, beam.score, beam.score / length});
                 continue;
             }
-            if (!decode_logits(c, beam.ids, enc, logits)) return false;
+            if (!decode_logits(c, beam.ids, enc, logits, cached_decoder)) return false;
             float top = -INFINITY;
             for (float value : logits) if (value > top) top = value;
             if (!std::isfinite(top)) return false;
